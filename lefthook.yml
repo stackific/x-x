@@ -1,0 +1,42 @@
+min_version: 2.0.0
+
+# Hooks assume the Go tools (gofumpt, goimports, gci, conform, govulncheck)
+# are reachable on PATH. The standard `go install` location is
+# `$(go env GOPATH)/bin` — add that to your PATH once per machine instead of
+# prepending it in every command. Earlier revisions used `export PATH=...`
+# inline, which breaks under cmd.exe / PowerShell on Windows.
+
+pre-commit:
+  parallel: true
+  commands:
+    format:
+      glob: "*.go"
+      run: gofumpt -w {staged_files} && goimports -w {staged_files} && gci write --section standard --section default --section "prefix(github.com/stackific/x-x)" {staged_files} && git add {staged_files}
+    golangci-lint:
+      glob: "*.go"
+      run: golangci-lint run --fix ./...
+    gitleaks:
+      run: gitleaks protect --staged --no-banner
+
+commit-msg:
+  commands:
+    conform:
+      run: conform enforce --commit-msg-file {1}
+
+pre-push:
+  parallel: true
+  commands:
+    # -race wires in the data-race detector; -count=1 busts Go's test cache so
+    # source-clean re-runs still execute every test (the previous shape just
+    # printed "(cached)" on most invocations).
+    test:
+      run: go test -race -count=1 ./...
+    vet:
+      run: go vet ./...
+    # Tree-wide lint complements pre-commit (which only sees staged files):
+    # commits made with --no-verify or rebased history can otherwise smuggle
+    # issues past the gate.
+    lint:
+      run: golangci-lint run ./...
+    govulncheck:
+      run: govulncheck ./...

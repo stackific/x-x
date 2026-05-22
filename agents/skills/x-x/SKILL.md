@@ -1,0 +1,77 @@
+---
+# SPDX-License-Identifier: Apache-2.0
+name: x-x
+description: Execute plans in .x-plan/ sequentially by numerical prefix. Reads each plan, works through its EARS-format tasks, marks checkboxes complete, and stops on the first task it cannot finish. Fans out to git worktrees when consecutive plans declare disjoint systems.
+---
+
+# x-x
+
+## 0. Announce review mode (non-blocking)
+
+On invocation, emit exactly this one line and immediately proceed to Step 1 without waiting:
+
+> FYI: I'll review each task with you (default). If you'd rather approve one plan at a time, say "review per plan."
+
+Per-task is the default. The user may switch modes at any point ("review per plan" / "review per task"); apply at the next approval boundary, never retroactively.
+
+## 1. Load context
+
+Load context per **Context to load** in `.claude/skills/_x-x_shared/_shared_plan_first.md`. If any required file is missing, STOP and report.
+
+## 2. Enumerate plans
+
+Run `x-x plan list --status valid`. Output is tab-separated, one row per plan, sorted by numerical prefix:
+
+```
+<slug>\t<status>\t<system>,<system>,...
+```
+
+All emitted rows are the work queue — the `--status valid` flag filters out `superseded` and `deprecated`. Files in `.x-plan/` that match `<prefix>-<slug>.md` but have missing or malformed frontmatter trigger stderr warnings from the script; flag those in your end-of-run summary so they aren't lost.
+
+The third column is each plan's **scope** — the systems it touches.
+
+## 2a. Progress tracking
+
+Always maintain a visible task list during execution. After enumeration, create one `TaskCreate` task per plan in the work queue (subject = plan slug, description = its scope). Mark each task `in_progress` when you start the plan's first incomplete EARS task and `completed` when the plan's last task is `[x]`. In parallel mode, give each worktree-bound plan its own task. Keep the list in sync with reality — every status change reflects an actual execution event.
+
+If the user enqueues new work mid-execution — a new plan dropped into `.x-plan/`, a new `[ ]` EARS criterion added to a running plan, or an out-of-band request — append it via `TaskCreate` immediately so the visible queue stays complete. Never absorb new work silently. Prioritization (interrupt vs. queue-at-end) follows the user's instruction; default is queue-at-end unless they signal otherwise.
+
+## 3. Sequential mode (default)
+
+For each plan, in numerical order:
+
+1. Read the plan in full.
+2. If every `## Tasks` checkbox is already `[x]`, report the plan as done and move on.
+3. For each incomplete `[ ]` task, in the order written:
+   1. Compose the side effects required to satisfy the task.
+   2. Approval, per the active review mode:
+      - **Per-task (default):** present a sub-plan for this task per `.claude/skills/_x-x_shared/_shared_plan_first.md` and wait for `yes`.
+      - **Per-plan:** on the first incomplete task of the plan, present **one** consolidated sub-plan listing every incomplete `[ ]` task in this plan and all their side effects; wait for a single `yes`. For subsequent tasks in the same plan, skip the prompt — the bundle approval covers them. A verification failure (step 3.3.4) halts the plan per Step 6; bundle approval does not survive a failed task.
+   3. Execute. After each command, report what happened in one line.
+   4. **Verify before flipping.** If the task added new code paths (endpoint, worker, parser, adapter, signal handler, etc.), write at least one unit or smoke test exercising the new path in the project's test layout. Then run `task prepush` (the project's canonical test + lint + type-check target). `task prepush` MUST exit 0 before the checkbox flips. If verification fails, leave the checkbox `[ ]` and apply the failure-mode protocol in step 6. Pure config / doc / registry / settings edits skip the test-write step but still run `task prepush`.
+   5. Flip the checkbox from `[ ]` to `[x]` in the plan file.
+4. After all tasks in the plan are `[x]`:
+   1. If the plan's frontmatter includes `supersedes: [<slug>, ...]`, flip each listed plan's `status: valid` to `status: superseded` via `Edit` on that plan file. Treat the flip as a side effect that goes through the plan-first sub-plan protocol like any other.
+   2. Report one-line completion and move to the next plan.
+
+## 4. Parallel mode (auto-detected)
+
+If the next contiguous run of upcoming plans declares pairwise disjoint scopes (zero shared systems across them), propose fanning out to git worktrees.
+
+On approval, for each plan in the parallel run:
+
+1. Create a worktree off the current HEAD:
+   `git worktree add ../<repo>.worktrees/<prefix>-<slug> -b plan/<prefix>-<slug>`
+   where `<repo>` is the basename of the current repo directory.
+2. Execute the plan inside its own worktree following the sequential rules above (sub-plans included).
+3. On completion, leave the worktree intact and report the worktree path + branch.
+
+Do not merge worktrees back, do not remove them, and do not modify any branch outside its own worktree. Cleanup and merge are the user's call.
+
+## 5. Ground-truth lookup
+
+When a task needs the current contract for a system (to extend, modify, or reason about existing behavior), run `x-x plan list --status valid --system <Name>`, then read the listed plan files. Collect only `[x]` (completed) criteria naming that system, ordered by numerical prefix ascending. Treat that ordered list as the live contract. Never read `superseded` or `deprecated` plans for current truth — they are history.
+
+## 6. Failure mode
+
+If a task cannot be completed (command fails, user rejects the sub-plan, missing input), STOP that worktree's sequence and leave the checkbox `[ ]`. In sequential mode this halts everything. In parallel mode, sibling worktrees continue independently. At the end, report every blocking plan + task in one summary. No auto-merge, no auto-cleanup, no skipping past failures.

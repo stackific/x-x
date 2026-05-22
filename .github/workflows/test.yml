@@ -1,0 +1,58 @@
+name: Test
+
+# Runs the comprehensive test suite (Go unit tests + end-to-end shell tests)
+# inside an official Linux container so every PR proves x-x works as installed.
+#
+# AGENTS.md hard rule: any change to a *.go CLI source file MUST land with
+# accompanying tests, and those tests MUST be exercised by this workflow.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    # The job runs inside a real Linux container — the official Go image —
+    # so the workflow literally "launches a linux container, installs x-x,
+    # runs all commands, and tests every single feature end to end". The
+    # outer runner is only there to schedule the container.
+    runs-on: ubuntu-latest
+    container:
+      image: golang:1.26-bookworm
+    steps:
+      - uses: actions/checkout@v4
+
+      # actions/checkout populates $GITHUB_WORKSPACE as the host runner user,
+      # but the container runs as a different user (root in golang:*). Recent
+      # Git releases refuse to operate on a repo with mismatched ownership
+      # ("fatal: detected dubious ownership"), which would cascade through
+      # any `go` command that consults VCS metadata (build, test) and abort
+      # with exit 128. Marking the workspace as safe makes every downstream
+      # git/go invocation in this job behave as if ownership were uniform.
+      - name: Trust workspace inside container
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # Containers default to /__w/... which is fine, but the Go module
+      # cache benefits from being persisted across runs. The setup-go
+      # action handles that AND verifies the toolchain matches go.mod.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Unit tests (with race detector)
+        run: go test -race -count=1 ./...
+
+      - name: End-to-end CLI tests
+        # Builds the binary, installs it into an isolated HOME inside the
+        # container, then drives every subcommand and verifies on-disk
+        # side effects. See scripts/e2e_test.sh for the assertion list.
+        run: ./scripts/e2e_test.sh
