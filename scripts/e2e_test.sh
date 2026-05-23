@@ -32,7 +32,7 @@ readonly SKILLS_SUBDIR="skills"                   # skillsSubdir
 readonly PLAN_DIR=".x-plan"                       # planDir
 readonly PLAN_CONFIG_LOCK="_config.lock"          # planConfigLockFile
 readonly PLAN_SYSTEMS_FILE="_data_systems.yaml"   # planSystemsFile
-readonly DEFAULT_PREFIX_WIDTH=5                   # defaultPrefixWidth
+readonly DEFAULT_PREFIX_WIDTH=4                   # defaultPrefixWidth
 
 # Bundled skill directory names (skill*Dir in constants.go).
 readonly SKILL_SHARED_DIR="_x-x_shared"           # skillSharedDir
@@ -166,6 +166,20 @@ reset_user_home() {
          "$HOME/${XX_HOME_DIR}"
 }
 
+# seed_project_scaffold <dir> — creates the minimal "fully initialized x-x
+# project" shape that `checkProject` requires: the planDir directory plus
+# the two scaffold files (`_data_systems.yaml`, `_config.lock`) that
+# `x-x init` would write. Used by every `plan *` / `skill remove --project`
+# case that exercises the gate's happy path without running `x-x init`
+# itself. The two files are zero-byte placeholders — exactly what an
+# empty fresh project looks like — so individual cases can overwrite
+# them with case-specific content (e.g. a custom prefix_width lock).
+seed_project_scaffold() {
+  mkdir -p "$1/${PLAN_DIR}"
+  : > "$1/${PLAN_DIR}/${PLAN_SYSTEMS_FILE}"
+  : > "$1/${PLAN_DIR}/${PLAN_CONFIG_LOCK}"
+}
+
 # prefix <width> <n> — render n as a zero-padded prefix of the given width.
 # Mirrors the binary's `fmt.Printf("%0*d\n", width, n)`.
 prefix() { printf "%0${1}d" "$2"; }
@@ -268,15 +282,22 @@ assert_is_dir "lazy-bootstrap agents dir" "$HOME/${XX_AGENTS_DIR}"
 assert_is_dir "lazy-bootstrap skill ${SKILL_X_X_DIR}" \
   "$HOME/${XX_AGENTS_SKILLS_DIR}/${SKILL_X_X_DIR}"
 
-# ---------- --version ----------
+# ---------- --version (alias of bare invocation) ----------
+#
+# `x-x` and `x-x --version` share runDefault: same notice output, same
+# lazy bootstrap of ~/.x-x/agents/ on first run, same 24h update check.
+# Keeping the assertion symmetric with the bare case pins that both
+# entry points stay aligned even after future refactors.
 
-case_start "x-x --version prints only notice"
+case_start "x-x --version prints notice and bootstraps agents"
 reset_user_home
 run_capture "" --version
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_contains "version line" "$RUN_OUT" "x-x by Stackific, ${E2E_VERSION}"
 assert_not_contains "no usage block" "$RUN_OUT" "Usage:"
-assert_absent "no lazy bootstrap on --version" "$HOME/${XX_AGENTS_DIR}"
+assert_is_dir "lazy-bootstrap agents dir" "$HOME/${XX_AGENTS_DIR}"
+assert_is_dir "lazy-bootstrap skill ${SKILL_X_X_DIR}" \
+  "$HOME/${XX_AGENTS_SKILLS_DIR}/${SKILL_X_X_DIR}"
 
 # ---------- -h / --help ----------
 
@@ -358,28 +379,46 @@ done
 
 # ---------- init interactive prompts ----------
 #
-# init has TWO interactive questions (agents, then scope). Each pipe below
-# answers both in order: first line = agents, second = scope. A blank first
-# line accepts the default (all agents). Per AGENTS.md rule 9, every prompt
-# must also have a flag-driven equivalent — covered in the `init --agents
-# / --scope flag forms` block further down.
+# init now has FIVE interactive questions: agents → scope → prefix-width
+# → max-plan-lines → plan-review-per. Each pipe below answers them in
+# that order; blank lines accept the prompt's default (all agents for
+# the multi-select, the project default for the three plan-tooling
+# prompts). promptScope is the only one with NO blank-default: it must
+# receive a literal "1" or "2".
+#
+# In a real terminal, runInit drives a charmbracelet/huh wizard instead
+# of these line prompts (with arrow-key select, multiselect, and
+# Shift+Tab back-nav). Piped stdin is not a TTY, so this CI path always
+# exercises the line-prompt branch — see resolveInitConfig in init.go.
+#
+# Per AGENTS.md rule 9, every prompt also has a flag twin — covered in
+# the `init flag forms` block further down.
 
 case_start "x-x init interactive (default agents + project scope)"
 reset_user_home
 PROJ_INT="$(fresh_project)"
 cd "$PROJ_INT"
+# agents=default, scope=project, prefix-width=default, max-lines=default, review=default.
 run_capture "
 1
+
+
+
 " init
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_is_dir  "interactive project skill" "$PROJ_INT/${CLAUDE_SKILLS_REL}/${SKILL_X_X_DIR}"
 assert_is_file "interactive plan lock"     "$PROJ_INT/${PLAN_LOCK_PATH}"
+assert_contains "interactive lock keeps default prefix_width" \
+  "$(cat "$PROJ_INT/${PLAN_LOCK_PATH}")" "\"prefix_width\": ${DEFAULT_PREFIX_WIDTH}"
 
 case_start "x-x init interactive (default agents + user scope)"
 reset_user_home
 cd "$(fresh_project)"
 run_capture "
 2
+
+
+
 " init
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_exists "interactive user skill" "$HOME/${CLAUDE_SKILLS_REL}/${SKILL_X_X_DIR}"
@@ -390,10 +429,32 @@ PROJ_INT2="$(fresh_project)"
 cd "$PROJ_INT2"
 run_capture "1,2
 1
+
+
+
 " init
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_is_dir "interactive explicit agents installs claude" "$PROJ_INT2/${CLAUDE_SKILLS_REL}/${SKILL_X_X_DIR}"
 assert_is_dir "interactive explicit agents installs codex"  "$PROJ_INT2/${CODEX_SKILLS_REL}/${SKILL_X_X_DIR}"
+
+case_start "x-x init interactive (custom prefix-width + max-plan-lines + review)"
+reset_user_home
+PROJ_INT3="$(fresh_project)"
+cd "$PROJ_INT3"
+# agents=default, scope=project, prefix=6, max=42, review=2 (plan).
+run_capture "
+1
+6
+42
+2
+" init
+assert_eq "exit 0" "$RUN_RC" "0"
+assert_contains "interactive lock honors custom prefix_width" \
+  "$(cat "$PROJ_INT3/${PLAN_LOCK_PATH}")" "\"prefix_width\": 6"
+assert_contains "interactive lock honors custom max_plan_lines" \
+  "$(cat "$PROJ_INT3/${PLAN_LOCK_PATH}")" "\"max_plan_lines\": 42"
+assert_contains "interactive lock honors custom plan_review_per" \
+  "$(cat "$PROJ_INT3/${PLAN_LOCK_PATH}")" "\"plan_review_per\": \"plan\""
 
 case_start "x-x init interactive (invalid agent choice)"
 reset_user_home
@@ -410,7 +471,18 @@ run_capture "
 9
 " init
 [ "$RUN_RC" != "0" ] && ok "non-zero exit on invalid scope choice" || fail "non-zero exit on invalid scope choice"
-assert_contains "diagnostic on stderr" "$RUN_ERR" "invalid choice"
+assert_contains "diagnostic on stderr" "$RUN_ERR" "invalid"
+
+case_start "x-x init interactive (invalid prefix-width)"
+reset_user_home
+cd "$(fresh_project)"
+# agents=default, scope=project, prefix=bogus.
+run_capture "
+1
+xyz
+" init
+[ "$RUN_RC" != "0" ] && ok "non-zero exit on bogus prefix-width" || fail "non-zero exit on bogus prefix-width"
+assert_contains "diagnostic on stderr" "$RUN_ERR" "invalid prefix-width"
 
 # ---------- init --agents / --scope flag forms (non-interactive twins) ----------
 
@@ -456,6 +528,61 @@ cd "$(fresh_project)"
 run_capture "" init --scope workspace
 [ "$RUN_RC" != "0" ] && ok "non-zero exit" || fail "non-zero exit"
 assert_contains "diagnostic" "$RUN_ERR" "invalid --scope"
+
+# ---------- init plan-tooling flag twins (--prefix-width / --max-plan-lines / --plan-review-per) ----------
+#
+# All five prompts have flag twins; passing every flag drives runInit
+# end-to-end without ever touching stdin (true non-interactive). Each
+# case below pins the wire-format of `_config.lock` so any drift between
+# the flag values and what lands on disk fails loud.
+
+case_start "x-x init --prefix-width / --max-plan-lines / --plan-review-per (all flags)"
+reset_user_home
+PROJ_FF="$(fresh_project)"
+cd "$PROJ_FF"
+run_capture "" init --scope project --agents=claude,codex \
+  --prefix-width=6 --max-plan-lines=42 --plan-review-per=plan
+assert_eq "exit 0" "$RUN_RC" "0"
+assert_contains "lock honors --prefix-width" \
+  "$(cat "$PROJ_FF/${PLAN_LOCK_PATH}")" "\"prefix_width\": 6"
+assert_contains "lock honors --max-plan-lines" \
+  "$(cat "$PROJ_FF/${PLAN_LOCK_PATH}")" "\"max_plan_lines\": 42"
+assert_contains "lock honors --plan-review-per" \
+  "$(cat "$PROJ_FF/${PLAN_LOCK_PATH}")" "\"plan_review_per\": \"plan\""
+
+case_start "x-x init --plan-review-per=task (explicit default)"
+reset_user_home
+PROJ_FT="$(fresh_project)"
+cd "$PROJ_FT"
+run_capture "" init --scope project --agents=claude --prefix-width=4 \
+  --max-plan-lines=30 --plan-review-per=task
+assert_eq "exit 0" "$RUN_RC" "0"
+assert_contains "lock honors --plan-review-per=task" \
+  "$(cat "$PROJ_FT/${PLAN_LOCK_PATH}")" "\"plan_review_per\": \"task\""
+
+case_start "x-x init --plan-review-per invalid"
+reset_user_home
+cd "$(fresh_project)"
+run_capture "" init --scope project --agents=claude --prefix-width=4 \
+  --max-plan-lines=30 --plan-review-per=commit
+[ "$RUN_RC" != "0" ] && ok "non-zero exit" || fail "non-zero exit"
+assert_contains "diagnostic" "$RUN_ERR" "invalid --plan-review-per"
+
+case_start "x-x init --prefix-width=-1 rejected"
+reset_user_home
+cd "$(fresh_project)"
+run_capture "" init --scope project --agents=claude --prefix-width=-1 \
+  --max-plan-lines=30 --plan-review-per=task
+[ "$RUN_RC" != "0" ] && ok "non-zero exit" || fail "non-zero exit"
+assert_contains "diagnostic" "$RUN_ERR" "--prefix-width must be positive"
+
+case_start "x-x init --max-plan-lines=0 rejected"
+reset_user_home
+cd "$(fresh_project)"
+run_capture "" init --scope project --agents=claude --prefix-width=4 \
+  --max-plan-lines=0 --plan-review-per=task
+[ "$RUN_RC" != "0" ] && ok "non-zero exit" || fail "non-zero exit"
+assert_contains "diagnostic" "$RUN_ERR" "--max-plan-lines must be positive"
 
 # ---------- init overwrites prior content at owned skill names ----------
 
@@ -564,21 +691,153 @@ done
 assert_is_dir "bundled ${SKILL_X_X_DIR} landed"    "$PROJ_ISO/${CLAUDE_SKILLS_REL}/${SKILL_X_X_DIR}"
 assert_is_dir "bundled ${SKILL_X_PLAN_DIR} landed" "$PROJ_ISO/${CODEX_SKILLS_REL}/${SKILL_X_PLAN_DIR}"
 
-# ---------- isolation: init re-run keeps user-edited config files ----------
+# ---------- isolation: init re-run merges user-edited JSON config files ----------
+#
+# `installAgentConfig` deep-merges bundled JSON into a pre-existing
+# destination instead of overwriting (the old "skip if exists" behavior)
+# OR clobbering it (which would lose user edits). The contract:
+#
+#   - User-only keys survive.
+#   - Bundle-only keys are added (the whole point — a user who already had
+#     a settings.json now gets our hooks landed surgically).
+#   - The file remains valid JSON after merge.
+#   - Plan-tooling lock file (non-bundled, written by writePlanScaffold)
+#     keeps its lock-file semantics: still skipped, not merged.
 
-case_start "init re-run preserves edited ${CLAUDE_SETTINGS_FILE} + ${CODEX_HOOKS_FILE}"
+case_start "init re-run merges edited ${CLAUDE_SETTINGS_FILE} + ${CODEX_HOOKS_FILE}"
 reset_user_home
 PROJ_RE="$(fresh_project)"
 cd "$PROJ_RE"
 run_capture "" init --scope project
-echo '{"USER": "EDIT"}' > "$PROJ_RE/${CLAUDE_SETTINGS_PATH}"
-echo '{"USER": "EDIT"}' > "$PROJ_RE/${CODEX_HOOKS_PATH}"
-echo "USER PIN" > "$PROJ_RE/${PLAN_LOCK_PATH}"
+# User edits each JSON config to add a custom key. The keys do NOT exist
+# in the bundle, so they must survive untouched; the bundled keys
+# (fastMode for Claude, hooks for both) must land alongside.
+echo '{"USER": "EDIT", "model": "sonnet"}' > "$PROJ_RE/${CLAUDE_SETTINGS_PATH}"
+echo '{"USER": "EDIT"}'                    > "$PROJ_RE/${CODEX_HOOKS_PATH}"
+# Documented re-init flow: delete the lock to unblock the project-gate
+# refusal. The lock will be re-written by init from the wizard/flag
+# choices for this run.
+rm "$PROJ_RE/${PLAN_LOCK_PATH}"
 run_capture "" init --scope project
 assert_eq "exit 0" "$RUN_RC" "0"
-assert_eq "${CLAUDE_SETTINGS_FILE} preserved" "$(cat "$PROJ_RE/${CLAUDE_SETTINGS_PATH}")" '{"USER": "EDIT"}'
-assert_eq "${CODEX_HOOKS_FILE} preserved"     "$(cat "$PROJ_RE/${CODEX_HOOKS_PATH}")"     '{"USER": "EDIT"}'
-assert_eq "${PLAN_CONFIG_LOCK} preserved"     "$(cat "$PROJ_RE/${PLAN_LOCK_PATH}")"       "USER PIN"
+CLAUDE_BODY="$(cat "$PROJ_RE/${CLAUDE_SETTINGS_PATH}")"
+CODEX_BODY="$(cat "$PROJ_RE/${CODEX_HOOKS_PATH}")"
+assert_contains "${CLAUDE_SETTINGS_FILE} keeps user key"   "$CLAUDE_BODY" '"USER": "EDIT"'
+assert_contains "${CLAUDE_SETTINGS_FILE} keeps user model" "$CLAUDE_BODY" '"model": "sonnet"'
+assert_contains "${CLAUDE_SETTINGS_FILE} gains fastMode"   "$CLAUDE_BODY" '"fastMode": true'
+assert_contains "${CLAUDE_SETTINGS_FILE} gains hook"       "$CLAUDE_BODY" 'x-x plan lint'
+assert_contains "${CODEX_HOOKS_FILE} keeps user key"       "$CODEX_BODY"  '"USER": "EDIT"'
+assert_contains "${CODEX_HOOKS_FILE} gains hook"           "$CODEX_BODY"  'x-x plan lint'
+
+# ---------- merge is idempotent: a second re-run is a byte-level no-op ----------
+
+case_start "init re-run is idempotent on merged ${CLAUDE_SETTINGS_FILE}"
+reset_user_home
+PROJ_IDEM_JSON="$(fresh_project)"
+cd "$PROJ_IDEM_JSON"
+run_capture "" init --scope project
+echo '{"model": "sonnet"}' > "$PROJ_IDEM_JSON/${CLAUDE_SETTINGS_PATH}"
+echo '{"model": "sonnet"}' > "$PROJ_IDEM_JSON/${CODEX_HOOKS_PATH}"
+# First re-run materializes the merged shape. Lock-delete is the
+# documented gate-bypass; init recreates it from this run's choices.
+rm "$PROJ_IDEM_JSON/${PLAN_LOCK_PATH}"
+run_capture "" init --scope project
+SNAP_CLAUDE_1="$(cat "$PROJ_IDEM_JSON/${CLAUDE_SETTINGS_PATH}")"
+SNAP_CODEX_1="$(cat "$PROJ_IDEM_JSON/${CODEX_HOOKS_PATH}")"
+# Second re-run must be a byte-level no-op — array-union dedup catches
+# every bundled entry already present from the first merge.
+rm "$PROJ_IDEM_JSON/${PLAN_LOCK_PATH}"
+run_capture "" init --scope project
+SNAP_CLAUDE_2="$(cat "$PROJ_IDEM_JSON/${CLAUDE_SETTINGS_PATH}")"
+SNAP_CODEX_2="$(cat "$PROJ_IDEM_JSON/${CODEX_HOOKS_PATH}")"
+assert_eq "${CLAUDE_SETTINGS_FILE} idempotent" "$SNAP_CLAUDE_1" "$SNAP_CLAUDE_2"
+assert_eq "${CODEX_HOOKS_FILE} idempotent"     "$SNAP_CODEX_1"  "$SNAP_CODEX_2"
+
+# ---------- merge: user scalar wins on a conflict ----------
+#
+# `fastMode: false` is the canonical "I opted OUT" choice. A bundled
+# `fastMode: true` must NEVER flip the user's explicit `false`. Bundled
+# object keys missing from the existing file still land (the `hooks`
+# object below) — only the conflicting scalar is left alone.
+
+case_start "init re-run merge: user scalar wins (fastMode: false)"
+reset_user_home
+PROJ_SCALAR="$(fresh_project)"
+cd "$PROJ_SCALAR"
+run_capture "" init --scope project
+echo '{"fastMode": false}' > "$PROJ_SCALAR/${CLAUDE_SETTINGS_PATH}"
+rm "$PROJ_SCALAR/${PLAN_LOCK_PATH}"
+run_capture "" init --scope project
+SCALAR_BODY="$(cat "$PROJ_SCALAR/${CLAUDE_SETTINGS_PATH}")"
+assert_contains "user fastMode=false preserved" "$SCALAR_BODY" '"fastMode": false'
+assert_not_contains "bundled fastMode=true rejected" "$SCALAR_BODY" '"fastMode": true'
+assert_contains    "bundled hooks still added"       "$SCALAR_BODY" 'x-x plan lint'
+
+# ---------- merge: array entries are unioned, not overwritten ----------
+#
+# A user-authored hook entry (matcher: Read, calling their own tool) must
+# survive AND our bundled Write|Edit|MultiEdit entry must land alongside.
+# Both should be present in the resulting PostToolUse array. This is the
+# load-bearing case for the merge being additive on arrays.
+
+case_start "init re-run merge: hook arrays are unioned"
+reset_user_home
+PROJ_ARR="$(fresh_project)"
+cd "$PROJ_ARR"
+run_capture "" init --scope project
+cat > "$PROJ_ARR/${CLAUDE_SETTINGS_PATH}" <<'JSON'
+{
+  "hooks": {
+    "PostToolUse": [
+      {"matcher": "Read", "hooks": [{"type": "command", "command": "my-tool"}]}
+    ]
+  }
+}
+JSON
+rm "$PROJ_ARR/${PLAN_LOCK_PATH}"
+run_capture "" init --scope project
+ARR_BODY="$(cat "$PROJ_ARR/${CLAUDE_SETTINGS_PATH}")"
+assert_contains "user matcher Read survives"      "$ARR_BODY" '"matcher": "Read"'
+assert_contains "user command my-tool survives"   "$ARR_BODY" '"command": "my-tool"'
+assert_contains "bundled matcher Write|Edit|MultiEdit lands" "$ARR_BODY" '"matcher": "Write|Edit|MultiEdit"'
+assert_contains "bundled command x-x plan lint lands" "$ARR_BODY" '"command": "x-x plan lint"'
+
+# ---------- merge: malformed JSON leaves the user file untouched ----------
+#
+# The merge tolerates a broken existing file by failing soft: it logs a
+# stderr warning naming the file and leaves the bytes alone. The user's
+# intent (whatever they were drafting) survives; they can fix the JSON
+# at leisure and re-run init to pick up the bundle additions.
+
+case_start "init re-run merge: malformed JSON preserves user bytes"
+reset_user_home
+PROJ_BAD="$(fresh_project)"
+cd "$PROJ_BAD"
+run_capture "" init --scope project
+echo 'not valid json {' > "$PROJ_BAD/${CLAUDE_SETTINGS_PATH}"
+rm "$PROJ_BAD/${PLAN_LOCK_PATH}"
+run_capture "" init --scope project
+assert_eq "exit 0 despite parse failure" "$RUN_RC" "0"
+assert_eq "malformed file untouched" "$(cat "$PROJ_BAD/${CLAUDE_SETTINGS_PATH}")" 'not valid json {'
+assert_contains "stderr warns about merge failure" "$RUN_ERR" "merge failed"
+
+# ---------- merge: empty existing file gets seeded with bundle ----------
+#
+# A user who `touch`ed settings.json (or trimmed it to nothing) and
+# re-ran init must end up with the full bundle content — the merge
+# treats zero-byte input as `{}` and adds every bundled top-level key.
+
+case_start "init re-run merge: empty existing file is seeded"
+reset_user_home
+PROJ_EMPTY="$(fresh_project)"
+cd "$PROJ_EMPTY"
+run_capture "" init --scope project
+: > "$PROJ_EMPTY/${CLAUDE_SETTINGS_PATH}"
+rm "$PROJ_EMPTY/${PLAN_LOCK_PATH}"
+run_capture "" init --scope project
+EMPTY_BODY="$(cat "$PROJ_EMPTY/${CLAUDE_SETTINGS_PATH}")"
+assert_contains "empty file gained fastMode" "$EMPTY_BODY" '"fastMode": true'
+assert_contains "empty file gained hook"     "$EMPTY_BODY" 'x-x plan lint'
 
 # ---------- isolation: init re-run keeps user-authored sibling skills ----------
 
@@ -591,6 +850,7 @@ mkdir -p "$PROJ_SIB/${CLAUDE_SKILLS_REL}/my-custom" \
          "$PROJ_SIB/${CODEX_SKILLS_REL}/their-custom"
 echo "MINE" > "$PROJ_SIB/${CLAUDE_SKILLS_REL}/my-custom/SKILL.md"
 echo "MINE" > "$PROJ_SIB/${CODEX_SKILLS_REL}/their-custom/SKILL.md"
+rm "$PROJ_SIB/${PLAN_LOCK_PATH}"
 run_capture "" init --scope project
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_is_file "sibling claude skill survives re-run" "$PROJ_SIB/${CLAUDE_SKILLS_REL}/my-custom/SKILL.md"
@@ -633,6 +893,96 @@ for skill in $OWNED_SKILLS; do
   assert_absent "skill remove dropped ${CLAUDE_SKILLS_REL}/$skill" "$PROJ_RMI/${CLAUDE_SKILLS_REL}/$skill"
   assert_absent "skill remove dropped ${CODEX_SKILLS_REL}/$skill"  "$PROJ_RMI/${CODEX_SKILLS_REL}/$skill"
 done
+
+# ---------- skill remove un-merges bundled hook records ----------
+#
+# `installAgentConfig` deep-merges our shipped hook records into the user's
+# ${CLAUDE_SETTINGS_FILE} / ${CODEX_HOOKS_FILE} on init. `skill remove`
+# performs the inverse: subtracts entries that deep-equal a bundled record,
+# leaves everything else untouched (user-authored siblings under the same
+# event key, top-level non-hook keys, user-added event keys).
+#
+# The seeded files below mirror the bundled records in agents/claude/
+# settings.json and agents/codex/hooks.json. If those embed files change
+# shape, update this fixture in lockstep — drift surfaces as an assertion
+# failure here because the un-merge stops removing the now-stale records.
+
+case_start "skill remove --project un-merges bundled hook records"
+reset_user_home
+PROJ_UN="$(fresh_project)"
+cd "$PROJ_UN"
+run_capture "" init --scope project
+# Overwrite each JSON with the bundled records (so deep-equal fires) PLUS
+# a user-authored hook entry that must survive the un-merge.
+cat > "$PROJ_UN/${CLAUDE_SETTINGS_PATH}" <<'EOF'
+{
+  "fastMode": true,
+  "hooks": {
+    "PostToolUse": [
+      {"matcher": "Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": "x-x plan lint"}]},
+      {"matcher": "Bash", "hooks": [{"type": "command", "command": "USER-HOOK"}]}
+    ],
+    "Stop": [
+      {"matcher": "", "hooks": [{"type": "command", "command": "x-x plan lint"}]}
+    ]
+  }
+}
+EOF
+cat > "$PROJ_UN/${CODEX_HOOKS_PATH}" <<'EOF'
+{
+  "hooks": {
+    "PostToolUse": [
+      {"matcher": "apply_patch", "hooks": [{"type": "command", "command": "x-x plan lint"}]}
+    ],
+    "Stop": [
+      {"hooks": [{"type": "command", "command": "x-x plan lint 1>&2"}]},
+      {"hooks": [{"type": "command", "command": "USER-CODEX-HOOK"}]}
+    ]
+  }
+}
+EOF
+run_capture "" skill remove --project
+assert_eq       "exit 0"               "$RUN_RC" "0"
+assert_contains "summary has unmerged" "$RUN_OUT" "unmerged"
+CLAUDE_BODY="$(cat "$PROJ_UN/${CLAUDE_SETTINGS_PATH}")"
+CODEX_BODY="$(cat  "$PROJ_UN/${CODEX_HOOKS_PATH}")"
+# Top-level non-hook content and user-authored hook entries survive.
+assert_contains     "claude fastMode kept"             "$CLAUDE_BODY" '"fastMode": true'
+assert_contains     "claude user hook kept"            "$CLAUDE_BODY" 'USER-HOOK'
+assert_contains     "codex user hook kept"             "$CODEX_BODY"  'USER-CODEX-HOOK'
+# Bundled records are gone: their distinguishing matchers / commands
+# no longer appear in either file.
+assert_not_contains "claude Write|Edit matcher gone"   "$CLAUDE_BODY" 'Write|Edit|MultiEdit'
+assert_not_contains "claude bundled command gone"      "$CLAUDE_BODY" 'x-x plan lint'
+assert_not_contains "codex apply_patch matcher gone"   "$CODEX_BODY"  'apply_patch'
+assert_not_contains "codex Stop bundled command gone"  "$CODEX_BODY"  'x-x plan lint 1>&2'
+
+# ---------- skill remove leaves a user-tweaked variant alone ----------
+#
+# If a user copied one of our bundled records and edited the command (or
+# matcher), the entry no longer deep-equals the bundle. Un-merge must
+# preserve it — the unit of ownership is the leaf record, not the matcher
+# or event key.
+
+case_start "skill remove preserves user-tweaked variant of a bundled record"
+reset_user_home
+PROJ_UNT="$(fresh_project)"
+cd "$PROJ_UNT"
+run_capture "" init --scope project
+cat > "$PROJ_UNT/${CLAUDE_SETTINGS_PATH}" <<'EOF'
+{
+  "hooks": {
+    "PostToolUse": [
+      {"matcher": "Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": "x-x plan lint --verbose"}]}
+    ]
+  }
+}
+EOF
+run_capture "" skill remove --project
+assert_eq "exit 0" "$RUN_RC" "0"
+TWEAKED_BODY="$(cat "$PROJ_UNT/${CLAUDE_SETTINGS_PATH}")"
+assert_contains "tweaked matcher kept" "$TWEAKED_BODY" 'Write|Edit|MultiEdit'
+assert_contains "tweaked command kept" "$TWEAKED_BODY" 'x-x plan lint --verbose'
 
 # ---------- isolation: lazy first-run write keeps foreign content ----------
 #
@@ -725,25 +1075,38 @@ assert_is_symlink "user-scope bundled ${SKILL_X_PLAN_DIR}" "$HOME/${CODEX_SKILLS
 
 # ---------- isolation: init --scope user re-run preserves user edits ----------
 
-case_start "init --scope user re-run preserves edited ${CLAUDE_SETTINGS_FILE} + ${CODEX_HOOKS_FILE}"
+case_start "init --scope user re-run merges edited ${CLAUDE_SETTINGS_FILE} + ${CODEX_HOOKS_FILE}"
 reset_user_home
-cd "$(fresh_project)"
+PROJ_USER_MERGE="$(fresh_project)"
+cd "$PROJ_USER_MERGE"
 run_capture "" init --scope user
 echo '{"USER": "EDIT"}' > "$HOME/${CLAUDE_SETTINGS_PATH}"
 echo '{"USER": "EDIT"}' > "$HOME/${CODEX_HOOKS_PATH}"
+# Even under --scope user, init writes .x-plan/ into cwd — the project
+# gate is keyed on the cwd-local lock regardless of skill scope.
+rm "$PROJ_USER_MERGE/${PLAN_LOCK_PATH}"
 run_capture "" init --scope user
 assert_eq "exit 0" "$RUN_RC" "0"
-assert_eq "user ${CLAUDE_SETTINGS_FILE} preserved" "$(cat "$HOME/${CLAUDE_SETTINGS_PATH}")" '{"USER": "EDIT"}'
-assert_eq "user ${CODEX_HOOKS_FILE} preserved"     "$(cat "$HOME/${CODEX_HOOKS_PATH}")"     '{"USER": "EDIT"}'
+USER_CLAUDE_BODY="$(cat "$HOME/${CLAUDE_SETTINGS_PATH}")"
+USER_CODEX_BODY="$(cat "$HOME/${CODEX_HOOKS_PATH}")"
+# Same contract as the project-scope merge case, but the destination is
+# under $HOME (user-scope install). User key survives + bundle keys land.
+assert_contains "user ${CLAUDE_SETTINGS_FILE} keeps user key" "$USER_CLAUDE_BODY" '"USER": "EDIT"'
+assert_contains "user ${CLAUDE_SETTINGS_FILE} gains fastMode" "$USER_CLAUDE_BODY" '"fastMode": true'
+assert_contains "user ${CLAUDE_SETTINGS_FILE} gains hook"     "$USER_CLAUDE_BODY" 'x-x plan lint'
+assert_contains "user ${CODEX_HOOKS_FILE} keeps user key"     "$USER_CODEX_BODY"  '"USER": "EDIT"'
+assert_contains "user ${CODEX_HOOKS_FILE} gains hook"         "$USER_CODEX_BODY"  'x-x plan lint'
 
 # ---------- isolation: init --scope user re-run keeps sibling skills ----------
 
 case_start "init --scope user re-run keeps user-authored sibling skills"
 reset_user_home
-cd "$(fresh_project)"
+PROJ_USER_SIB="$(fresh_project)"
+cd "$PROJ_USER_SIB"
 run_capture "" init --scope user
 mkdir -p "$HOME/${CLAUDE_SKILLS_REL}/my-custom"
 echo "MINE" > "$HOME/${CLAUDE_SKILLS_REL}/my-custom/SKILL.md"
+rm "$PROJ_USER_SIB/${PLAN_LOCK_PATH}"
 run_capture "" init --scope user
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_is_file    "user-scope sibling survives re-run" "$HOME/${CLAUDE_SKILLS_REL}/my-custom/SKILL.md"
@@ -772,7 +1135,7 @@ assert_contains "hint"       "$RUN_ERR" "x-x init"
 case_start "skill remove --project is a silent no-op when only the scaffold exists"
 reset_user_home
 PROJ_RM_EMPTY="$(fresh_project)"
-mkdir -p "$PROJ_RM_EMPTY/${PLAN_DIR}"
+seed_project_scaffold "$PROJ_RM_EMPTY"
 cd "$PROJ_RM_EMPTY"
 run_capture "" skill remove --project
 assert_eq "exit 0 on empty state" "$RUN_RC" "0"
@@ -790,30 +1153,30 @@ run_capture ""
 second_mtime="$(stat -f %m "$sentinel_path" 2>/dev/null || stat -c %Y "$sentinel_path")"
 assert_eq "mtime unchanged across runs" "$first_mtime" "$second_mtime"
 
-case_start "init --scope project is idempotent across back-to-back runs"
+case_start "init refuses re-run on an initialized project (lock-file marker)"
 reset_user_home
 PROJ_IDEM="$(fresh_project)"
 cd "$PROJ_IDEM"
-# Portable cross-platform tree fingerprint: filename, type marker, and
-# either symlink target or file size. Avoids depending on `shasum` or
-# `sha256sum`, which differ between Debian and macOS.
-tree_fingerprint() {
-  find "$1" \( -type f -o -type l -o -type d \) -print 2>/dev/null | sort | while read -r p; do
-    if [ -L "$p" ]; then
-      printf 'L %s -> %s\n' "$p" "$(readlink "$p")"
-    elif [ -d "$p" ]; then
-      printf 'D %s\n' "$p"
-    else
-      printf 'F %s %s\n' "$p" "$(wc -c <"$p" | tr -d ' ')"
-    fi
-  done
-}
 run_capture "" init --scope project
-snap1="$(tree_fingerprint "$PROJ_IDEM")"
+assert_eq "first init exit 0" "$RUN_RC" "0"
+assert_exists "lock written" "$PROJ_IDEM/${PLAN_LOCK_PATH}"
+# Seed the systems registry with content so we can later verify init
+# never overwrites it on the post-lock-deletion re-run.
+echo "systems:" > "$PROJ_IDEM/${PLAN_SYSTEMS_PATH}"
+echo "  - name: payments" >> "$PROJ_IDEM/${PLAN_SYSTEMS_PATH}"
+systems_before="$(cat "$PROJ_IDEM/${PLAN_SYSTEMS_PATH}")"
 run_capture "" init --scope project
-snap2="$(tree_fingerprint "$PROJ_IDEM")"
-assert_eq "exit 0 second run" "$RUN_RC" "0"
-assert_eq "project tree shape identical after re-init" "$snap1" "$snap2"
+assert_eq "second init refused (exit 2)" "$RUN_RC" "2"
+assert_contains "diagnostic" "$RUN_ERR" "already initialized"
+assert_contains "hint mentions ${PLAN_CONFIG_LOCK}" "$RUN_ERR" "${PLAN_CONFIG_LOCK}"
+
+case_start "init re-runs after lock file deletion, preserving ${PLAN_SYSTEMS_FILE}"
+rm "$PROJ_IDEM/${PLAN_LOCK_PATH}"
+run_capture "" init --scope project
+assert_eq "exit 0 after lock removed" "$RUN_RC" "0"
+assert_exists "lock recreated" "$PROJ_IDEM/${PLAN_LOCK_PATH}"
+systems_after="$(cat "$PROJ_IDEM/${PLAN_SYSTEMS_PATH}")"
+assert_eq "${PLAN_SYSTEMS_FILE} untouched across re-init" "$systems_before" "$systems_after"
 
 # ---------- CLI flag forms ----------
 
@@ -878,7 +1241,7 @@ assert_contains "hint"       "$RUN_ERR" "x-x init"
 
 case_start "x-x plan next-prefix in fresh ${PLAN_DIR} (empty)"
 PROJ_NP_EMPTY="$(fresh_project)"
-mkdir -p "$PROJ_NP_EMPTY/${PLAN_DIR}"
+seed_project_scaffold "$PROJ_NP_EMPTY"
 cd "$PROJ_NP_EMPTY"
 run_capture "" plan next-prefix
 assert_eq "exit 0" "$RUN_RC" "0"
@@ -886,7 +1249,7 @@ assert_eq "first prefix" "$RUN_OUT" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)"
 
 case_start "x-x plan next-prefix with default width"
 PROJ_NP2="$(fresh_project)"
-mkdir -p "$PROJ_NP2/${PLAN_DIR}"
+seed_project_scaffold "$PROJ_NP2"
 touch "$PROJ_NP2/${PLAN_DIR}/$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md" \
       "$PROJ_NP2/${PLAN_DIR}/$(prefix "$DEFAULT_PREFIX_WIDTH" 3)-bar.md"
 cd "$PROJ_NP2"
@@ -896,7 +1259,7 @@ assert_eq "max+1 default width" "$RUN_OUT" "$(prefix "$DEFAULT_PREFIX_WIDTH" 4)"
 
 case_start "x-x plan next-prefix honors ${PLAN_CONFIG_LOCK} prefix_width"
 PROJ_NP3="$(fresh_project)"
-mkdir -p "$PROJ_NP3/${PLAN_DIR}"
+seed_project_scaffold "$PROJ_NP3"
 custom_width=7
 echo "{\"prefix_width\":${custom_width}}" > "$PROJ_NP3/${PLAN_LOCK_PATH}"
 touch "$PROJ_NP3/${PLAN_DIR}/$(prefix "$custom_width" 41)-foo.md"
@@ -913,7 +1276,7 @@ assert_contains "diagnostic" "$RUN_ERR" "takes no arguments"
 
 case_start "x-x plan next-prefix ignores non-matching filenames"
 PROJ_NP4="$(fresh_project)"
-mkdir -p "$PROJ_NP4/${PLAN_DIR}"
+seed_project_scaffold "$PROJ_NP4"
 touch "$PROJ_NP4/${PLAN_DIR}/notes.md" \
       "$PROJ_NP4/${PLAN_DIR}/README" \
       "$PROJ_NP4/${PLAN_DIR}/abc-foo.md" \
@@ -925,7 +1288,7 @@ assert_eq "non-matching ignored" "$RUN_OUT" "$(prefix "$DEFAULT_PREFIX_WIDTH" 8)
 
 case_start "x-x plan next-prefix with only lock file (no plan files)"
 PROJ_NP5="$(fresh_project)"
-mkdir -p "$PROJ_NP5/${PLAN_DIR}"
+seed_project_scaffold "$PROJ_NP5"
 echo "{\"prefix_width\":${DEFAULT_PREFIX_WIDTH}}" > "$PROJ_NP5/${PLAN_LOCK_PATH}"
 cd "$PROJ_NP5"
 run_capture "" plan next-prefix
@@ -934,7 +1297,7 @@ assert_eq "lock-only → first prefix" "$RUN_OUT" "$(prefix "$DEFAULT_PREFIX_WID
 
 case_start "x-x plan next-prefix falls back to default width on malformed lock"
 PROJ_NP6="$(fresh_project)"
-mkdir -p "$PROJ_NP6/${PLAN_DIR}"
+seed_project_scaffold "$PROJ_NP6"
 echo '{not json' > "$PROJ_NP6/${PLAN_LOCK_PATH}"
 cd "$PROJ_NP6"
 run_capture "" plan next-prefix
@@ -943,7 +1306,7 @@ assert_eq "default width on bad lock" "$RUN_OUT" "$(prefix "$DEFAULT_PREFIX_WIDT
 
 case_start "x-x plan next-prefix falls back to default width on zero prefix_width"
 PROJ_NP7="$(fresh_project)"
-mkdir -p "$PROJ_NP7/${PLAN_DIR}"
+seed_project_scaffold "$PROJ_NP7"
 echo '{"prefix_width":0}' > "$PROJ_NP7/${PLAN_LOCK_PATH}"
 cd "$PROJ_NP7"
 run_capture "" plan next-prefix
@@ -952,19 +1315,25 @@ assert_eq "default width on zero" "$RUN_OUT" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1
 
 case_start "x-x plan next-prefix rolls past width digits"
 PROJ_NP8="$(fresh_project)"
-mkdir -p "$PROJ_NP8/${PLAN_DIR}"
-touch "$PROJ_NP8/${PLAN_DIR}/$(prefix "$DEFAULT_PREFIX_WIDTH" 99999)-last.md"
+seed_project_scaffold "$PROJ_NP8"
+# Seed with a prefix that exactly fills DEFAULT_PREFIX_WIDTH (all 9s), so
+# incrementing it overflows the digit budget. With width=4 that's 9999;
+# bump the seed when the constant changes.
+seed_overflow="$(printf '%0*d' "$DEFAULT_PREFIX_WIDTH" 0 | tr '0' '9')"
+overflow_next="$((10 ** DEFAULT_PREFIX_WIDTH))"
+touch "$PROJ_NP8/${PLAN_DIR}/${seed_overflow}-last.md"
 cd "$PROJ_NP8"
 run_capture "" plan next-prefix
 assert_eq "exit 0" "$RUN_RC" "0"
-# 99999+1 = 100000 — fmt %0*d at width 5 prints "100000" (no truncation).
-assert_eq "overflow keeps counting" "$RUN_OUT" "100000"
+# fmt.Printf("%0*d", width, n) does not truncate when n already has
+# more digits than width — so 9999+1 prints as "10000" at width 4.
+assert_eq "overflow keeps counting" "$RUN_OUT" "$overflow_next"
 
 # ---------- plan list ----------
 
 case_start "x-x plan list (empty ${PLAN_DIR})"
 PROJ_PL1="$(fresh_project)"
-mkdir -p "$PROJ_PL1/${PLAN_DIR}"
+seed_project_scaffold "$PROJ_PL1"
 cd "$PROJ_PL1"
 run_capture "" plan list
 assert_eq "exit 0" "$RUN_RC" "0"
@@ -980,7 +1349,7 @@ assert_contains "hint"       "$RUN_ERR" "x-x init"
 
 case_start "x-x plan list emits tab-separated rows sorted by prefix"
 PROJ_PL3="$(fresh_project)"
-mkdir -p "$PROJ_PL3/${PLAN_DIR}"
+seed_project_scaffold "$PROJ_PL3"
 write_plan "$PROJ_PL3/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-bravo.md"   "deprecated" "Billing"
 write_plan "$PROJ_PL3/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-alpha.md"   "valid"      "Auth, Billing"
 write_plan "$PROJ_PL3/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 3)-charlie.md" "superseded" "Auth"
@@ -1027,7 +1396,7 @@ assert_eq "status+system intersection" "$RUN_OUT" \
 
 case_start "x-x plan list warns on malformed frontmatter but keeps siblings"
 PROJ_PL4="$(fresh_project)"
-mkdir -p "$PROJ_PL4/${PLAN_DIR}"
+seed_project_scaffold "$PROJ_PL4"
 broken_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-broken.md"
 ok_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-ok.md"
 echo "not a plan" > "$PROJ_PL4/${PLAN_DIR}/$broken_name"
@@ -1041,7 +1410,7 @@ assert_contains "warning to stderr" "$RUN_ERR" "$broken_name"
 
 case_start "x-x plan list ignores non-matching filenames"
 PROJ_PL5="$(fresh_project)"
-mkdir -p "$PROJ_PL5/${PLAN_DIR}"
+seed_project_scaffold "$PROJ_PL5"
 keep_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-keep.md"
 write_plan "$PROJ_PL5/${PLAN_DIR}" "$keep_name" "valid" "Auth"
 echo "x" > "$PROJ_PL5/${PLAN_DIR}/README.md"
@@ -1071,7 +1440,7 @@ assert_contains "hint"       "$RUN_ERR" "x-x init"
 
 case_start "x-x plan lint happy path"
 PROJ_LN1="$(fresh_project)"
-mkdir -p "$PROJ_LN1/${PLAN_DIR}"
+seed_project_scaffold "$PROJ_LN1"
 write_registry "$PROJ_LN1/${PLAN_DIR}" "Auth Service"
 plan1_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md"
 write_full_plan "$PROJ_LN1/${PLAN_DIR}" "$plan1_name" "valid" "Auth Service" "Auth Service"
@@ -1083,7 +1452,7 @@ assert_contains "summary 1 ok"   "$RUN_ERR" "1 ok, 0 failed"
 
 case_start "x-x plan lint flags bad filename"
 PROJ_LN2="$(fresh_project)"
-mkdir -p "$PROJ_LN2/${PLAN_DIR}"
+seed_project_scaffold "$PROJ_LN2"
 write_registry "$PROJ_LN2/${PLAN_DIR}" "Auth Service"
 write_full_plan "$PROJ_LN2/${PLAN_DIR}" "BAD-NAME.md" "valid" "Auth Service" "Auth Service"
 cd "$PROJ_LN2"
@@ -1093,7 +1462,7 @@ assert_contains "filename finding" "$RUN_OUT" "does not match <prefix>-<slug>.md
 
 case_start "x-x plan lint flags missing frontmatter"
 PROJ_LN3="$(fresh_project)"
-mkdir -p "$PROJ_LN3/${PLAN_DIR}"
+seed_project_scaffold "$PROJ_LN3"
 write_registry "$PROJ_LN3/${PLAN_DIR}" "Auth Service"
 broken_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-broken.md"
 echo "just body, no frontmatter" > "$PROJ_LN3/${PLAN_DIR}/$broken_name"
@@ -1104,7 +1473,7 @@ assert_contains "frontmatter finding" "$RUN_OUT" "missing YAML frontmatter"
 
 case_start "x-x plan lint flags bad status"
 PROJ_LN4="$(fresh_project)"
-mkdir -p "$PROJ_LN4/${PLAN_DIR}"
+seed_project_scaffold "$PROJ_LN4"
 write_registry "$PROJ_LN4/${PLAN_DIR}" "Auth Service"
 write_full_plan "$PROJ_LN4/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md" \
   "bogus" "Auth Service" "Auth Service"
@@ -1115,7 +1484,7 @@ assert_contains "bad status" "$RUN_OUT" "status \"bogus\" is not one of"
 
 case_start "x-x plan lint flags system not in registry"
 PROJ_LN5="$(fresh_project)"
-mkdir -p "$PROJ_LN5/${PLAN_DIR}"
+seed_project_scaffold "$PROJ_LN5"
 write_registry "$PROJ_LN5/${PLAN_DIR}" "Auth Service"
 write_full_plan "$PROJ_LN5/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md" \
   "valid" "Ghost Service" "Ghost Service"
@@ -1126,7 +1495,7 @@ assert_contains "system finding"  "$RUN_OUT" "declared system \"Ghost Service\" 
 
 case_start "x-x plan lint flags dangling supersedes"
 PROJ_LN6="$(fresh_project)"
-mkdir -p "$PROJ_LN6/${PLAN_DIR}"
+seed_project_scaffold "$PROJ_LN6"
 write_registry "$PROJ_LN6/${PLAN_DIR}" "Auth Service"
 super_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md"
 cat > "$PROJ_LN6/${PLAN_DIR}/$super_name" <<EOF
@@ -1152,7 +1521,7 @@ assert_contains "supersedes finding" "$RUN_OUT" "supersedes \"00099-nope\""
 
 case_start "x-x plan lint flags EARS-systems mismatch"
 PROJ_LN7="$(fresh_project)"
-mkdir -p "$PROJ_LN7/${PLAN_DIR}"
+seed_project_scaffold "$PROJ_LN7"
 write_registry "$PROJ_LN7/${PLAN_DIR}" "Auth Service,Billing Service"
 # Declares Auth but task names Billing — both diff directions fire.
 write_full_plan "$PROJ_LN7/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md" \

@@ -127,6 +127,32 @@ var agentTargets = []agentTarget{
 // a constant because init.go and the on-disk write path both depend on it.
 const skillsSubdir = "skills"
 
+// configJSONExt is the extension `installAgentConfig` keys on to decide
+// between two re-run policies for a destination that already exists:
+//
+//	`.json` files → deep-merge bundled into existing (user scalars win,
+//	  bundled keys added when missing, array entries unioned).
+//	everything else → skip with a "skipping" log so user edits survive.
+//
+// Today every bundled config file (Claude `settings.json`, Codex
+// `hooks.json`) is JSON, so the merge path is the common case. The
+// constant lives here so adding a future TOML/YAML merger only needs
+// a new sibling and a tiny installAgentConfig branch.
+const configJSONExt = ".json"
+
+// configHooksKey is the top-level JSON property inside every bundled
+// per-agent config file (`agents/claude/settings.json`,
+// `agents/codex/hooks.json`) under which x-x's shipped hook records
+// live. The files themselves are user-owned end-to-end; what x-x owns
+// are individual leaf records inside the arrays nested under this key.
+//
+// `x-x skill remove` consults this constant to scope its un-merge:
+// only entries underneath this property are candidates for subtraction,
+// and even then only when they deep-equal a record in the currently
+// bundled file. Renaming the key in a future config schema = update
+// this constant + the matching property in `agents/<agent>/*.json`.
+const configHooksKey = "hooks"
+
 // Plan-tooling defaults pinned into .x-plan/_config.lock by
 // writePlanScaffold during `x-x init`. The Go commands (`x-x plan next-prefix`,
 // `x-x plan list`) read `prefix_width` from the lock file directly; the
@@ -136,8 +162,8 @@ const skillsSubdir = "skills"
 // to change behavior going forward without disturbing prior installs.
 const (
 	// defaultPrefixWidth is the zero-padded width of plan-file numeric
-	// prefixes (e.g. width 5 → "00001-foo.md"). Bump to widen prefixes.
-	defaultPrefixWidth = 5
+	// prefixes (e.g. width 4 → "0001-foo.md"). Bump to widen prefixes.
+	defaultPrefixWidth = 4
 
 	// defaultMaxPlanLines is the line-count ceiling lint-plans.py enforces
 	// on a single plan file (frontmatter + body, inclusive).
@@ -145,7 +171,15 @@ const (
 
 	// defaultPlanReviewPer controls whether the planner pauses for review
 	// after every "task" or after every "plan" (other valid value).
-	defaultPlanReviewPer = "task"
+	defaultPlanReviewPer = planReviewPerTask
+
+	// planReviewPerTask / planReviewPerPlan are the two valid values for
+	// the plan_review_per key. Named constants so the init prompt, flag
+	// validator, and downstream consumers all reference the same string —
+	// typo-resistant by construction. Add a new value here, then expose it
+	// in the picker and the --plan-review-per validator.
+	planReviewPerTask = "task"
+	planReviewPerPlan = "plan"
 )
 
 // skipFromEmbed lists embed-relative paths (forward-slash, relative to
@@ -162,7 +196,7 @@ var skipFromEmbed = map[string]bool{
 // renaming a skill is then a one-line edit here, plus the matching rename
 // of the directory under agents/skills/ and any references inside the
 // embedded markdown/json content. Non-Go consumers (scripts/e2e_test.sh,
-// docs/public/usage.md) still hold literal strings; keep them in sync.
+// docs/public/reference.md) still hold literal strings; keep them in sync.
 const (
 	skillSharedDir = "_x-x_shared"
 	skillXPlanDir  = "x-plan"

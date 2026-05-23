@@ -5,7 +5,7 @@ Welcome. This directory holds the public-facing documentation for **x-x by Stack
 ## Sections
 
 - [Getting Started](getting-started.md) — install and run x-x in under a minute.
-- [Usage](usage.md) — flags, examples, and exit codes.
+- [Reference](reference.md) — flags, examples, and exit codes.
 
 ## Project links
 

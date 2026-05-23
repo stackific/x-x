@@ -406,9 +406,12 @@ func runPlanLint(args []string) {
 	maxLines := loadMaxPlanLines(planDir)
 	registryPath := filepath.Join(planDir, planSystemsFile)
 	registry := parseRegistryNames(registryPath)
-	if len(registry) == 0 {
-		fmt.Fprintf(os.Stderr, "warning: %s is missing or has no systems; system checks will fail\n", registryPath)
-	}
+	// No pre-flight warning when the registry is empty or missing: the
+	// project gate now keys solely on the lock file, so a project where
+	// the user never created (or has since removed) _data_systems.yaml is
+	// still legitimate. parseRegistryNames returns a nil map in that case;
+	// plan files that reference a system will surface their own per-file
+	// finding via lintPlanFile.
 
 	// Glob only errors on bad pattern; ours is fixed. Missing planDir → empty.
 	files, _ := filepath.Glob(filepath.Join(planDir, "*"+planFileExt))

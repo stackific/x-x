@@ -10,11 +10,13 @@ description: Plan-first workflow for this repo. Loads the shared planning contex
 
 Load context per **Context to load** in `.claude/skills/_x-x_shared/_shared_plan_first.md`. If any required file is missing, STOP and report.
 
+Additionally, read `.x-plan/_config.lock` and extract `max_plan_lines` (integer). If the lock file is missing, STOP and tell the user this directory isn't set up for x-x yet — they need to run `x-x init`. If the file exists but the key is absent or non-positive, fall back to `30` (matches `x-x plan lint`). Remember the resolved value as the plan line cap for the rest of this turn.
+
 ## 2. Clarify only when structurally underspecified (skip by default)
 
 Skip this step by default. Trigger it only when the request is genuinely underspecified — ambiguous scope, a system that would need to be proposed to the registry, or a real technology choice with no obvious default. Routine plans don't need clarification.
 
-When clarification IS needed, ask the user all questions in a single `AskUserQuestion` call (the harness's structured-question tool — options with header chips, optional previews). The tool caps at 4 questions per call — sufficient because plans are bounded at 30 lines; needing more than 4 means the scope is too big and the request should split. Each split spec gets its own `AskUserQuestion` call. Never ask in plain prose. Do not write the plan in the same turn as the questions.
+When clarification IS needed, ask the user all questions in a single `AskUserQuestion` call (the harness's structured-question tool — options with header chips, optional previews). The tool caps at 4 questions per call — sufficient because plans are bounded at `max_plan_lines` (from `.x-plan/_config.lock`, default 30); needing more than 4 means the scope is too big and the request should split. Each split spec gets its own `AskUserQuestion` call. Never ask in plain prose. Do not write the plan in the same turn as the questions.
 
 ## 2a. Check for overlap with valid plans
 
@@ -46,7 +48,7 @@ If the request covers separable scopes, you may split it into multiple specs —
 
 ### Hard rules
 
-- Under 30 lines total.
+- Under `max_plan_lines` total (resolved in Step 1 from `.x-plan/_config.lock`; default 30). Drafts that exceed the cap will fail `x-x plan lint`.
 - Sections only, in this order:
   - `## Goal` — one paragraph.
   - `## Approach` — bullets only, no prose paragraphs.

@@ -16,6 +16,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+
+	"github.com/charmbracelet/huh"
+	"github.com/mattn/go-isatty"
 )
 
 // initScope is the user's choice between "this project" and "all projects".
@@ -47,16 +50,31 @@ func runInit(args []string) {
 	// bypassing the interactive picker. Comma-separated, accumulates across
 	// repeated occurrences. Valid keys come from `agentTargets[*].key`.
 	var agentsFlag stringSliceFlag
-	flags.Var(&agentsFlag, "agents", "comma-separated agent keys (e.g. claude,codex) — skip the interactive picker")
+	flags.Var(&agentsFlag, "agents", "comma-separated agent keys (e.g. claude,codex) — skip the agents picker")
 	// --scope makes the interactive prompt skippable for CI / scripted use.
 	// Accepts "project" or "user"; any other value is rejected explicitly.
 	// Leave blank to fall back to the interactive flow.
-	scopeFlag := flags.String("scope", "", "project|user — skip the interactive prompt")
+	scopeFlag := flags.String("scope", "", "project|user — skip the scope picker")
+	// --prefix-width / --max-plan-lines / --plan-review-per are the
+	// non-interactive twins of the three plan-tooling prompts. Pass them
+	// (alongside --agents and --scope) to drive `x-x init` end-to-end
+	// without touching the wizard or line prompts.
+	prefixWidthFlag := flags.Int("prefix-width", 0, "zero-padded width for plan prefixes (positive integer; default seeds the project default)")
+	maxPlanLinesFlag := flags.Int("max-plan-lines", 0, "line-count ceiling enforced by `x-x plan lint` (positive integer; default seeds the project default)")
+	planReviewPerFlag := flags.String("plan-review-per", "", "task|plan — pause for review after every task or every plan")
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage: x-x init [--agents claude,codex] [--scope project|user]")
+		fmt.Fprintln(os.Stderr, "             [--prefix-width N] [--max-plan-lines N] [--plan-review-per task|plan]")
 		fmt.Fprintln(os.Stderr, "  Installs the bundled agent skill library for Claude Code and Codex CLI.")
 	}
 	_ = flags.Parse(args)
+
+	// Validate integer flags AS PASSED — the zero-value "unset" encoding
+	// would otherwise let `--prefix-width=-1` or `--max-plan-lines=0` slip
+	// through the validator and silently fall back to defaults. flag.Visit
+	// only walks flags that were actually set on the command line, which is
+	// the exact set we want to gate.
+	validateInitIntFlags(flags, prefixWidthFlag, maxPlanLinesFlag)
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -64,25 +82,26 @@ func runInit(args []string) {
 		// We can't do anything useful without it — bail.
 		exitErr(err)
 	}
+	// Refuse re-init on a fully-initialized project. checkProject is the
+	// same gate `requireProject` uses, so a directory that passes the
+	// project-scope gate elsewhere triggers this refusal here. Re-running
+	// init on a fresh / partially-initialized directory still works,
+	// which is what writePlanScaffold's writeIfAbsent semantics rely on.
+	// Gate runs AFTER flag validation so a real usage error (bad flag,
+	// stray positional) still wins the diagnostic.
+	if checkProject() == nil {
+		fmt.Fprintln(os.Stderr, projectAlreadyInitBanner)
+		os.Exit(2)
+	}
 	fmt.Printf("Setting up x-x in %s\n\n", cwd)
 
-	// One buffered reader shared by every prompt that may run this turn.
-	// Wrapping os.Stdin inside each prompt function would let the first
-	// prompt's read-ahead buffer eat bytes the next prompt still needs.
-	stdinR := bufio.NewReader(os.Stdin)
-
-	// Resolve agents FIRST so the user picks WHAT before WHERE. Keeping
-	// the question order stable ("which agents → which scope") matches
-	// the order the install loop consumes them in.
-	selectedAgents, err := resolveAgents(agentsFlag, stdinR)
-	if err != nil {
-		exitErr(err)
-	}
-
-	// Resolve scope: --scope wins if set, otherwise prompt. Keeping these
-	// two branches inside resolveScope makes the runInit body smaller and
-	// gives us one place to extend (e.g. honoring $X_X_SCOPE) later.
-	scope, err := resolveScope(*scopeFlag, stdinR)
+	cfg, err := resolveInitConfig(initFlags{
+		agents:        agentsFlag,
+		scope:         *scopeFlag,
+		prefixWidth:   *prefixWidthFlag,
+		maxPlanLines:  *maxPlanLinesFlag,
+		planReviewPer: *planReviewPerFlag,
+	}, os.Stdin, stdinIsTTY(os.Stdin))
 	if err != nil {
 		exitErr(err)
 	}
@@ -111,7 +130,7 @@ func runInit(args []string) {
 		return
 	}
 
-	scopeRoot, err := scopeRootFor(scope, cwd)
+	scopeRoot, err := scopeRootFor(cfg.scope, cwd)
 	if err != nil {
 		exitErr(err)
 	}
@@ -124,24 +143,24 @@ func runInit(args []string) {
 	// Developer Mode or admin elevation by default. Project scope is
 	// excluded because the resulting dir often gets committed to git;
 	// symlinks pointing into ~/.x-x/ would break for teammates.
-	useSymlink := scope == scopeUser && runtime.GOOS != "windows"
+	useSymlink := cfg.scope == scopeUser && runtime.GOOS != "windows"
 	strategy := "copy"
 	if useSymlink {
 		strategy = "symlink"
 	}
-	fmt.Printf("Installing %d skill(s) for %d agent(s) (%s)...\n", len(skills), len(selectedAgents), strategy)
+	fmt.Printf("Installing %d skill(s) for %d agent(s) (%s)...\n", len(skills), len(cfg.agents), strategy)
 
 	// Walk the selected subset of the registry. Agents not chosen at the
 	// picker (or omitted from --agents) are silently skipped — their
 	// install dirs are left untouched.
-	for i := range selectedAgents {
-		installForTarget(&selectedAgents[i], skills, scopeRoot, skillsSource, agentsRoot, useSymlink)
+	for i := range cfg.agents {
+		installForTarget(&cfg.agents[i], skills, scopeRoot, skillsSource, agentsRoot, useSymlink)
 	}
 
 	// .x-plan/ scaffold is written after skills so it's the last thing the
 	// user sees. Failures here are non-fatal — they downgrade to a warning
 	// because the skill install (the primary purpose) already succeeded.
-	if err := writePlanScaffold(cwd); err != nil {
+	if err := writePlanScaffold(cwd, cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
 	}
 
@@ -153,17 +172,314 @@ func runInit(args []string) {
 	fmt.Printf("\nTip: commit %s/ to git so your team shares plan history.\n", planDir)
 }
 
+// validateInitIntFlags rejects non-positive --prefix-width / --max-plan-lines
+// values AS PASSED. The zero-value "unset" encoding would otherwise let
+// `--prefix-width=-1` or `--max-plan-lines=0` slip through the validator
+// and silently fall back to defaults. flag.Visit only walks flags that
+// were actually set on the command line, which is the exact set we want
+// to gate.
+func validateInitIntFlags(flags *flag.FlagSet, prefixWidth, maxPlanLines *int) {
+	flags.Visit(func(fl *flag.Flag) {
+		switch fl.Name {
+		case "prefix-width":
+			if *prefixWidth <= 0 {
+				exitErr(fmt.Errorf("--prefix-width must be positive, got %d", *prefixWidth))
+			}
+		case "max-plan-lines":
+			if *maxPlanLines <= 0 {
+				exitErr(fmt.Errorf("--max-plan-lines must be positive, got %d", *maxPlanLines))
+			}
+		}
+	})
+}
+
+// initFlags bundles the raw CLI flag values for `x-x init`. Each field is
+// "unset"-encoded with its zero value (empty string, nil slice, 0 int) so
+// resolveInitConfig can distinguish "user passed a flag" from "user left
+// it for the prompt to fill in".
+type initFlags struct {
+	agents        []string // raw --agents values (empty = ask)
+	scope         string   // raw --scope value ("" = ask)
+	prefixWidth   int      // 0 = ask
+	maxPlanLines  int      // 0 = ask
+	planReviewPer string   // "" = ask
+}
+
+// initConfig is the post-resolution, fully-typed set of choices the rest
+// of runInit needs. Every field is guaranteed valid by the time
+// resolveInitConfig returns nil.
+type initConfig struct {
+	agents        []agentTarget
+	scope         initScope
+	prefixWidth   int
+	maxPlanLines  int
+	planReviewPer string
+}
+
+// resolveInitConfig collects every value runInit needs to perform the
+// install. Three branches:
+//
+//  1. Every flag set → return the typed config directly, never prompt.
+//     This is the true non-interactive path (CI / scripted installs).
+//  2. Stdin is a TTY → run the huh wizard, pre-populating any flag values
+//     the user already passed. The wizard supports back-navigation between
+//     groups (Shift+Tab) so the user can revise prior selections before
+//     final submission.
+//  3. Otherwise → run line prompts for the unset values. Keeps
+//     `printf "..." | x-x init` working in headless / piped contexts
+//     (CI, AGENTS.md test cases).
+//
+// `useTUI` is a parameter (rather than computed internally) so tests can
+// pin the line-prompt branch without needing a real terminal.
+func resolveInitConfig(f initFlags, in io.Reader, useTUI bool) (initConfig, error) {
+	if f.complete() {
+		return f.toConfig()
+	}
+	if useTUI {
+		return runHuhWizard(f)
+	}
+	return runLinePrompts(f, in)
+}
+
+// complete reports whether every field is set; used by resolveInitConfig
+// to short-circuit the prompt path. "Set" means a non-zero value — see
+// the field-level comments on initFlags for the encoding.
+func (f initFlags) complete() bool {
+	return len(f.agents) > 0 &&
+		f.scope != "" &&
+		f.prefixWidth > 0 &&
+		f.maxPlanLines > 0 &&
+		f.planReviewPer != ""
+}
+
+// toConfig converts a fully-populated initFlags into the typed initConfig,
+// returning a usage-style error if any value fails validation. Only called
+// from the all-flags-set branch of resolveInitConfig.
+func (f initFlags) toConfig() (initConfig, error) {
+	agents, err := resolveAgentsFromKeys(f.agents)
+	if err != nil {
+		return initConfig{}, err
+	}
+	scope, err := parseScope(f.scope)
+	if err != nil {
+		return initConfig{}, err
+	}
+	review, err := parsePlanReviewPer(f.planReviewPer)
+	if err != nil {
+		return initConfig{}, err
+	}
+	if f.prefixWidth <= 0 {
+		return initConfig{}, fmt.Errorf("--prefix-width must be positive, got %d", f.prefixWidth)
+	}
+	if f.maxPlanLines <= 0 {
+		return initConfig{}, fmt.Errorf("--max-plan-lines must be positive, got %d", f.maxPlanLines)
+	}
+	return initConfig{
+		agents:        agents,
+		scope:         scope,
+		prefixWidth:   f.prefixWidth,
+		maxPlanLines:  f.maxPlanLines,
+		planReviewPer: review,
+	}, nil
+}
+
+// runLinePrompts is the non-TTY branch: for each unset field on `f`, ask
+// the matching line prompt against `in`. Values supplied via flag are
+// passed through verbatim (only validated). One buffered reader is shared
+// across every prompt so read-ahead does not eat bytes the next prompt
+// still needs.
+func runLinePrompts(f initFlags, in io.Reader) (initConfig, error) {
+	r := bufReader(in)
+	cfg := initConfig{
+		prefixWidth:   f.prefixWidth,
+		maxPlanLines:  f.maxPlanLines,
+		planReviewPer: f.planReviewPer,
+	}
+	var err error
+
+	// agents + scope already have flag-vs-prompt resolvers; reuse them so
+	// the "flag wins, else ask" rule lives in exactly one place per field.
+	if cfg.agents, err = resolveAgents(f.agents, r); err != nil {
+		return initConfig{}, err
+	}
+	if cfg.scope, err = resolveScope(f.scope, r); err != nil {
+		return initConfig{}, err
+	}
+
+	if cfg.prefixWidth <= 0 {
+		cfg.prefixWidth, err = promptPrefixWidth(r)
+		if err != nil {
+			return initConfig{}, err
+		}
+	}
+
+	if cfg.maxPlanLines <= 0 {
+		cfg.maxPlanLines, err = promptMaxPlanLines(r)
+		if err != nil {
+			return initConfig{}, err
+		}
+	}
+
+	if cfg.planReviewPer == "" {
+		cfg.planReviewPer, err = promptPlanReviewPer(r)
+	} else {
+		cfg.planReviewPer, err = parsePlanReviewPer(cfg.planReviewPer)
+	}
+	if err != nil {
+		return initConfig{}, err
+	}
+
+	return cfg, nil
+}
+
+// runHuhWizard is the TTY branch: render a multi-step huh.Form, pre-
+// populating each field from the matching flag (or the project default
+// when the flag is unset). Users can revise prior selections at any time
+// by pressing Shift+Tab to move backwards between groups; Enter on the
+// final group submits.
+func runHuhWizard(f initFlags) (initConfig, error) {
+	selectedAgentKeys := append([]string(nil), f.agents...)
+	if len(selectedAgentKeys) == 0 {
+		selectedAgentKeys = make([]string, 0, len(agentTargets))
+		for _, t := range agentTargets {
+			selectedAgentKeys = append(selectedAgentKeys, t.key)
+		}
+	}
+	scope := scopeProject
+	if f.scope == "user" {
+		scope = scopeUser
+	}
+	prefixWidth := defaultPrefixWidth
+	if f.prefixWidth > 0 {
+		prefixWidth = f.prefixWidth
+	}
+	maxPlanLines := defaultMaxPlanLines
+	if f.maxPlanLines > 0 {
+		maxPlanLines = f.maxPlanLines
+	}
+	planReviewPer := defaultPlanReviewPer
+	if f.planReviewPer != "" {
+		planReviewPer = f.planReviewPer
+	}
+
+	// huh's Input value bindings are strings; the integer fields use
+	// dedicated string vars and get parsed back after the form returns.
+	prefixWidthStr := strconv.Itoa(prefixWidth)
+	maxPlanLinesStr := strconv.Itoa(maxPlanLines)
+
+	agentOpts := make([]huh.Option[string], len(agentTargets))
+	for i, t := range agentTargets {
+		agentOpts[i] = huh.NewOption(t.name, t.key)
+	}
+
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewMultiSelect[string]().
+				Title("Which agents should be installed?").
+				Description("Space toggles a row. Defaults to every registered agent.").
+				Options(agentOpts...).
+				Value(&selectedAgentKeys).
+				Validate(func(v []string) error {
+					if len(v) == 0 {
+						return fmt.Errorf("pick at least one agent")
+					}
+					return nil
+				}),
+		),
+		huh.NewGroup(
+			huh.NewSelect[initScope]().
+				Title("Where should agent skills be installed?").
+				Options(
+					huh.NewOption("This project only", scopeProject),
+					huh.NewOption("All my projects (user scope)", scopeUser),
+				).
+				Value(&scope),
+		),
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Prefix width for plan files").
+				Description("Zero-padded width for plan filenames (e.g. width 4 → 0001-foo.md). Higher values give more headroom before plan numbers run out.").
+				Value(&prefixWidthStr).
+				Validate(validatePositiveInt),
+		),
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Maximum lines per plan").
+				Description("Keeps AI agents on a short leash: forces them to split sprawling work into smaller, reviewable plans.").
+				Value(&maxPlanLinesStr).
+				Validate(validatePositiveInt),
+		),
+		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Pause for review after every…").
+				Description("`task` — review each EARS criterion as the planner finishes it (tight loop, more interruptions).  `plan` — review at the end of each plan (looser loop, larger diffs).").
+				Options(
+					huh.NewOption(planReviewPerTask+" — tight feedback loop", planReviewPerTask),
+					huh.NewOption(planReviewPerPlan+" — review only at plan boundaries", planReviewPerPlan),
+				).
+				Value(&planReviewPer),
+		),
+	)
+
+	if err := form.Run(); err != nil {
+		return initConfig{}, err
+	}
+
+	pw, err := strconv.Atoi(strings.TrimSpace(prefixWidthStr))
+	if err != nil || pw <= 0 {
+		return initConfig{}, fmt.Errorf("invalid prefix-width from wizard: %q", prefixWidthStr)
+	}
+	ml, err := strconv.Atoi(strings.TrimSpace(maxPlanLinesStr))
+	if err != nil || ml <= 0 {
+		return initConfig{}, fmt.Errorf("invalid max-plan-lines from wizard: %q", maxPlanLinesStr)
+	}
+	agents, err := resolveAgentsFromKeys(selectedAgentKeys)
+	if err != nil {
+		return initConfig{}, err
+	}
+	return initConfig{
+		agents:        agents,
+		scope:         scope,
+		prefixWidth:   pw,
+		maxPlanLines:  ml,
+		planReviewPer: planReviewPer,
+	}, nil
+}
+
+// validatePositiveInt is the huh.Input validator shared by the
+// prefix-width and max-plan-lines fields. Strings only — caller parses
+// the int after form.Run returns.
+func validatePositiveInt(s string) error {
+	n, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil {
+		return fmt.Errorf("must be an integer")
+	}
+	if n <= 0 {
+		return fmt.Errorf("must be positive")
+	}
+	return nil
+}
+
+// stdinIsTTY reports whether the given file (typically os.Stdin) is
+// attached to a terminal. The huh wizard requires a real terminal;
+// piped / redirected stdin falls through to the line-prompt branch.
+func stdinIsTTY(f *os.File) bool {
+	return isatty.IsTerminal(f.Fd())
+}
+
 // writePlanScaffold creates the project-local .x-plan/ directory and seeds
 // the two files that the plan tooling expects to find on disk:
 //
 //	_data_systems.yaml — empty placeholder; populated by the user as systems are added
-//	_config.lock  — pinned plan-tooling defaults (prefix_width, etc.)
+//	_config.lock  — plan-tooling pins (prefix_width, max_plan_lines, plan_review_per)
 //
 // Both files are only written when ABSENT so existing content survives
 // re-runs. _config.lock specifically acts as a pin: re-running init
 // never refreshes it, matching the conventional lock-file semantics
-// (Cargo.lock, package-lock.json, etc.).
-func writePlanScaffold(cwd string) error {
+// (Cargo.lock, package-lock.json, etc.) — the values stored come from
+// cfg, which carries either the user's wizard / flag choices or the
+// project defaults.
+func writePlanScaffold(cwd string, cfg initConfig) error {
 	dir := filepath.Join(cwd, planDir)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create %s: %w", dir, err)
@@ -180,9 +496,9 @@ func writePlanScaffold(cwd string) error {
 		MaxPlanLines  int    `json:"max_plan_lines"`
 		PlanReviewPer string `json:"plan_review_per"`
 	}{
-		PrefixWidth:   defaultPrefixWidth,
-		MaxPlanLines:  defaultMaxPlanLines,
-		PlanReviewPer: defaultPlanReviewPer,
+		PrefixWidth:   cfg.prefixWidth,
+		MaxPlanLines:  cfg.maxPlanLines,
+		PlanReviewPer: cfg.planReviewPer,
 	}
 	body, err := json.MarshalIndent(lock, "", "  ")
 	if err != nil {
@@ -244,25 +560,47 @@ func installForTarget(t *agentTarget, skills []string, scopeRoot, skillsSource, 
 		return
 	}
 	configDest := filepath.Join(scopeRoot, t.configRel)
-	if err := installAgentConfig(configSource, configDest, useSymlink); err != nil {
+	if err := installAgentConfig(configSource, configDest); err != nil {
 		fmt.Fprintf(os.Stderr, "    config: %v\n", err)
 	}
 }
 
 // resolveScope picks the install scope from either an explicit --scope flag
 // (the non-interactive path used by CI / scripted callers) or the interactive
-// prompt. Validation of the flag value is done here so the prompt path stays
-// untouched.
+// prompt. Validation of the flag value is delegated to parseScope so the
+// flag and the all-flags branch of resolveInitConfig share one validator.
 func resolveScope(flagValue string, in io.Reader) (initScope, error) {
-	switch flagValue {
-	case "":
+	if flagValue == "" {
 		return promptScope(in)
+	}
+	return parseScope(flagValue)
+}
+
+// parseScope is the canonical string → initScope mapper. Used by both
+// resolveScope (legacy flag path) and initFlags.toConfig (all-flags
+// non-interactive path) so the accepted vocabulary lives in one place.
+func parseScope(s string) (initScope, error) {
+	switch s {
 	case "project":
 		return scopeProject, nil
 	case "user":
 		return scopeUser, nil
 	default:
-		return 0, fmt.Errorf("invalid --scope: %q (expected project or user)", flagValue)
+		return 0, fmt.Errorf("invalid --scope: %q (expected project or user)", s)
+	}
+}
+
+// parsePlanReviewPer is the canonical validator for the plan_review_per
+// value, accepted by both --plan-review-per and the line prompt. Returning
+// the input unchanged on success keeps callers honest that the only thing
+// the value passes through is the allowlist check.
+func parsePlanReviewPer(s string) (string, error) {
+	switch s {
+	case planReviewPerTask, planReviewPerPlan:
+		return s, nil
+	default:
+		return "", fmt.Errorf("invalid --plan-review-per: %q (expected %s or %s)",
+			s, planReviewPerTask, planReviewPerPlan)
 	}
 }
 
@@ -399,6 +737,71 @@ func allAgents() []agentTarget {
 	return out
 }
 
+// promptPrefixWidth reads one line from `in` and parses it as the
+// zero-padded plan-prefix width. Empty input (blank line / EOF before
+// any byte) accepts the project default so headless callers that pipe
+// the older two-prompt-only inputs continue to work after this prompt
+// joined the sequence.
+func promptPrefixWidth(in io.Reader) (int, error) {
+	fmt.Println("Prefix width for plan files")
+	fmt.Println("  Zero-padded width for plan filenames (e.g. width 4 → 0001-foo.md).")
+	fmt.Println("  Higher = more headroom before plan numbers run out.")
+	fmt.Printf("Choose [default %d]: ", defaultPrefixWidth)
+	return readPositiveIntLine(in, defaultPrefixWidth, "prefix-width")
+}
+
+// promptMaxPlanLines reads one line from `in` and parses it as the plan
+// line-count cap. Same default-on-empty semantics as promptPrefixWidth.
+// The cap is what `x-x plan lint` enforces — tight values keep AI agents
+// from sprawling, looser values let well-scoped plans breathe.
+func promptMaxPlanLines(in io.Reader) (int, error) {
+	fmt.Println("Maximum lines per plan")
+	fmt.Println("  Keeps AI agents on a short leash:")
+	fmt.Println("  forces them to split sprawling work into smaller, reviewable plans.")
+	fmt.Printf("Choose [default %d]: ", defaultMaxPlanLines)
+	return readPositiveIntLine(in, defaultMaxPlanLines, "max-plan-lines")
+}
+
+// promptPlanReviewPer reads one line from `in` and parses it as the
+// review cadence: "1" → task, "2" → plan. Empty input accepts the
+// default (task), matching the empty-line-defaults convention used by
+// the sibling prompts.
+func promptPlanReviewPer(in io.Reader) (string, error) {
+	fmt.Println("Pause for review after every…")
+	fmt.Printf("  1) %s — review each EARS criterion as the planner finishes it (default)\n", planReviewPerTask)
+	fmt.Printf("  2) %s — review only at plan boundaries (looser loop, larger diffs)\n", planReviewPerPlan)
+	fmt.Print("Choose [1/2, default 1]: ")
+	line, err := bufReader(in).ReadString('\n')
+	if err != nil && line == "" {
+		return defaultPlanReviewPer, nil
+	}
+	switch strings.TrimSpace(line) {
+	case "", "1":
+		return planReviewPerTask, nil
+	case "2":
+		return planReviewPerPlan, nil
+	default:
+		return "", fmt.Errorf("invalid plan-review-per choice: %q (expected 1 or 2)", strings.TrimSpace(line))
+	}
+}
+
+// readPositiveIntLine is the shared helper behind promptPrefixWidth and
+// promptMaxPlanLines: read one line, trim, accept default on empty, parse
+// as a positive int otherwise. `name` is included in the error message
+// so the user can tell which prompt failed.
+func readPositiveIntLine(in io.Reader, def int, name string) (int, error) {
+	line, _ := bufReader(in).ReadString('\n')
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return def, nil
+	}
+	n, err := strconv.Atoi(line)
+	if err != nil || n <= 0 {
+		return 0, fmt.Errorf("invalid %s: %q (expected positive integer)", name, line)
+	}
+	return n, nil
+}
+
 // bufReader returns in unchanged if it's already a *bufio.Reader; otherwise
 // it wraps it in a fresh one. Lets back-to-back prompts share a single
 // buffered reader (so one's read-ahead doesn't swallow the next's input)
@@ -505,49 +908,6 @@ func copyTree(src, dest string) error {
 	})
 }
 
-// installAgentConfig walks src (e.g. ~/.x-x/agents/claude/) and installs
-// each file under dest (e.g. ~/.claude/) preserving the relative path.
-// Files that already exist at the destination are left alone so user
-// customizations aren't trampled — this is the explicit divergence from
-// skills, where x-x-owned dirs are overwritten on re-run.
-//
-// Rationale: config files (settings.json etc.) are often hand-edited
-// by users. There's no marker pattern that works for individual files,
-// so the conservative default is "don't touch if present". To refresh
-// a config file, the user manually deletes it and re-runs init.
-func installAgentConfig(src, dest string, useSymlink bool) error {
-	if err := os.MkdirAll(dest, 0o700); err != nil {
-		return err
-	}
-	return filepath.WalkDir(src, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.IsDir() {
-			// Walk visits dirs but we only act on files — the MkdirAll
-			// below covers any nested directories that need to be created.
-			return nil
-		}
-		rel, err := filepath.Rel(src, path)
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(dest, rel)
-		// "Skip if exists" — see function comment for why.
-		if _, err := os.Lstat(target); err == nil {
-			fmt.Fprintf(os.Stderr, "    config %s: exists, skipping\n", rel)
-			return nil
-		}
-		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
-			return err
-		}
-		if useSymlink {
-			return os.Symlink(path, target) // #nosec G122 -- walking ~/.x-x/agents/, which we materialize ourselves with no foreign symlinks.
-		}
-		return copyFile(path, target)
-	})
-}
-
 // copyFile copies one regular file from src to dest. The named-return
 // pattern lets the deferred Close on dest promote a flush error into the
 // returned error, which matters because some filesystems only report
@@ -589,33 +949,52 @@ func exitErr(err error) {
 	os.Exit(1)
 }
 
-// checkProject reports whether the current working directory looks like
-// an x-x project — concretely, whether planDir (.x-plan/) exists as a
-// directory beneath cwd. Returns nil when it does, an explanatory error
-// otherwise. Separated from requireProject so unit tests can exercise
-// the check without exiting the process.
+// notProjectBanner is the user-facing diagnostic shared by every project
+// gate. Deliberately does NOT name any of the on-disk files we check for:
+// users only need to know the directory isn't initialized and that
+// `x-x init` is the fix. Keeping the message uniform across every
+// command means the failure mode is instantly recognizable.
+const notProjectBanner = "error: not an x-x project — run `x-x init` to initialize the current directory first."
+
+// projectAlreadyInitBanner is the diagnostic `x-x init` prints when the
+// current directory already passes checkProject. Naming planDir is OK
+// here (unlike notProjectBanner) because the user is being told what to
+// delete to retry — a path is the actionable answer, not a leak.
+const projectAlreadyInitBanner = "error: x-x project already initialized in this directory.\n\nTip: delete `" + planDir + "/_config.lock` and run `x-x skill remove --project` to re-init from scratch."
+
+// checkProject reports whether the current working directory is an
+// initialized x-x project. The contract is a single on-disk marker:
+//
+//	planDir/planConfigLockFile (the plan-tooling lock pin)
+//
+// Missing → not an initialized project. Other files under planDir
+// (the systems registry, plan files) are not required by the gate.
+// Keying solely on the lock file is what makes the documented "delete
+// the lock file to re-init" flow work: the user can opt back into a
+// fresh init without losing plans or the systems registry. The function
+// deliberately returns a generic `not an x-x project` error rather than
+// naming the missing file so the diagnostic stays uniform with the
+// banner requireProject prints. Separated from requireProject so unit
+// tests can exercise the gate without exiting the process.
 func checkProject() error {
-	info, err := os.Stat(planDir)
-	if err == nil && info.IsDir() {
-		return nil
+	if _, err := os.Stat(filepath.Join(planDir, planConfigLockFile)); err != nil {
+		return fmt.Errorf("not an x-x project")
 	}
-	cwd, _ := os.Getwd()
-	return fmt.Errorf("not an x-x project: no %s/ in %s", planDir, cwd)
+	return nil
 }
 
 // requireProject is the CLI gate that every project-level subcommand
 // (`plan *`, `skill remove --project`) calls before doing real work.
-// When checkProject fails it prints a polite two-line diagnostic and
-// exits 2 — the same code used for usage errors, since "wrong directory"
-// is a usage mistake from the user's perspective.
+// When checkProject fails it prints the shared banner and exits 2 — the
+// same code used for usage errors, since "wrong directory" is a usage
+// mistake from the user's perspective.
 //
 // Called AFTER per-subcommand flag/positional-arg validation so a
 // genuine usage error (bad flag, stray positional) still wins the
 // diagnostic — the user gets the most actionable feedback first.
 func requireProject() {
 	if err := checkProject(); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		fmt.Fprintln(os.Stderr, "run `x-x init` to initialize the current directory as an x-x project.")
+		fmt.Fprintln(os.Stderr, notProjectBanner)
 		os.Exit(2)
 	}
 }

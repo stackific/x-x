@@ -18,15 +18,11 @@ iex (irm https://stackific.com/x-x/INSTALL.ps1)
 ## First run
 
 ```bash
-$ x-x
-x-x by Stackific, <version>
-An evidence-based, spec-driven agent skillset with enterprise accuracy at startup speed.
-...
-
+# Run this inside of a project folder
 $ x-x init        # installs bundled skills into ~/.claude, ~/.codex (or project-local)
 ```
 
-See [Usage](usage.md) for the full command reference.
+See [Reference](reference.md) for the full command reference.
 
 ## Uninstall
 
@@ -44,3 +40,17 @@ irm https://stackific.com/x-x/UNINSTALL.ps1 | iex
 ```
 
 The uninstaller cleans up the skills it installed into `~/.claude/`, `~/.codex/`, etc., then removes `~/.x-x/` and strips the PATH entry that install added.
+
+## Planning
+
+```bash
+/x-plan <specify what you intend to build>
+```
+
+## eXecuting
+
+```bash
+# This is a continuos execution loop. You can continue to `/x-plan` in one window
+# and in another `/x-x` can continue to pickup the next task in line automatically
+/x-x
+```

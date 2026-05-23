@@ -19,6 +19,18 @@ import (
 // The leading-dash check is what lets `x-x --version` keep working without
 // being misinterpreted as a subcommand named "--version".
 func main() {
+	// Opportunistic 24h update check fires for EVERY invocation —
+	// bare, --version, and every subcommand. Centralizing it here (rather
+	// than peppering each runner with its own call) makes the upsell
+	// behavior uniform: the user sees the same upgrade nudge whether they
+	// ran `x-x`, `x-x init`, `x-x plan lint`, or anything else. The
+	// function is best-effort and silent on every failure mode — a missing
+	// config, no network, rate-limited, etc. — so it never disrupts the
+	// real command. We run it BEFORE dispatch so any "new version
+	// available" line appears at the top of the output, before the
+	// subcommand's own writes.
+	maybeNotifyUpdate()
+
 	if len(os.Args) >= 2 && !strings.HasPrefix(os.Args[1], "-") {
 		switch os.Args[1] {
 		case "init":
@@ -49,12 +61,16 @@ func main() {
 	runDefault(os.Args[1:])
 }
 
-// runDefault is the "no subcommand" path: parses the global flags, handles
-// --version as a shortcut, and otherwise prints the about banner. It also
-// runs the opportunistic update check so users see upgrade nudges even when
-// they invoke `x-x` with no arguments.
+// runDefault is the "no subcommand" path. Bare `x-x` and `x-x --version`
+// are treated as one and the same: both print the notice block and
+// lazy-write the bundled agent tree on first run. The --version flag is
+// still parsed (for backward compat with `x-x --version` invocations) but
+// no longer changes behavior — keeping the two paths unified means
+// there's exactly one entry-point surface to reason about. The 24h update
+// check fires from main() before dispatch, not here, so the same upsell
+// nudge appears regardless of which command the user ran.
 //
-// `ensureBundledAgents` is called before the banner print so the very first
+// `ensureBundledAgents` runs before the banner print so the very first
 // invocation of a freshly-installed binary writes ~/.x-x/agents/ from the
 // embedded FS — no explicit setup step required. Subsequent refreshes are
 // the responsibility of the 24h update check in maybeNotifyUpdate.
@@ -63,7 +79,10 @@ func runDefault(args []string) {
 	// the default-command flags isolated from any future subcommand flags
 	// that might happen to share a name.
 	fs := flag.NewFlagSet("x-x", flag.ExitOnError)
-	showVersion := fs.Bool("version", false, "print version and exit")
+	// Parsed and discarded: `--version` has no behavioral difference from
+	// the bare invocation anymore. Kept on the FlagSet so the flag is still
+	// listed in `-h` output and existing scripts that pass it keep working.
+	_ = fs.Bool("version", false, "print version and exit")
 	// Wiring printAbout as the FlagSet's Usage means `x-x -h` shows the
 	// same banner you'd see by running `x-x` with no args — one canonical
 	// help output for the default path.
@@ -71,17 +90,6 @@ func runDefault(args []string) {
 	// ExitOnError + ignoring Parse's return is intentional: Parse calls
 	// os.Exit on errors, so any non-nil return is unreachable.
 	_ = fs.Parse(args)
-
-	if *showVersion {
-		// --version prints the same notice as the bare `x-x` invocation
-		// (version line, tagline, copyright, SPDX) but skips the usage
-		// block and any side effects (no agents write, no update check).
-		// The installer parses the first line — see
-		// `awk 'NR==1 { print $NF }'` in scripts/INSTALL.sh — so the
-		// version remains the last whitespace-separated token on line 1.
-		printNotice()
-		return
-	}
 
 	// Lazy first-run write of the bundled skill library. If ~/.x-x/agents
 	// already exists this is a stat-only no-op; otherwise it writes the
@@ -92,16 +100,13 @@ func runDefault(args []string) {
 		os.Exit(1)
 	}
 
-	// Bare `x-x` prints the generic notice only — same output as
-	// `x-x --version`. The usage block is reserved for `-h` / `--help`,
+	// Bare `x-x` (or `x-x --version`) prints the generic notice only —
+	// no usage block. The usage block is reserved for `-h` / `--help`,
 	// which fs.Usage still points at (printAbout) above. Keeping the
 	// banner short means a user who runs `x-x` by accident isn't
 	// confronted with a wall of subcommand documentation; if they want
 	// it, `x-x -h` shows everything.
 	printNotice()
-	// Best-effort 24h update check. Never fatal; see update.go for the
-	// silent-on-failure rationale.
-	maybeNotifyUpdate()
 }
 
 // printNotice is the version-and-license header shared by `x-x` (bare),
@@ -141,7 +146,7 @@ func printAbout() {
 	// because the about banner is often the first thing a user sees and
 	// should be self-sufficient.
 	fmt.Println("Usage:")
-	fmt.Println("  x-x init                       Install bundled agent skills for Claude Code + Codex CLI")
+	fmt.Println("  x-x init                       Install bundled agent skills + seed .x-plan/ (wizard or flag-driven)")
 	fmt.Println("  x-x skill remove --user        Uninstall bundled x-x skills from $HOME")
 	fmt.Println("  x-x skill remove --project     Uninstall bundled x-x skills from the current directory")
 	fmt.Println("  x-x plan next-prefix           Print the next unused zero-padded plan prefix")

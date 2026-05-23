@@ -8,11 +8,16 @@ description: Execute plans in .x-plan/ sequentially by numerical prefix. Reads e
 
 ## 0. Announce review mode (non-blocking)
 
-On invocation, emit exactly this one line and immediately proceed to Step 1 without waiting:
+Before announcing, read `.x-plan/_config.lock` and extract `plan_review_per` (string). If the lock file is missing, STOP and tell the user this directory isn't set up for x-x yet — they need to run `x-x init`. If the file exists but the key is absent or set to anything other than `task`/`plan`, default to `task`. Remember the resolved mode as the **active review mode** for this run.
 
-> FYI: I'll review each task with you (default). If you'd rather approve one plan at a time, say "review per plan."
+Emit exactly one line that matches the resolved mode — then immediately proceed to Step 1 without waiting:
 
-Per-task is the default. The user may switch modes at any point ("review per plan" / "review per task"); apply at the next approval boundary, never retroactively.
+- If active mode is `task`:
+  > FYI: I'll review each task with you. If you'd rather approve one plan at a time, say "review per plan."
+- If active mode is `plan`:
+  > FYI: I'll review the whole plan with you at once. If you'd rather approve one task at a time, say "review per task."
+
+The user may switch modes at any point ("review per plan" / "review per task"); apply at the next approval boundary, never retroactively. A mid-run switch lasts only for the remainder of this run.
 
 ## 1. Load context
 
@@ -44,8 +49,8 @@ For each plan, in numerical order:
 2. If every `## Tasks` checkbox is already `[x]`, report the plan as done and move on.
 3. For each incomplete `[ ]` task, in the order written:
    1. Compose the side effects required to satisfy the task.
-   2. Approval, per the active review mode:
-      - **Per-task (default):** present a sub-plan for this task per `.claude/skills/_x-x_shared/_shared_plan_first.md` and wait for `yes`.
+   2. Approval, per the active review mode resolved in Step 0:
+      - **Per-task:** present a sub-plan for this task per `.claude/skills/_x-x_shared/_shared_plan_first.md` and wait for `yes`.
       - **Per-plan:** on the first incomplete task of the plan, present **one** consolidated sub-plan listing every incomplete `[ ]` task in this plan and all their side effects; wait for a single `yes`. For subsequent tasks in the same plan, skip the prompt — the bundle approval covers them. A verification failure (step 3.3.4) halts the plan per Step 6; bundle approval does not survive a failed task.
    3. Execute. After each command, report what happened in one line.
    4. **Verify before flipping.** If the task added new code paths (endpoint, worker, parser, adapter, signal handler, etc.), write at least one unit or smoke test exercising the new path in the project's test layout. Then run `task prepush` (the project's canonical test + lint + type-check target). `task prepush` MUST exit 0 before the checkbox flips. If verification fails, leave the checkbox `[ ]` and apply the failure-mode protocol in step 6. Pure config / doc / registry / settings edits skip the test-write step but still run `task prepush`.

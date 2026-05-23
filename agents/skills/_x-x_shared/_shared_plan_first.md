@@ -42,7 +42,7 @@ If any of these required files is missing, STOP and report which file(s) are mis
 
 Every plan lives at `.x-plan/<prefix>-<slug>.md` where:
 
-- `<prefix>` is a zero-padded numeric prefix returned by `x-x plan next-prefix`. The current width is set by `prefix_width` in `.x-plan/_config.lock` (seeded by `x-x init`; defaults to 5).
+- `<prefix>` is a zero-padded numeric prefix returned by `x-x plan next-prefix`. The current width is set by `prefix_width` in `.x-plan/_config.lock` (seeded by `x-x init`; defaults to 4).
 - `<slug>` is a kebab-case summary of the plan's intent.
 
 Every plan starts with YAML frontmatter:
@@ -72,7 +72,7 @@ Body sections, in this order:
 
 One Go command and two Python scripts:
 
-- `x-x plan next-prefix` — prints the next unused zero-padded prefix from `./.x-plan`. Takes no arguments. Width is read from `.x-plan/_config.lock` (`prefix_width`) and falls back to `5` when the lock file is missing.
+- `x-x plan next-prefix` — prints the next unused zero-padded prefix from `./.x-plan`. Takes no arguments. Width is read from `.x-plan/_config.lock` (`prefix_width`) and falls back to `4` when the lock file is missing.
 - `x-x plan list [--status NAME[,NAME...]] [--system NAME]` — lists plans in `./.x-plan`, one tab-separated row per plan: `<slug>\t<status>\t<system>,<system>,...`. Sorted by numerical prefix. Filters:
   - `--status` keeps only matching statuses. Repeatable; comma-separated values OK.
   - `--system` keeps only plans whose `systems:` array contains the given name. Repeatable; OR semantics.

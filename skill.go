@@ -53,30 +53,37 @@ func printSkillUsage(w io.Writer) {
 }
 
 // runSkillRemove uninstalls every bundled-skill directory `x-x init` could
-// have written at one scope. The list of names we own (and therefore are
-// allowed to delete) lives in constants.go's ownedSkills — a strict
-// allowlist match. We never inspect markers or symlink targets here; the
-// name is the single source of truth.
+// have written at one scope and subtracts the hook records `x-x init`
+// merged into per-agent JSON config files. Skill directories use the
+// ownedSkills allowlist (strict name match); hook subtraction uses
+// deep-equality against the currently bundled config files under
+// ~/.x-x/agents/<agent>/ — no markers, no install-time snapshots, no
+// symlink-target inspection.
 //
 // What is NOT removed, on purpose:
 //   - Any folder whose name is not in ownedSkills (user-authored skills
 //     sitting alongside ours).
-//   - Per-agent config files written by init (e.g. ~/.claude/settings.json).
-//     They may have been edited by the user; we never touch them. Manual
-//     cleanup if desired — see ownedFiles in constants.go for the inventory.
 //   - The .x-plan/ scaffold at project scope. It is user content from the
 //     moment init writes it (think of `git init`'s .gitignore — once written,
 //     it's yours).
 //   - Parent directories (.claude/, .codex/). Only the skills/ subdirectory
 //     under each is potentially emptied + removed, never its parent.
+//   - The per-agent JSON config files themselves (~/.claude/settings.json,
+//     ~/.codex/hooks.json). Only the *records* we shipped inside their
+//     configHooksKey subtree are subtracted; the file, top-level keys, and
+//     any user-authored hook records stay. A user-tweaked variant of one of
+//     our records (changed command, different matcher) survives the
+//     deep-equality check and is preserved.
+//   - Non-JSON per-agent config files (none today). They have no
+//     subtraction path, so they are not consulted at all.
 func runSkillRemove(args []string) {
-	fs := flag.NewFlagSet("skill remove", flag.ExitOnError)
-	userScope := fs.Bool("user", false, "remove skills installed at user scope ($HOME)")
-	projectScope := fs.Bool("project", false, "remove skills installed at project scope (current directory)")
-	fs.Usage = func() {
+	flags := flag.NewFlagSet("skill remove", flag.ExitOnError)
+	userScope := flags.Bool("user", false, "remove skills installed at user scope ($HOME)")
+	projectScope := flags.Bool("project", false, "remove skills installed at project scope (current directory)")
+	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage: x-x skill remove (--user | --project)")
 	}
-	_ = fs.Parse(args)
+	_ = flags.Parse(args)
 
 	// Mirror init.go's two-choice model: exactly one scope, never both.
 	// We require an explicit flag rather than defaulting to a scope so a
@@ -89,7 +96,7 @@ func runSkillRemove(args []string) {
 	case !*userScope && !*projectScope:
 		// Neither flag passed — print the usage and exit. The usage
 		// callback explains which flag to pick.
-		fs.Usage()
+		flags.Usage()
 		os.Exit(2)
 	}
 
@@ -114,9 +121,16 @@ func runSkillRemove(args []string) {
 	}
 
 	// Aggregate counts across every agent target so the final summary line
-	// is a single "Removed N, skipped M" — easier to skim in CI logs than
-	// per-target totals.
-	removed, skipped := 0, 0
+	// is a single "Removed N, unmerged M, skipped P" — easier to skim in CI
+	// logs than per-target totals.
+	removed, unmerged, skipped := 0, 0, 0
+	// Bundle root is needed for the hook un-merge; resolution failure here
+	// is non-fatal and degrades the hook pass to a no-op while the skill
+	// pass still runs.
+	agentsRoot, agentsErr := agentsTarget()
+	if agentsErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: %v (skipping hook un-merge)\n", agentsErr)
+	}
 	for _, t := range agentTargets {
 		// Each agent's skills live at <scopeRoot>/<t.skillsRel> (e.g.
 		// $HOME/.claude/skills). The per-agent helper handles missing
@@ -124,9 +138,24 @@ func runSkillRemove(args []string) {
 		r, s := removeOurSkillsIn(filepath.Join(scopeRoot, t.skillsRel), t.name, owned)
 		removed += r
 		skipped += s
+		// Hook un-merge: walk the bundled per-agent config dir and
+		// subtract our shipped hook records from the user's counterpart
+		// under <scopeRoot>/<t.configRel>. Agents that ship no config
+		// (empty configSrc) are skipped — same gate installAgentConfig uses.
+		if agentsErr != nil || t.configSrc == "" {
+			continue
+		}
+		m, hs := removeBundledHooksIn(
+			filepath.Join(agentsRoot, t.configSrc),
+			filepath.Join(scopeRoot, t.configRel),
+			t.name,
+		)
+		unmerged += m
+		skipped += hs
 	}
 
-	fmt.Printf("\nRemoved %d skill(s), skipped %d failed.\n", removed, skipped)
+	fmt.Printf("\nRemoved %d skill(s), unmerged %d config file(s), skipped %d failed.\n",
+		removed, unmerged, skipped)
 }
 
 // removeOurSkillsIn walks one agent's skills directory and removes every

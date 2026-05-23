@@ -50,7 +50,7 @@ A system's current contract is the set of `[x]` EARS criteria across plans whose
 
 ## When the registry is empty
 
-A fresh project may have an empty `systems` YAML. The first spec/task should remove the previous boilerplate (dashed-slug1 and dashed-slug2) and drive the first additions. Do not try to write criteria with bare `the system` because the registry is empty — propose a real system to the user instead.
+A fresh project may have an empty `systems` YAML. Do not try to write criteria with bare `the system` because the registry is empty — propose a real system to the user instead.
 
 ## When more than one entry is plausible
 
@@ -58,7 +58,11 @@ Pick the most specific match. If two entries genuinely apply (e.g. a frontend co
 
 ## When you propose a new system
 
-Use natural English. Briefs should answer "what does this system do, and what's its boundary?" in 10–25 words. A few do-and-don't examples:
+Use natural English. Briefs should answer "what does this system do, and what's its boundary?" in 10–25 words. 
+
+Try to be one level more granular when choosing a system name, for example, if you choose the root API project as the system, most of the plans/tasks will be around that. But if you choose a module inside of the API project, you could generate more specific plans/tasks specifically targeted to that module. You can still use the API project, but choose it for more umbrella-level activities, logging, configuration, compliance, etc.
+
+A few do-and-don't examples:
 
 | ✅ Good | ❌ Bad | Why |
 |---------|--------|-----|

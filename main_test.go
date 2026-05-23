@@ -69,7 +69,7 @@ func TestPrintNotice_ShapeIsInstallerParsable(t *testing.T) {
 }
 
 // TestPrintAbout_IncludesUsage guards the user-facing command catalog —
-// every subcommand surface advertised in docs/public/usage.md must also
+// every subcommand surface advertised in docs/public/reference.md must also
 // appear in `x-x -h` output. Adding a new subcommand without listing it
 // here will fail the test, prompting a usage-block update.
 func TestPrintAbout_IncludesUsage(t *testing.T) {
