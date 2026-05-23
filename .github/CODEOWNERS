@@ -1,0 +1,8 @@
+# Default reviewers
+*                   @stackific/maintainers
+
+# Legal and licensing - require maintainer review
+/LICENSE            @stackific/maintainers
+/NOTICE             @stackific/maintainers
+/TRADEMARKS.md      @stackific/maintainers
+/.github/           @stackific/maintainers

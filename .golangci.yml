@@ -1,0 +1,78 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+formatters:
+  enable:
+    - gofumpt
+    - gci
+  settings:
+    gofumpt:
+      extra-rules: true
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/stackific/x-x)
+
+linters:
+  enable:
+    # Static analysis
+    - staticcheck
+    - govet
+    - errcheck
+    - ineffassign
+    - unused
+
+    # Security
+    - gosec
+
+    # Style & naming
+    - revive
+    - misspell
+    - copyloopvar
+
+    # Complexity
+    - gocyclo
+    - gocognit
+
+    # Bug prevention
+    - bodyclose
+    - gocritic
+
+  settings:
+    gocyclo:
+      min-complexity: 15
+    gocognit:
+      min-complexity: 20
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+    revive:
+      rules:
+        - name: exported
+          arguments:
+            - "checkPrivateReceivers"
+        - name: unexported-return
+        - name: unused-parameter
+        - name: blank-imports
+        - name: context-as-argument
+        - name: error-return
+        - name: error-naming
+
+  exclusions:
+    rules:
+      # Test files routinely read paths derived from t.TempDir() / test
+      # fixtures. G304 (file inclusion via variable) only matters for paths
+      # influenced by external input, which never happens in *_test.go.
+      - path: _test\.go
+        linters:
+          - gosec
+        text: G304
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

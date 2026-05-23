@@ -1,0 +1,69 @@
+version: "3"
+
+# Single entry point for everything. Run `task --list` to see the menu.
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+
+  # ---------- Setup ----------
+
+  setup:
+    desc: Install git hooks from lefthook.yml
+    cmds:
+      - lefthook install
+
+  # ---------- Quality (delegated to lefthook) ----------
+
+  prepush:
+    desc: Run every pre-push hook against all files
+    cmds:
+      - lefthook run pre-push --all-files
+
+  lint:
+    desc: Run golangci-lint with auto-fix
+    cmds:
+      - golangci-lint run --fix ./...
+
+  # ---------- Dev runtime ----------
+
+  run:
+    desc: Run the CLI (forwards extra args after `--`)
+    cmds:
+      - go run . {{.CLI_ARGS}}
+
+  build:
+    desc: Cross-compile binaries for macOS, Linux, and Windows (amd64 + arm64) into ./bin
+    cmds:
+      - mkdir -p bin
+      - |
+        # Matches the platform matrix in .github/workflows/release.yml so
+        # local builds and release artifacts stay byte-comparable.
+        # CGO_ENABLED=0 keeps the binaries statically linked; -s -w strips
+        # the symbol table and DWARF info to shrink them.
+        for platform in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+          GOOS="${platform%/*}"
+          GOARCH="${platform#*/}"
+          output="bin/x-x-${GOOS}-${GOARCH}"
+          [ "$GOOS" = "windows" ] && output="${output}.exe"
+          echo "Building ${output}..."
+          CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "-s -w" -o "$output" .
+        done
+
+  test:
+    desc: Run the full test suite (Go unit tests + end-to-end CLI tests)
+    cmds:
+      - go test -race -count=1 ./...
+      - ./scripts/e2e_test.sh
+
+  test:unit:
+    desc: Run only the Go unit tests
+    cmds:
+      - go test -race -count=1 ./...
+
+  test:e2e:
+    desc: Run only the end-to-end CLI tests (builds x-x, drives every command)
+    cmds:
+      - ./scripts/e2e_test.sh
