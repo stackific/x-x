@@ -41,12 +41,12 @@ Other skills read `<cwd>/.x-plan/_data_systems.yaml` directly and update it as n
 For each spec or task the skills intend to write, they:
    1. identify the actor — the specific component, service, or device that performs the response.
    2. Try to match it against an existing entry by name AND `brief`.
-   3. If matched: use the existing entry's `name` verbatim in the EARS criterion text (e.g., "the Checkout Service shall …") AND its `id` verbatim in the plan's frontmatter `systems:` array (e.g., `systems: [checkout-service]`). The two coordinates are always taken from the same registry entry.
+   3. If matched: use the existing entry's `name` verbatim in the EARS criterion text (e.g., "the Checkout Service shall …") AND its `id` verbatim in the plan's frontmatter `systems:` array (e.g., `systems: [checkout-service]`). These two are always taken from the same registry entry.
    4. If not matched: STOP. Propose a new system to the user (id + name + one-sentence brief). On approval, add that to `<cwd>/.x-plan/_data_systems.yaml`. Then continue.
 
 ## Source of truth
 
-A system's current contract is the set of `[x]` EARS criteria across plans whose frontmatter is `status: valid` AND whose `systems:` array includes the system's id. Use `x-x plan list --status valid --system <id> --order=asc` (the kebab id from `_data_systems.yaml`, not the display name) to enumerate them in chronological order, then read each plan's `## Tasks` for `[x]` criteria naming the system. Plans with `status: superseded` or `status: deprecated` are history and must never be read for current truth.
+A system's current contract is the set of `[x]` EARS criteria across plans whose frontmatter is `status: valid` AND whose `systems:` array includes the system's id. Use `x-x plan list --status valid --system <id> --order=asc` (the kebab id from `<cwd>/.x-plan/_data_systems.yaml`, not the display name) to enumerate them in chronological order, then read each plan's `## Tasks` for `[x]` criteria naming the system. Plans with `status: superseded` or `status: deprecated` are history and must never be read for current truth.
 
 ## When the registry is empty
 

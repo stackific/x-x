@@ -41,7 +41,7 @@ Run `x-x plan list --status valid --order=asc`. Output is tab-separated, one row
 
 All emitted rows are the work queue — the `--status valid` flag filters out `superseded` and `deprecated`. Files in `.x-plan/` that match `<prefix>-<slug>.md` but have missing or malformed frontmatter trigger stderr warnings from the script; flag those in your end-of-run summary so they aren't lost.
 
-The third column is each plan's **scope** — the kebab `id:` of every system it touches, as declared in `_data_systems.yaml`.
+The third column is each plan's **scope** — the kebab `id:` of every system it touches, as declared in `<cwd>/.x-plan/_data_systems.yaml`.
 
 ## 2a. Progress tracking
 
@@ -83,7 +83,7 @@ Do not merge worktrees back, do not remove them, and do not modify any branch ou
 
 ## 5. Ground-truth lookup
 
-When a task needs the current contract for a system (to extend, modify, or reason about existing behavior), run `x-x plan list --status valid --system <id> --order=asc` (the kebab `id:` from `_data_systems.yaml`, not the display name), then read the listed plan files. Collect only `[x]` (completed) criteria naming that system, ordered by numerical prefix ascending. Treat that ordered list as the live contract. Never read `superseded` or `deprecated` plans for current truth — they are history.
+When a task needs the current contract for a system (to extend, modify, or reason about existing behavior), run `x-x plan list --status valid --system <id> --order=asc` (the kebab `id:` from `<cwd>/.x-plan/_data_systems.yaml`, not the display name), then read the listed plan files. Collect only `[x]` (completed) criteria naming that system, ordered by numerical prefix ascending. Treat that ordered list as the live contract. Never read `superseded` or `deprecated` plans for current truth — they are history.
 
 ## 6. Failure mode
 
