@@ -154,20 +154,28 @@ const configJSONExt = ".json"
 const configHooksKey = "hooks"
 
 // Plan-tooling defaults pinned into .x-plan/_config.lock by
-// writePlanScaffold during `x-x init`. The Go commands (`x-x plan next-prefix`,
-// `x-x plan list`) read `prefix_width` from the lock file directly; the
-// remaining Python `lint-plans.py` reads the same defaults via `_config.py`.
-// The binary is the canonical source for new projects while existing projects
-// keep whatever they pinned on their first `x-x init`. Bump these numbers
-// to change behavior going forward without disturbing prior installs.
+// writePlanScaffold during `x-x init`. The `x-x plan` subcommands read
+// these values from the lock file at runtime; the binary is the canonical
+// source for new projects while existing projects keep whatever they
+// pinned on their first `x-x init`. Bump these numbers to change behavior
+// going forward without disturbing prior installs.
 const (
 	// defaultPrefixWidth is the zero-padded width of plan-file numeric
 	// prefixes (e.g. width 4 → "0001-foo.md"). Bump to widen prefixes.
 	defaultPrefixWidth = 4
 
-	// defaultMaxPlanLines is the line-count ceiling lint-plans.py enforces
-	// on a single plan file (frontmatter + body, inclusive).
+	// defaultMaxPlanLines is the line-count ceiling `x-x plan lint`
+	// enforces on a single plan file (frontmatter + body, inclusive).
 	defaultMaxPlanLines = 30
+
+	// planListOverflowThreshold is the row count above which
+	// `x-x plan list` activates the optional `--overflow-keywords` narrow.
+	// At or below this count every matching plan is returned regardless
+	// of whether keywords were supplied. Tuned for LLM consumption — a
+	// list this short fits comfortably in context without narrowing.
+	// Bump this number to relax the trigger, or pass `--overflow-keywords`
+	// from a caller that wants the optional narrowing to engage.
+	planListOverflowThreshold = 20
 
 	// defaultPlanReviewPer controls whether the planner pauses for review
 	// after every "task" or after every "plan" (other valid value).
@@ -209,6 +217,17 @@ const (
 // constant so tests that round-trip files out of the embed don't violate
 // the "no inline path literals in Go source" rule.
 const skillManifestFile = "SKILL.md"
+
+// Filenames shipped under agents/skills/_x-x_shared/. The Go code
+// embeds the whole directory wholesale and never opens these by name,
+// but the e2e harness asserts on their post-install presence — so they
+// must live in constants.go for the e2e shell mirror to be lawful.
+// Renaming a shared file = edit here, edit the shell mirror, ship.
+const (
+	sharedDocPlanFirst = "_plan_first.md"
+	sharedDocSystems   = "_systems.md"
+	sharedDocEars      = "_ears.md"
+)
 
 // ownedSkills is the canonical, exhaustive list of skill directory names
 // the binary ships and is allowed to delete. `x-x skill remove` uses this

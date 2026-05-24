@@ -21,11 +21,19 @@ The user may switch modes at any point ("review per plan" / "review per task"); 
 
 ## 1. Load context
 
-Load context per **Context to load** in `.claude/skills/_x-x_shared/_shared_plan_first.md`. If any required file is missing, STOP and report.
+Skills install into a folder we call `<skills_root>`, which is either `.claude/skills/` (Claude Code) or `.agents/skills/` (other agents).
+
+`<skills_root>` can exist at two scopes:
+- **Project scope**: `<cwd>/.claude/skills/` or `<cwd>/.agents/skills/`
+- **User scope**: `.claude/skills/` or `.agents/skills/` in the user's home directory
+
+When a reference like `../_x-x_shared/...` appears, resolve it against `<skills_root>/_x-x_shared/`. Check project scope first, then user scope. If the file is missing from both, STOP and report to the user.
+
+Now load context per **Context to load** in `../_x-x_shared/_plan_first.md`. If any required file is missing, STOP and report.
 
 ## 2. Enumerate plans
 
-Run `x-x plan list --status valid`. Output is tab-separated, one row per plan, sorted by numerical prefix:
+Run `x-x plan list --status valid --order=asc`. Output is tab-separated, one row per plan, sorted by numerical prefix ascending (the default sort is descending; `--order=asc` gives the oldest-first execution order this skill iterates):
 
 ```
 <slug>\t<status>\t<system>,<system>,...
@@ -50,13 +58,13 @@ For each plan, in numerical order:
 3. For each incomplete `[ ]` task, in the order written:
    1. Compose the side effects required to satisfy the task.
    2. Approval, per the active review mode resolved in Step 0:
-      - **Per-task:** present a sub-plan for this task per `.claude/skills/_x-x_shared/_shared_plan_first.md` and wait for `yes`.
+      - **Per-task:** present a sub-plan for this task per `../_x-x_shared/_plan_first.md` and wait for `yes`.
       - **Per-plan:** on the first incomplete task of the plan, present **one** consolidated sub-plan listing every incomplete `[ ]` task in this plan and all their side effects; wait for a single `yes`. For subsequent tasks in the same plan, skip the prompt — the bundle approval covers them. A verification failure (step 3.3.4) halts the plan per Step 6; bundle approval does not survive a failed task.
    3. Execute. After each command, report what happened in one line.
-   4. **Verify before flipping.** If the task added new code paths (endpoint, worker, parser, adapter, signal handler, etc.), write at least one unit or smoke test exercising the new path in the project's test layout. Then run `task prepush` (the project's canonical test + lint + type-check target). `task prepush` MUST exit 0 before the checkbox flips. If verification fails, leave the checkbox `[ ]` and apply the failure-mode protocol in step 6. Pure config / doc / registry / settings edits skip the test-write step but still run `task prepush`.
+   4. **Verify before flipping.** If the task added new code paths (endpoint, worker, parser, adapter, signal handler, etc.), write at least one unit or smoke test exercising the new path in the project's test layout. Then run the project's canonical test + lint + type-check target, if exists. They MUST exit 0 before the checkbox flips. If verification fails, leave the checkbox `[ ]` and apply the failure-mode protocol in step 6. Pure config / doc / registry / settings edits skip the test-write step but still run lint + type-checks.
    5. Flip the checkbox from `[ ]` to `[x]` in the plan file.
 4. After all tasks in the plan are `[x]`:
-   1. If the plan's frontmatter includes `supersedes: [<slug>, ...]`, flip each listed plan's `status: valid` to `status: superseded` via `Edit` on that plan file. Treat the flip as a side effect that goes through the plan-first sub-plan protocol like any other.
+   1. If the plan's frontmatter includes `supersedes: [<slug>, ...]`, for each listed predecessor: `Edit` its plan file to (a) flip `status: valid` → `status: superseded`, and (b) append this plan's slug to its `superseded_by:` array (create the array right before `created:` if absent). Both edits must land in the same revision — `x-x plan lint` enforces that the supersedes ↔ superseded_by back link is symmetric. Treat each predecessor `Edit` as a side effect that goes through the plan-first sub-plan protocol.
    2. Report one-line completion and move to the next plan.
 
 ## 4. Parallel mode (auto-detected)
@@ -75,7 +83,7 @@ Do not merge worktrees back, do not remove them, and do not modify any branch ou
 
 ## 5. Ground-truth lookup
 
-When a task needs the current contract for a system (to extend, modify, or reason about existing behavior), run `x-x plan list --status valid --system <Name>`, then read the listed plan files. Collect only `[x]` (completed) criteria naming that system, ordered by numerical prefix ascending. Treat that ordered list as the live contract. Never read `superseded` or `deprecated` plans for current truth — they are history.
+When a task needs the current contract for a system (to extend, modify, or reason about existing behavior), run `x-x plan list --status valid --system <Name> --order=asc`, then read the listed plan files. Collect only `[x]` (completed) criteria naming that system, ordered by numerical prefix ascending. Treat that ordered list as the live contract. Never read `superseded` or `deprecated` plans for current truth — they are history.
 
 ## 6. Failure mode
 

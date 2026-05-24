@@ -152,5 +152,6 @@ func printAbout() {
 	fmt.Println("  x-x plan next-prefix           Print the next unused zero-padded plan prefix")
 	fmt.Println("  x-x plan list                  List plans with slug, status, and declared systems")
 	fmt.Println("  x-x plan lint                  Validate every plan file against the project schema")
+	fmt.Println("  x-x plan slugify \"<title>\"     Print the kebab-case slug for a plan title")
 	fmt.Println("  x-x --version                  Print version")
 }

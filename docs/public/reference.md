@@ -17,6 +17,7 @@ Running `x-x` with no arguments prints the about banner and command list. Use on
 | `x-x plan next-prefix`        | Print the next unused zero-padded plan prefix for `./.x-plan`.       |
 | `x-x plan list`               | List plans in `./.x-plan` with slug, status, and declared systems.   |
 | `x-x plan lint`               | Validate every plan file in `./.x-plan` against the project schema.  |
+| `x-x plan slugify "<title>"`  | Print the kebab-case slug for a plan title.                          |
 | `x-x --version`               | Print the version and exit.                                          |
 
 ### `x-x init`
@@ -89,34 +90,55 @@ The prefix width is read from `.x-plan/_config.lock` (`prefix_width`), which `x-
 
 ### `x-x plan list`
 
-Lists every plan in `./.x-plan` whose filename matches `<prefix>-<slug>.md`, one tab-separated row per plan, sorted by zero-padded prefix:
+Lists every plan in `./.x-plan` whose filename matches `<prefix>-<slug>.md`, one tab-separated row per plan:
 
 ```
 <slug>\t<status>\t<sys1>,<sys2>,...
 ```
 
-Filter flags (both repeatable, both comma-aware):
+Flags (all repeatable / comma-aware where applicable):
 
-- `--status NAME[,NAME...]` — keep only plans whose `status:` matches. Repeat or comma-separate to accept multiple values.
+- `--status NAME[,NAME...]` — keep only plans whose `status:` matches.
 - `--system NAME` — keep only plans whose `systems:` array contains `NAME` (OR semantics across multiple `--system` flags).
+- `--order asc|desc` — sort by zero-padded prefix. Default `desc` (latest first). Use `--order=asc` when sequential / oldest-first iteration matters (e.g. `/x-x` ground-truth lookup).
+- `--overflow-keywords TERM[,...]` — case-insensitive literal substring(s). **Engages only when** the post-`--status`/`--system` row count exceeds `planListOverflowThreshold` (default 20, in `constants.go`). At or below the threshold the flag is a no-op — the caller pays nothing for declaring an unused narrow.
+
+Overflow-narrow behavior, when it engages:
+
+- ≥1 plan's body contains ≥1 keyword (case-insensitive) → return only matched rows (in the current sort order).
+- 0 matches → return the top `planListOverflowThreshold` rows in the current sort order as a fallback summary (never an empty result the caller has to special-case).
+- Frontmatter (title, status, systems, …) is *not* searched — body only.
+- Keywords are literal substrings; regex metacharacters carry no special meaning (`.` is a dot, `*` is a star).
 
 ```bash
 x-x plan list
 x-x plan list --status valid
 x-x plan list --status valid,superseded --system Auth
+x-x plan list --order=asc                                  # /x-x sequential execution
+x-x plan list --status valid --overflow-keywords payment,retry  # narrow on overflow
 ```
 
 Files matching the filename pattern but missing frontmatter, `status:`, or `systems:` produce a warning on stderr and are skipped (they don't fail the command — for that, use `x-x plan lint`).
 
 ### `x-x plan lint`
 
-Validates every `*.md` plan file in `./.x-plan` against the contract: filename pattern (`<prefix>-<slug>.md`), file length (≤ `max_plan_lines` from `_config.lock`, default 30), YAML frontmatter shape, allowed `status:` values, `systems:` membership in `.x-plan/_data_systems.yaml`, `supersedes:` slugs resolving to sibling plans, required body sections (`## Goal`, `## Approach`, `## Tasks`), and EARS subjects ↔ `systems:` exact match.
+Validates every `*.md` plan file in `./.x-plan` against the contract: filename pattern (`<prefix>-<slug>.md`), file length (≤ `max_plan_lines` from `_config.lock`, default 30), YAML frontmatter shape, mandatory `title:` (first key) and `created:` (last key, ISO 8601 UTC timestamp `YYYY-MM-DDTHH:MM:SSZ`), allowed `status:` values, `systems:` membership in `.x-plan/_data_systems.yaml`, every slug in `supersedes:` / `superseded_by:` / `extends:` / `extended_by:` resolves to a sibling plan and is not the plan itself, the `supersedes` ↔ `superseded_by` and `extends` ↔ `extended_by` back links are symmetric across plans, filename slug ↔ `slugify(title)` equality, required body sections (`## Goal`, `## Approach`, `## Tasks`), and EARS subjects ↔ `systems:` exact match.
 
 ```bash
 x-x plan lint
 ```
 
 Findings go to stdout (one per line, prefixed with the file path); the `<ok>/<failed>` summary goes to stderr. Exit 0 if every file passes, exit 1 if any failed. The project-scope gate above still applies, so a missing `./.x-plan/` exits `2` rather than passing silently.
+
+### `x-x plan slugify "<title>"`
+
+Prints the kebab-case slug for a plan title — lowercase the input, replace every run of non-`[a-z0-9]` characters with a single `-`, and trim leading/trailing dashes. The author and `x-x plan lint` use the same algorithm, so call this command when picking the filename for a new plan rather than slugifying by eye.
+
+```bash
+x-x plan slugify "Add payment retry policy"   # → add-payment-retry-policy
+```
+
+Takes exactly one positional argument; quote titles that contain spaces or shell metacharacters. Exits `2` when the argument is missing, when multiple arguments are passed, or when the title contains no characters that survive slugification. No project-scope gate — slugify is a pure transform and runs from anywhere.
 
 ## Examples
 
@@ -135,6 +157,7 @@ x-x skill remove --project            # uninstall what `x-x init` (project scope
 x-x plan next-prefix                  # prints e.g. 00004
 x-x plan list --status valid          # tab-separated rows of every valid plan
 x-x plan lint                         # lints every .x-plan/*.md against the schema
+x-x plan slugify "My new plan"        # prints e.g. my-new-plan
 ```
 
 ## Exit codes

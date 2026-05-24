@@ -30,18 +30,24 @@ func TestE2EShellConstantsMatchGo(t *testing.T) {
 
 	// Mapping: shell variable name → expected Go-side value.
 	want := map[string]string{
-		"XX_HOME_DIR":          xxHomeDir,
-		"XX_CONFIG_FILE":       xxConfigFile,
-		"AGENTS_EMBED_ROOT":    agentsEmbedRoot,
-		"SKILLS_SUBDIR":        skillsSubdir,
-		"PLAN_DIR":             planDir,
-		"PLAN_CONFIG_LOCK":     planConfigLockFile,
-		"PLAN_SYSTEMS_FILE":    planSystemsFile,
-		"DEFAULT_PREFIX_WIDTH": strconv.Itoa(defaultPrefixWidth),
+		"XX_HOME_DIR":                  xxHomeDir,
+		"XX_CONFIG_FILE":               xxConfigFile,
+		"AGENTS_EMBED_ROOT":            agentsEmbedRoot,
+		"SKILLS_SUBDIR":                skillsSubdir,
+		"PLAN_DIR":                     planDir,
+		"PLAN_CONFIG_LOCK":             planConfigLockFile,
+		"PLAN_SYSTEMS_FILE":            planSystemsFile,
+		"DEFAULT_PREFIX_WIDTH":         strconv.Itoa(defaultPrefixWidth),
+		"PLAN_LIST_OVERFLOW_THRESHOLD": strconv.Itoa(planListOverflowThreshold),
 
-		"SKILL_SHARED_DIR": skillSharedDir,
-		"SKILL_X_PLAN_DIR": skillXPlanDir,
-		"SKILL_X_X_DIR":    skillXXDir,
+		"SKILL_SHARED_DIR":    skillSharedDir,
+		"SKILL_X_PLAN_DIR":    skillXPlanDir,
+		"SKILL_X_X_DIR":       skillXXDir,
+		"SKILL_MANIFEST_FILE": skillManifestFile,
+
+		"SHARED_DOC_PLAN_FIRST": sharedDocPlanFirst,
+		"SHARED_DOC_SYSTEMS":    sharedDocSystems,
+		"SHARED_DOC_EARS":       sharedDocEars,
 
 		"CLAUDE_SKILLS_REL": agentTargets[0].skillsRel,
 		"CLAUDE_CONFIG_REL": agentTargets[0].configRel,

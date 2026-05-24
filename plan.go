@@ -33,6 +33,8 @@ func runPlan(args []string) {
 		runPlanList(args[1:])
 	case "lint":
 		runPlanLint(args[1:])
+	case "slugify":
+		runPlanSlugify(args[1:])
 	default:
 		fmt.Fprintf(os.Stderr, "unknown plan subcommand: %s\n", args[0])
 		printPlanUsage(os.Stderr)
@@ -49,6 +51,7 @@ func printPlanUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  next-prefix   Print the next unused zero-padded plan prefix")
 	_, _ = fmt.Fprintln(w, "  list          List plans with slug, status, and declared systems")
 	_, _ = fmt.Fprintln(w, "  lint          Validate every plan file against the project schema")
+	_, _ = fmt.Fprintln(w, "  slugify       Print the kebab-case slug for a plan title")
 }
 
 // runPlanNextPrefix prints the next available zero-padded plan prefix in
@@ -123,11 +126,14 @@ func scanHighestPrefix(plansDir string, width int) int {
 
 // runPlanList prints one tab-separated row per plan in planDir whose
 // filename matches `<prefix-digits>-<slug>.md`. Each row is
-// `<slug>\t<status>\t<sys1>,<sys2>,...`, sorted by zero-padded prefix
-// (which equals numerical order). Filter flags:
+// `<slug>\t<status>\t<sys1>,<sys2>,...`. Flags:
 //
-//	--status NAME[,NAME...]   repeatable; keeps only matching statuses
-//	--system NAME             repeatable; OR semantics across declared systems
+//	--status NAME[,NAME...]            repeatable; keeps only matching statuses
+//	--system NAME                      repeatable; OR semantics across declared systems
+//	--order asc|desc                   prefix sort direction (default desc = latest first)
+//	--overflow-keywords TERM[,...]     case-insensitive substring(s) (OR); engages
+//	                                   only when the post-filter row count exceeds
+//	                                   planListOverflowThreshold (see constants.go)
 //
 // Files matching the filename pattern but missing frontmatter, `status:`,
 // or `systems:` produce stderr warnings and are skipped. Missing planDir
@@ -135,11 +141,13 @@ func scanHighestPrefix(plansDir string, width int) int {
 // before `x-x init` has seeded the scaffold.
 func runPlanList(args []string) {
 	fs := flag.NewFlagSet("plan list", flag.ExitOnError)
-	var statusFlag, systemFlag stringSliceFlag
+	var statusFlag, systemFlag, keywordsFlag stringSliceFlag
+	orderFlag := fs.String("order", "desc", "sort by prefix: asc|desc (default desc = latest first)")
 	fs.Var(&statusFlag, "status", "keep only plans whose status matches (repeatable, comma-separated)")
 	fs.Var(&systemFlag, "system", "keep only plans whose systems contain this name (repeatable; OR semantics)")
+	fs.Var(&keywordsFlag, "overflow-keywords", "case-insensitive substring(s) narrowing the output when the post-filter count exceeds planListOverflowThreshold (repeatable; OR semantics; matched against plan body only)")
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: x-x plan list [--status NAME[,NAME...]] [--system NAME]")
+		fmt.Fprintln(os.Stderr, "Usage: x-x plan list [--status NAME[,NAME...]] [--system NAME] [--order asc|desc] [--overflow-keywords PATTERN[,PATTERN...]]")
 	}
 	_ = fs.Parse(args)
 	if fs.NArg() > 0 {
@@ -147,6 +155,13 @@ func runPlanList(args []string) {
 		os.Exit(2)
 	}
 	requireProject()
+
+	order, err := parseOrder(*orderFlag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "x-x plan list: %v\n", err)
+		os.Exit(2)
+	}
+	keywords := normalizeKeywords(keywordsFlag)
 
 	statusSet := toFilterSet(statusFlag)
 	systemSet := toFilterSet(systemFlag)
@@ -158,6 +173,9 @@ func runPlanList(args []string) {
 		os.Exit(1)
 	}
 
+	// Apply --status / --system filters first so the overflow trigger
+	// keys off the post-filter count (matching the user-visible result).
+	filtered := make([]planRow, 0, len(rows))
 	for _, r := range rows {
 		if len(statusSet) > 0 && !statusSet[r.status] {
 			continue
@@ -165,13 +183,129 @@ func runPlanList(args []string) {
 		if len(systemSet) > 0 && !anySystemMatches(r.systems, systemSet) {
 			continue
 		}
+		filtered = append(filtered, r)
+	}
+
+	sortPlanRows(filtered, order)
+	filtered = applyOverflowNarrow(filtered, keywords, planDir, planListOverflowThreshold)
+
+	for _, r := range filtered {
 		fmt.Printf("%s\t%s\t%s\n", r.slug, r.status, strings.Join(r.systems, ","))
 	}
 }
 
+// planListOrder enumerates the two values --order accepts. Defined as a
+// typed int (not strings) so the sort-by-value switch in sortPlanRows
+// can't be invoked with an arbitrary, unvalidated string.
+type planListOrder int
+
+const (
+	orderAsc  planListOrder = 1
+	orderDesc planListOrder = 2
+)
+
+// parseOrder validates the --order CLI value and returns its enum.
+func parseOrder(s string) (planListOrder, error) {
+	switch s {
+	case "asc":
+		return orderAsc, nil
+	case "desc":
+		return orderDesc, nil
+	default:
+		return 0, fmt.Errorf("--order must be \"asc\" or \"desc\", got %q", s)
+	}
+}
+
+// sortPlanRows sorts rows in-place by slug — which, because slugs carry
+// the zero-padded numeric prefix, equals prefix-numeric order. Ascending
+// or descending per the order argument; desc is the CLI default (latest
+// first).
+func sortPlanRows(rows []planRow, order planListOrder) {
+	if order == orderAsc {
+		sort.Slice(rows, func(i, j int) bool { return rows[i].slug < rows[j].slug })
+		return
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].slug > rows[j].slug })
+}
+
+// normalizeKeywords lowercases each --overflow-keywords token and drops
+// empties. Returning nil on empty input lets the caller use len()==0 to
+// mean "no narrowing requested." Lowercasing once here keeps the
+// per-row match in applyOverflowNarrow a single ASCII-lowercase compare.
+func normalizeKeywords(tokens []string) []string {
+	if len(tokens) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(tokens))
+	for _, t := range tokens {
+		t = strings.ToLower(t)
+		if t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// applyOverflowNarrow optionally narrows `rows` using --overflow-keywords.
+// The narrow engages only when:
+//   - len(rows) exceeds threshold, AND
+//   - the caller passed at least one keyword.
+//
+// Match semantics: case-insensitive literal substring against the plan
+// body — no regex, no word boundary. A plan matches if its body contains
+// any of the keywords (OR across keywords).
+//
+// Behavior in the engaged path:
+//   - ≥1 row's body contains ≥1 keyword → return matched rows
+//     (preserving the caller's sort order).
+//   - 0 rows match → return rows[:threshold] (top N in sort order),
+//     so the caller still gets a workable summary instead of an empty
+//     result.
+//
+// Otherwise rows are returned unchanged.
+func applyOverflowNarrow(rows []planRow, keywords []string, plansDir string, threshold int) []planRow {
+	if len(rows) <= threshold || len(keywords) == 0 {
+		return rows
+	}
+	matched := make([]planRow, 0, len(rows))
+	for _, r := range rows {
+		body, ok := readPlanBody(filepath.Join(plansDir, r.slug+planFileExt))
+		if !ok {
+			continue
+		}
+		lower := strings.ToLower(body)
+		for _, kw := range keywords {
+			if strings.Contains(lower, kw) {
+				matched = append(matched, r)
+				break
+			}
+		}
+	}
+	if len(matched) > 0 {
+		return matched
+	}
+	return rows[:threshold]
+}
+
+// readPlanBody returns the post-frontmatter body of the plan file at
+// path. (false) on missing/unreadable/malformed-frontmatter files so the
+// caller can skip them; lintPlanFile surfaces those as per-file findings
+// on its own pass.
+func readPlanBody(path string) (string, bool) {
+	data, err := os.ReadFile(path) // #nosec G304 -- path is composed from a CLI-driven plansDir + slug.
+	if err != nil {
+		return "", false
+	}
+	_, body, _, stop := splitFrontmatter(string(data))
+	if stop {
+		return "", false
+	}
+	return body, true
+}
+
 // stringSliceFlag is a flag.Value that accumulates values across repeated
-// occurrences AND splits comma-separated input. Matches the Python
-// `action="append"` + comma-aware semantics list-plans used to expose.
+// occurrences AND splits comma-separated input — so `--status valid
+// --status superseded` and `--status valid,superseded` are equivalent.
 type stringSliceFlag []string
 
 // String renders the accumulated values as a comma list — flag's default
@@ -181,8 +315,7 @@ func (s *stringSliceFlag) String() string { return strings.Join(*s, ",") }
 
 // Set is invoked once per `--<flag> <value>` occurrence. It splits on
 // commas, trims whitespace per token, and appends non-empty tokens to
-// the underlying slice — matching the Python argparse "append + comma"
-// idiom list-plans.py used to expose.
+// the underlying slice.
 func (s *stringSliceFlag) Set(v string) error {
 	for _, tok := range strings.Split(v, ",") {
 		tok = strings.TrimSpace(tok)
@@ -224,9 +357,8 @@ type planRow struct {
 	systems []string
 }
 
-// Frontmatter regexes — anchored multi-line. Match the Python script's
-// shape exactly so behavior carries over: only inline-array `systems:` is
-// recognized; block form (`- entry` on subsequent lines) is rejected.
+// Frontmatter regexes — anchored multi-line. Only inline-array `systems:`
+// is recognized; block form (`- entry` on subsequent lines) is rejected.
 var (
 	planStatusRe  = regexp.MustCompile(`(?m)^status:\s*(\S+)\s*$`)
 	planSystemsRe = regexp.MustCompile(`(?m)^systems:\s*\[([^\]]*)\]\s*$`)
@@ -280,8 +412,8 @@ func listPlans(plansDir string, width int, warnW io.Writer) ([]planRow, error) {
 
 // parsePlan reads one plan file and extracts (slug, status, systems).
 // Returns (_, false) and emits a stderr-style warning to warnW when the
-// file lacks frontmatter or is missing a required field. This mirrors
-// the warn-and-skip behavior of the Python list-plans.py.
+// file lacks frontmatter or is missing a required field — warn-and-skip
+// so a single bad file never aborts the whole `plan list` walk.
 func parsePlan(path string, warnW io.Writer) (planRow, bool) {
 	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from a CLI-driven ReadDir of plansDir.
 	if err != nil {
@@ -340,9 +472,9 @@ func parseInlineSystems(raw string) []string {
 
 // ---------- plan lint ----------
 
-// Allowed plan statuses. allowedStatusesSorted is the deterministic form
-// rendered in finding messages (matches `sorted(ALLOWED_STATUSES)` from
-// the prior Python script).
+// Allowed plan statuses. allowedStatusesSorted is the alphabetised form
+// rendered in finding messages so the user always sees the same set in
+// the same order.
 var (
 	allowedStatuses       = map[string]bool{"valid": true, "superseded": true, "deprecated": true}
 	allowedStatusesSorted = []string{"deprecated", "superseded", "valid"}
@@ -356,9 +488,26 @@ var requiredSections = []string{"## Goal", "## Approach", "## Tasks"}
 // the listPlans path (planStatusRe / planSystemsRe) so both subcommands
 // agree on shape.
 var (
-	planSupersedesRe = regexp.MustCompile(`(?m)^supersedes:\s*\[([^\]]*)\]\s*$`)
-	earsSubjectRe    = regexp.MustCompile(`\b[Tt]he ([A-Z][A-Za-z0-9]*(?:\s+[A-Z0-9][A-Za-z0-9]*)*)\s+shall\b`)
-	taskLineRe       = regexp.MustCompile(`(?m)^\s*-\s*\[[ x]\]\s+(.*)$`)
+	planSupersedesRe   = regexp.MustCompile(`(?m)^supersedes:\s*\[([^\]]*)\]\s*$`)
+	planSupersededByRe = regexp.MustCompile(`(?m)^superseded_by:\s*\[([^\]]*)\]\s*$`)
+	planExtendsRe      = regexp.MustCompile(`(?m)^extends:\s*\[([^\]]*)\]\s*$`)
+	planExtendedByRe   = regexp.MustCompile(`(?m)^extended_by:\s*\[([^\]]*)\]\s*$`)
+	// planTitleRe captures the raw value (quoted or bare); strip surrounding
+	// quotes before slugifying. The non-greedy `.+?` plus the `\s*$` anchor
+	// trims trailing whitespace inside the capture without a second pass.
+	planTitleRe = regexp.MustCompile(`(?m)^title:\s*(.+?)\s*$`)
+	// planCreatedRe captures the raw value so a malformed date can still be
+	// reported by the value (vs. a regex miss reading as "field absent").
+	// Shape is then checked separately against planCreatedShapeRe.
+	planCreatedRe      = regexp.MustCompile(`(?m)^created:\s*(\S.*?)\s*$`)
+	planCreatedShapeRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$`)
+	// planKeyLineRe matches a top-level frontmatter key at the start of a
+	// line — used by lintFrontmatterOrder to extract ordered keys without
+	// pulling in a full YAML parser. Indented continuation lines and
+	// comments are filtered before this regex runs.
+	planKeyLineRe = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9_-]*):`)
+	earsSubjectRe = regexp.MustCompile(`\b[Tt]he ([A-Z][A-Za-z0-9]*(?:\s+[A-Z0-9][A-Za-z0-9]*)*)\s+shall\b`)
+	taskLineRe    = regexp.MustCompile(`(?m)^\s*-\s*\[[ x]\]\s+(.*)$`)
 	// (?ms): ^ matches line start, . matches newline. Block ends at next H2 or EOF.
 	tasksBlockRe       = regexp.MustCompile(`(?ms)^## Tasks\s*\n(.+?)(?:\n## |\z)`)
 	registryNameLineRe = regexp.MustCompile(`^\s*name:\s*(.+?)\s*$`)
@@ -382,8 +531,7 @@ func loadMaxPlanLines(plansDir string) int {
 
 // runPlanLint validates every *.md file in planDir against the plan schema.
 // Takes no arguments — always operates on the canonical .x-plan/ scaffold.
-// Output contract matches the prior lint-plans.py so existing hooks don't
-// change shape:
+// Output contract:
 //
 //   - Per-file findings → stdout, one per line, prefixed with file path.
 //   - A passing file emits `<path>: ok`.
@@ -423,9 +571,14 @@ func runPlanLint(args []string) {
 		knownSlugs[strings.TrimSuffix(filepath.Base(f), planFileExt)] = true
 	}
 
+	// Pre-compute the forward/back-link adjacency maps so the per-file
+	// bidirectional check can verify symmetry without re-reading sibling
+	// files. Covers both supersedes/superseded_by and extends/extended_by.
+	relations := scanPlanRelations(files)
+
 	okCount, failCount := 0, 0
 	for _, path := range files {
-		findings := lintPlanFile(path, width, maxLines, registry, knownSlugs, registryPath)
+		findings := lintPlanFile(path, width, maxLines, registry, knownSlugs, relations, registryPath)
 		if len(findings) > 0 {
 			failCount++
 			for _, f := range findings {
@@ -491,8 +644,10 @@ func isIndented(line string) bool {
 // finding strings (empty = pass). Each finding is human-readable and
 // stateless — callers prepend the file path. registryPath is passed in
 // (rather than recomputed) so the "system not in registry" message uses
-// the same string the lint hook logged at startup.
-func lintPlanFile(path string, width, maxLines int, registry, knownSlugs map[string]bool, registryPath string) []string {
+// the same string the lint hook logged at startup. extendsMap and
+// extendedByMap are pre-computed adjacency tables (slug → set of slugs)
+// so the bidirectional extends/extended_by check is O(1) per link.
+func lintPlanFile(path string, width, maxLines int, registry, knownSlugs map[string]bool, relations planRelations, registryPath string) []string {
 	findings := lintFilename(filepath.Base(path), width)
 
 	data, err := os.ReadFile(path) // #nosec G304 -- path is a planDir glob result.
@@ -509,10 +664,21 @@ func lintPlanFile(path string, width, maxLines int, registry, knownSlugs map[str
 		return findings
 	}
 
+	slug := strings.TrimSuffix(filepath.Base(path), planFileExt)
+	title, titleFindings := lintTitle(fm)
+	findings = append(findings, titleFindings...)
 	findings = append(findings, lintStatus(fm)...)
 	declaredSystems, sysFindings := lintSystems(fm, registry, registryPath)
 	findings = append(findings, sysFindings...)
-	findings = append(findings, lintSupersedes(fm, knownSlugs)...)
+	findings = append(findings, lintRelationArray(slug, fm, "supersedes", planSupersedesRe, knownSlugs)...)
+	findings = append(findings, lintRelationArray(slug, fm, "superseded_by", planSupersededByRe, knownSlugs)...)
+	findings = append(findings, lintRelationArray(slug, fm, "extends", planExtendsRe, knownSlugs)...)
+	findings = append(findings, lintRelationArray(slug, fm, "extended_by", planExtendedByRe, knownSlugs)...)
+	findings = append(findings, lintBidirectional(slug, relations.extends, relations.extendedBy, "extends", "extended_by")...)
+	findings = append(findings, lintBidirectional(slug, relations.supersedes, relations.supersededBy, "supersedes", "superseded_by")...)
+	findings = append(findings, lintCreated(fm)...)
+	findings = append(findings, lintFrontmatterOrder(fm)...)
+	findings = append(findings, lintFilenameMatchesTitle(filepath.Base(path), width, title)...)
 	findings = append(findings, lintRequiredSections(body)...)
 	findings = append(findings, lintEarsTasks(body, declaredSystems, registry, registryPath)...)
 
@@ -595,21 +761,197 @@ func lintSystems(fm string, registry map[string]bool, registryPath string) (decl
 	return declared, findings
 }
 
-// lintSupersedes verifies every slug in the optional `supersedes:` array
-// resolves to a sibling plan filename. Returns nothing when the field is
-// absent — supersedes is opt-in.
-func lintSupersedes(fm string, knownSlugs map[string]bool) []string {
-	m := planSupersedesRe.FindStringSubmatch(fm)
+// lintRelationArray is the shared shape for `supersedes:`, `extends:`,
+// `extended_by:`, `superseded_by:`: each entry must resolve to a sibling
+// plan, and self-references are rejected. Field name is passed in so the
+// finding strings are field-specific.
+func lintRelationArray(selfSlug, fm, field string, re *regexp.Regexp, knownSlugs map[string]bool) []string {
+	m := re.FindStringSubmatch(fm)
 	if m == nil {
 		return nil
 	}
 	var findings []string
 	for _, slug := range parseInlineSystems(m[1]) {
+		if slug == selfSlug {
+			findings = append(findings, fmt.Sprintf("%s cannot reference the plan itself", field))
+			continue
+		}
 		if !knownSlugs[slug] {
-			findings = append(findings, fmt.Sprintf("supersedes %q does not match any plan file in the same directory", slug))
+			findings = append(findings, fmt.Sprintf("%s %q does not match any plan file in the same directory", field, slug))
 		}
 	}
 	return findings
+}
+
+// lintBidirectional enforces that a forward-link / back-link pair is
+// symmetric across every plan. For each slug X in `fwd[self]`, X's
+// `back` set must contain self; and for each slug Y in `back[self]`,
+// Y's `fwd` set must contain self. Reports both directions so the user
+// sees exactly which side is missing the link. fwdField / backField are
+// the YAML key names (e.g. `extends`, `extended_by:`) used in the
+// finding strings.
+func lintBidirectional(self string, fwd, back map[string]map[string]bool, fwdField, backField string) []string {
+	var findings []string
+	for x := range fwd[self] {
+		if !back[x][self] {
+			findings = append(findings, fmt.Sprintf("%s %q but %q does not list this plan in its `%s:` array", fwdField, x, x, backField))
+		}
+	}
+	for y := range back[self] {
+		if !fwd[y][self] {
+			findings = append(findings, fmt.Sprintf("%s %q but %q does not list this plan in its `%s:` array", backField, y, y, fwdField))
+		}
+	}
+	sort.Strings(findings)
+	return findings
+}
+
+// planRelations bundles the four cross-plan adjacency maps the linter
+// consults for forward/back-link integrity. Each entry is `slug → set of
+// slugs in that plan's <field>:` array. Zero values are usable — nil-map
+// lookups return false, which is the correct "no link" answer.
+type planRelations struct {
+	extends      map[string]map[string]bool
+	extendedBy   map[string]map[string]bool
+	supersedes   map[string]map[string]bool
+	supersededBy map[string]map[string]bool
+}
+
+// scanPlanRelations walks every plan file once and populates the four
+// adjacency maps in planRelations. Files that can't be read or have
+// malformed frontmatter contribute nothing — lintPlanFile surfaces those
+// as per-file findings on its own pass.
+func scanPlanRelations(files []string) planRelations {
+	r := planRelations{
+		extends:      make(map[string]map[string]bool, len(files)),
+		extendedBy:   make(map[string]map[string]bool, len(files)),
+		supersedes:   make(map[string]map[string]bool, len(files)),
+		supersededBy: make(map[string]map[string]bool, len(files)),
+	}
+	for _, path := range files {
+		data, err := os.ReadFile(path) // #nosec G304 -- path is a planDir glob result.
+		if err != nil {
+			continue
+		}
+		slug := strings.TrimSuffix(filepath.Base(path), planFileExt)
+		fm, _, _, stop := splitFrontmatter(string(data))
+		if stop {
+			continue
+		}
+		if m := planExtendsRe.FindStringSubmatch(fm); m != nil {
+			r.extends[slug] = inlineSlugSet(m[1])
+		}
+		if m := planExtendedByRe.FindStringSubmatch(fm); m != nil {
+			r.extendedBy[slug] = inlineSlugSet(m[1])
+		}
+		if m := planSupersedesRe.FindStringSubmatch(fm); m != nil {
+			r.supersedes[slug] = inlineSlugSet(m[1])
+		}
+		if m := planSupersededByRe.FindStringSubmatch(fm); m != nil {
+			r.supersededBy[slug] = inlineSlugSet(m[1])
+		}
+	}
+	return r
+}
+
+// inlineSlugSet renders an inline-array body (the captured group of
+// e.g. planExtendsRe) into a set for O(1) bidirectional lookups.
+func inlineSlugSet(raw string) map[string]bool {
+	tokens := parseInlineSystems(raw)
+	if len(tokens) == 0 {
+		return nil
+	}
+	set := make(map[string]bool, len(tokens))
+	for _, t := range tokens {
+		set[t] = true
+	}
+	return set
+}
+
+// lintTitle validates the `title:` frontmatter field. Returns the parsed
+// title (with surrounding quotes stripped) alongside any findings. Empty
+// titles and missing fields are two distinct findings so the user sees
+// exactly which problem to fix.
+func lintTitle(fm string) (title string, findings []string) {
+	m := planTitleRe.FindStringSubmatch(fm)
+	if m == nil {
+		return "", []string{"missing required `title:` field"}
+	}
+	title = strings.Trim(strings.TrimSpace(m[1]), `"'`)
+	if title == "" {
+		return "", []string{"`title:` value is empty"}
+	}
+	return title, nil
+}
+
+// lintCreated validates the `created:` frontmatter field against the
+// ISO 8601 UTC shape `YYYY-MM-DDTHH:MM:SSZ`. Calendar validity (e.g. Feb
+// 30, hour 25) is out of scope — callers can layer a stricter check on
+// top if needed.
+func lintCreated(fm string) []string {
+	m := planCreatedRe.FindStringSubmatch(fm)
+	if m == nil {
+		return []string{"missing required `created:` field (ISO 8601 UTC timestamp, e.g. 2026-05-23T14:30:00Z)"}
+	}
+	if !planCreatedShapeRe.MatchString(m[1]) {
+		return []string{fmt.Sprintf("`created:` value %q is not an ISO 8601 UTC timestamp (YYYY-MM-DDTHH:MM:SSZ)", m[1])}
+	}
+	return nil
+}
+
+// lintFrontmatterOrder enforces "title first, created last" on the
+// top-level frontmatter keys. Comment lines and blank lines are skipped;
+// indented continuation lines (none today, since arrays are inline) would
+// also be skipped because planKeyLineRe anchors at column 0.
+func lintFrontmatterOrder(fm string) []string {
+	var keys []string
+	for _, raw := range strings.Split(fm, "\n") {
+		line := strings.TrimRight(raw, "\r")
+		if line == "" || strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+		if !isIndented(line) {
+			if m := planKeyLineRe.FindStringSubmatch(line); m != nil {
+				keys = append(keys, m[1])
+			}
+		}
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	var findings []string
+	if keys[0] != "title" {
+		findings = append(findings, fmt.Sprintf("`title:` must be the first frontmatter field (got %q)", keys[0]))
+	}
+	if last := keys[len(keys)-1]; last != "created" {
+		findings = append(findings, fmt.Sprintf("`created:` must be the last frontmatter field (got %q)", last))
+	}
+	return findings
+}
+
+// lintFilenameMatchesTitle verifies that the post-prefix portion of the
+// filename equals slugify(title). Skipped when the title is empty
+// (lintTitle already reported that) or when the filename doesn't carry a
+// `<prefix>-<slug>.md` shape (lintFilename already reported that) — the
+// goal here is to surface the title↔filename drift, not to repeat
+// upstream findings.
+func lintFilenameMatchesTitle(name string, width int, title string) []string {
+	if title == "" {
+		return nil
+	}
+	re := regexp.MustCompile(fmt.Sprintf(`^\d{%d}-(.+)%s$`, width, regexp.QuoteMeta(planFileExt)))
+	m := re.FindStringSubmatch(name)
+	if m == nil {
+		return nil
+	}
+	want := slugify(title)
+	if want == "" {
+		return []string{fmt.Sprintf("title %q has no slug-able characters; cannot match filename slug %q", title, m[1])}
+	}
+	if m[1] != want {
+		return []string{fmt.Sprintf("filename slug %q does not match slugify(title) %q", m[1], want)}
+	}
+	return nil
 }
 
 // lintRequiredSections is a presence-only check: each header in
@@ -681,4 +1023,42 @@ func setDifference(a, b map[string]bool) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// ---------- plan slugify ----------
+
+// slugifySepRe matches one-or-more runs of non-slug bytes after lowercasing.
+// Anything outside [a-z0-9] collapses into a single `-`; leading/trailing
+// dashes are then trimmed so the result satisfies the filename regex
+// `^[a-z0-9][a-z0-9-]*$` enforced by lintFilename.
+var slugifySepRe = regexp.MustCompile(`[^a-z0-9]+`)
+
+// slugify converts a plan title into the kebab-case slug used as the
+// post-prefix portion of the filename. Returns an empty string when the
+// input has no [a-z0-9] characters to anchor the slug — callers treat that
+// as an error.
+func slugify(title string) string {
+	return strings.Trim(slugifySepRe.ReplaceAllString(strings.ToLower(title), "-"), "-")
+}
+
+// runPlanSlugify takes a single positional argument (the title) and prints
+// its kebab-case slug to stdout. Exits 2 on missing/extra arguments or when
+// the title contains no characters that survive slugification. No project
+// gate — slugify is a pure transform and is useful before `x-x init`.
+func runPlanSlugify(args []string) {
+	fs := flag.NewFlagSet("plan slugify", flag.ExitOnError)
+	fs.Usage = func() {
+		fmt.Fprintln(os.Stderr, `Usage: x-x plan slugify "<title>"`)
+	}
+	_ = fs.Parse(args)
+	if fs.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, `x-x plan slugify takes exactly one positional argument: the title (quote it)`)
+		os.Exit(2)
+	}
+	slug := slugify(fs.Arg(0))
+	if slug == "" {
+		fmt.Fprintf(os.Stderr, "x-x plan slugify: title %q has no slug-able characters\n", fs.Arg(0))
+		os.Exit(2)
+	}
+	fmt.Println(slug)
 }

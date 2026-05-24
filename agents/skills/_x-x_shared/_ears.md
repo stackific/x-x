@@ -21,7 +21,7 @@ Example of a stacked complex requirement:
 
 ## Hard rules
 
-1. **Exactly one named system per criterion.** The system is a concrete subsystem, service, or component from the registry (`.x-plan/_data_systems.yaml`) — never bare `the system`, `it`, `the app`, `the service`, `the application`, `the platform`. See `_shared_systems.md` for registry consultation and propose-new-system rules.
+1. **Exactly one named system per criterion.** The system is a concrete subsystem, service, or component from the registry (`<cwd>/.x-plan/_data_systems.yaml`) — never bare `the system`, `it`, `the app`, `the service`, `the application`, `the platform`. See `../_x-x_shared/_systems.md` for registry consultation and propose-new-system rules.
 2. **Use `shall`** for the response. Never `should`, `may`, `might`, `will`, `can`, `must`.
 3. **One requirement per sentence.** Split bundled inputs.
 4. **`When` and `If` are mutually exclusive** in one sentence — `When` is expected, `If ... then` is unwanted.
