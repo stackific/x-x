@@ -51,7 +51,7 @@ Every plan starts with YAML frontmatter:
 ---
 title: Add payment retry policy with exponential backoff for transient declines and merchant webhook on terminal failure
 status: valid
-systems: [Checkout Service, Payment Audit Log]
+systems: [checkout-service, payment-audit-log]
 # Optional. Forward link from the *successor* to each predecessor it replaces.
 supersedes: [00003-some-slug, 00007-another-slug]
 # Optional. Back link on the *predecessor*; mirrors every `supersedes:` that names it.
@@ -68,7 +68,7 @@ Frontmatter rules:
 
 - `title` (mandatory, **first** key): one-line human-readable and comprehensive title. The post-prefix portion of the filename MUST equal `x-x plan slugify "<title>"`; lint enforces this.
 - `status` (mandatory): one of `valid`, `superseded`, or `deprecated`. New plans always start as `valid`.
-- `systems` (mandatory): inline YAML array listing every system named in the plan's EARS tasks. Each entry must be an exact `name` from `<cwd>/.x-plan/_data_systems.yaml`.
+- `systems` (mandatory): inline YAML array listing every system named in the plan's EARS tasks. Each entry must be an exact `id:` (kebab-case key) from `<cwd>/.x-plan/_data_systems.yaml`. The corresponding display `name:` renders inside EARS criterion text as `the <name>` — see `../_x-x_shared/_systems.md`.
 - `supersedes` (optional, lives on the **successor**): inline YAML array of full slugs (`<prefix>-<slug>`) that this plan replaces. `/x-x` flips each listed predecessor's status to `superseded` and appends this plan's slug to its `superseded_by:` array after this plan finishes.
 - `superseded_by` (optional, lives on the **predecessor**): inline YAML array of full slugs of newer plans that have replaced this one. Maintained by `/x-x` at the same time it flips `status: valid → superseded`. Back link to `supersedes:`.
 - `extends` (optional, lives on the **extender**): inline YAML array of full slugs of predecessor plans this one extends. Both predecessor and extender stay `status: valid` — `extends` is a forward pointer, not a state change.
@@ -88,9 +88,9 @@ Body sections, in this order:
 Four Go subcommands under `x-x plan`:
 
 - `x-x plan next-prefix` — prints the next unused zero-padded prefix from `<cwd>/.x-plan`. Takes no arguments. Width is read from `<cwd>/.x-plan/_config.lock` (`prefix_width`) and falls back to `4` when the lock file is missing.
-- `x-x plan list [--status NAME[,NAME...]] [--system NAME] [--order asc|desc] [--overflow-keywords PATTERN[,PATTERN...]]` — lists plans in `<cwd>/.x-plan`, one tab-separated row per plan: `<slug>\t<status>\t<system>,<system>,...`.
+- `x-x plan list [--status NAME[,NAME...]] [--system ID] [--order asc|desc] [--overflow-keywords PATTERN[,PATTERN...]]` — lists plans in `<cwd>/.x-plan`, one tab-separated row per plan: `<slug>\t<status>\t<id>,<id>,...`.
   - `--status` keeps only matching statuses. Repeatable; comma-separated values OK.
-  - `--system` keeps only plans whose `systems:` array contains the given name. Repeatable; OR semantics.
+  - `--system` keeps only plans whose `systems:` array contains the given kebab id (the `id:` key from `_data_systems.yaml`). Repeatable; OR semantics.
   - `--order` sorts by zero-padded prefix; default `desc` (latest first). Pass `--order=asc` when you need oldest-first execution order (e.g. `/x-x` work-queue and ground-truth lookup).
   - `--overflow-keywords` accepts one or more case-insensitive literal substrings and engages only when the post-filter row count exceeds the project's overflow threshold (default 20). Matches against plan **body** only; on overflow with no match, returns the top-threshold rows as a fallback. Always safe to pass — it's a no-op below the threshold.
 - `x-x plan lint` — validates every plan file in `<cwd>/.x-plan` against the contract: filename pattern, line cap (`max_plan_lines`), frontmatter (including `title:` first / `created:` last), status values, registry membership, supersedes resolution, `created:` shape, filename-slug ↔ `slugify(title)` equality, required sections, EARS-subject ↔ `systems:` equality. Exit 0 = all pass, exit 1 = at least one failure. Findings go to stdout, one per line, prefixed with the file path; the `<ok>/<failed>` summary goes to stderr.

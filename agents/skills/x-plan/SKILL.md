@@ -28,9 +28,9 @@ When clarification IS needed, ask the user all questions in a single `AskUserQue
 
 ## 2a. Check for overlap with valid plans
 
-Run `x-x plan list --status valid --overflow-keywords <terms>`, where `<terms>` is a short comma-separated list of case-insensitive literal substrings drawn from the new plan's title and intended systems (e.g. `payment,retry,checkout`). The flag is a no-op when the project has ≤20 valid plans; when there are more, it narrows the result to plans whose body contains any term (falling back to the latest 20 if no term matches). Pass the keywords every time — paying for the flag in the small-project case costs nothing, and the LLM avoids a second round-trip in the heavy case. Compare each emitted row's third column against the new plan's planned `systems` for any intersection.
+Resolve the kebab `id:` of every system the new plan will touch via `<cwd>/.x-plan/_data_systems.yaml`. Run `x-x plan list --status valid --system <id1>,<id2>,... --overflow-keywords <terms>` where `<terms>` is a short comma-separated list of case-insensitive literal substrings chosen to discriminate *this* plan from siblings in the same systems (e.g. `webhook,retry` when several payment-system plans already exist — pick terms that further narrow the system-filtered list, not terms already implied by the systems themselves). `--system` filters server-side, so every emitted row already intersects the new plan's systems — no third-column comparison needed. `--overflow-keywords` is a no-op when the post-`--system` row count is ≤20; above that it narrows further by body substring (falling back to the latest 20 if no term matches). Pass both flags every time.
 
-If any intersection exists, ask the user — in the same single-turn questions batch from step 2 — whether the new plan **extends** or **supersedes** each overlapping plan, referenced by full slug (e.g. `00003-checkout-retry`). For more accuracy, you may dig deeper by reading the overlapping plan via `<cwd>/.x-plan/<overlapping-plan-slug>.md`. Remember the answer per predecessor: a **supersedes** answer becomes a `supersedes:` entry on the new plan; an **extends** answer becomes a back-reference on the predecessor (see step 3 — you will `Edit` the predecessor's frontmatter to append the new plan's slug to its `extended_by` array).
+For each emitted row, ask the user — in the same single-turn questions batch from step 2 — whether the new plan **extends** or **supersedes** that plan, referenced by full slug (e.g. `00003-checkout-retry`). For more accuracy, you may dig deeper by reading the overlapping plan via `<cwd>/.x-plan/<overlapping-plan-slug>.md`. Remember the answer per predecessor: a **supersedes** answer becomes a `supersedes:` entry on the new plan; an **extends** answer becomes a back-reference on the predecessor (see step 3 — you will `Edit` the predecessor's frontmatter to append the new plan's slug to its `extended_by` array).
 
 ## 2b. Research dependencies and external APIs
 
@@ -56,7 +56,7 @@ The predecessor and the extender both stay `status: valid`. `x-x plan lint` enfo
 
 **Before drafting the `## Tasks` section, read `../_x-x_shared/_ears.md`.** It is lazy-loaded only here (kept out of step 1) to make context loading cheap; every EARS criterion names exactly one system from `<cwd>/.x-plan/_data_systems.yaml`.
 
-The `systems:` array must list every system named in the plan's EARS tasks, each entry an exact `name` from `<cwd>/.x-plan/_data_systems.yaml`.
+The `systems:` array must list every system named in the plan's EARS tasks, each entry an exact `id:` (kebab key) from `<cwd>/.x-plan/_data_systems.yaml`. EARS criterion text still uses the corresponding display `name:` — see `../_x-x_shared/_systems.md`.
 
 If the request covers separable scopes, you may split it into multiple specs — but only when each resulting spec's tasks target a fully disjoint set of systems. If any system would appear in two specs, keep them as one. Run `x-x plan next-prefix` once per split spec, in order, so prefixes stay sequential. Do not split for the sake of splitting.
 

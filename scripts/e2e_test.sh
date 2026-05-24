@@ -219,13 +219,14 @@ EOF
 
 # write_plan_body <dir> <name> <body> — seeds a plan whose body is exactly
 # <body>. Used by the overflow-keywords cases that need predictable body
-# content for regex matching.
+# content for regex matching. The `systems:` array carries a kebab id so
+# the plan is round-trippable through `--system auth`.
 write_plan_body() {
   local p="$1/$2" body="$3"
   cat > "$p" <<EOF
 ---
 status: valid
-systems: [Auth]
+systems: [auth]
 ---
 ${body}
 EOF
@@ -245,14 +246,19 @@ seed_many_plans() {
   done
 }
 
-# write_full_plan <dir> <name> <status> <inline-systems> <ears-subject> —
+# write_full_plan <dir> <name> <status> <inline-system-ids> <ears-subject-name> —
 # seeds a plan that passes every lint check by default (frontmatter,
-# required sections, EARS subject matching the declared system). Used by
-# the `plan lint` cases as the baseline; individual cases override one
-# field to trip a single finding. The title is derived from the filename
-# slug so the title↔filename lint stays satisfied; cases that intentionally
-# break the filename also fail lintFilename, which short-circuits the
-# title↔filename check.
+# required sections, EARS subject name resolving to the declared system id
+# via the registry). Used by the `plan lint` cases as the baseline;
+# individual cases override one field to trip a single finding. The 4th
+# arg goes into `systems:` (kebab ids); the 5th arg goes into the EARS
+# subject (display name). They are two coordinates of the same registry
+# entry — the linter resolves the subject name to its id and checks the
+# id set against the declared ids.
+#
+# The title is derived from the filename slug so the title↔filename lint
+# stays satisfied; cases that intentionally break the filename also fail
+# lintFilename, which short-circuits the title↔filename check.
 write_full_plan() {
   local p="$1/$2"
   local slug="${2#*-}"
@@ -1582,13 +1588,13 @@ assert_contains "hint"       "$RUN_ERR" "x-x init"
 case_start "x-x plan list emits tab-separated rows sorted by prefix descending (default)"
 PROJ_PL3="$(fresh_project)"
 seed_project_scaffold "$PROJ_PL3"
-write_plan "$PROJ_PL3/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-bravo.md"   "deprecated" "Billing"
-write_plan "$PROJ_PL3/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-alpha.md"   "valid"      "Auth, Billing"
-write_plan "$PROJ_PL3/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 3)-charlie.md" "superseded" "Auth"
+write_plan "$PROJ_PL3/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-bravo.md"   "deprecated" "billing"
+write_plan "$PROJ_PL3/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-alpha.md"   "valid"      "auth, billing"
+write_plan "$PROJ_PL3/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 3)-charlie.md" "superseded" "auth"
 cd "$PROJ_PL3"
 run_capture "" plan list
 assert_eq "exit 0" "$RUN_RC" "0"
-expected="$(printf '%s-charlie\tsuperseded\tAuth\n%s-bravo\tdeprecated\tBilling\n%s-alpha\tvalid\tAuth,Billing' \
+expected="$(printf '%s-charlie\tsuperseded\tauth\n%s-bravo\tdeprecated\tbilling\n%s-alpha\tvalid\tauth,billing' \
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 3)" \
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)" \
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)")"
@@ -1598,7 +1604,7 @@ case_start "x-x plan list --order=asc reverses to prefix-ascending"
 cd "$PROJ_PL3"
 run_capture "" plan list --order=asc
 assert_eq "exit 0" "$RUN_RC" "0"
-expected="$(printf '%s-alpha\tvalid\tAuth,Billing\n%s-bravo\tdeprecated\tBilling\n%s-charlie\tsuperseded\tAuth' \
+expected="$(printf '%s-alpha\tvalid\tauth,billing\n%s-bravo\tdeprecated\tbilling\n%s-charlie\tsuperseded\tauth' \
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)" \
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)" \
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 3)")"
@@ -1608,7 +1614,7 @@ case_start "x-x plan list --order=desc (explicit default)"
 cd "$PROJ_PL3"
 run_capture "" plan list --order=desc
 assert_eq "exit 0" "$RUN_RC" "0"
-expected="$(printf '%s-charlie\tsuperseded\tAuth\n%s-bravo\tdeprecated\tBilling\n%s-alpha\tvalid\tAuth,Billing' \
+expected="$(printf '%s-charlie\tsuperseded\tauth\n%s-bravo\tdeprecated\tbilling\n%s-alpha\tvalid\tauth,billing' \
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 3)" \
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)" \
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)")"
@@ -1625,32 +1631,32 @@ cd "$PROJ_PL3"
 run_capture "" plan list --status valid
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_eq "status filter keeps only valid" "$RUN_OUT" \
-  "$(printf '%s-alpha\tvalid\tAuth,Billing' "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)")"
+  "$(printf '%s-alpha\tvalid\tauth,billing' "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)")"
 
 case_start "x-x plan list --status comma list (desc order)"
 cd "$PROJ_PL3"
 run_capture "" plan list --status valid,superseded
 assert_eq "exit 0" "$RUN_RC" "0"
-expected="$(printf '%s-charlie\tsuperseded\tAuth\n%s-alpha\tvalid\tAuth,Billing' \
+expected="$(printf '%s-charlie\tsuperseded\tauth\n%s-alpha\tvalid\tauth,billing' \
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 3)" \
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)")"
 assert_eq "comma status filter (desc)" "$RUN_OUT" "$expected"
 
 case_start "x-x plan list --system OR semantics (desc order)"
 cd "$PROJ_PL3"
-run_capture "" plan list --system Billing
+run_capture "" plan list --system billing
 assert_eq "exit 0" "$RUN_RC" "0"
-expected="$(printf '%s-bravo\tdeprecated\tBilling\n%s-alpha\tvalid\tAuth,Billing' \
+expected="$(printf '%s-bravo\tdeprecated\tbilling\n%s-alpha\tvalid\tauth,billing' \
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)" \
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)")"
 assert_eq "system filter matches any (desc)" "$RUN_OUT" "$expected"
 
 case_start "x-x plan list combined --status and --system"
 cd "$PROJ_PL3"
-run_capture "" plan list --status valid --system Auth
+run_capture "" plan list --status valid --system auth
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_eq "status+system intersection" "$RUN_OUT" \
-  "$(printf '%s-alpha\tvalid\tAuth,Billing' "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)")"
+  "$(printf '%s-alpha\tvalid\tauth,billing' "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)")"
 
 case_start "x-x plan list warns on malformed frontmatter but keeps siblings"
 PROJ_PL4="$(fresh_project)"
@@ -1658,26 +1664,26 @@ seed_project_scaffold "$PROJ_PL4"
 broken_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-broken.md"
 ok_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-ok.md"
 echo "not a plan" > "$PROJ_PL4/${PLAN_DIR}/$broken_name"
-write_plan "$PROJ_PL4/${PLAN_DIR}" "$ok_name" "valid" "Auth"
+write_plan "$PROJ_PL4/${PLAN_DIR}" "$ok_name" "valid" "auth"
 cd "$PROJ_PL4"
 run_capture "" plan list
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_eq "broken skipped, ok kept" "$RUN_OUT" \
-  "$(printf '%s\tvalid\tAuth' "${ok_name%.md}")"
+  "$(printf '%s\tvalid\tauth' "${ok_name%.md}")"
 assert_contains "warning to stderr" "$RUN_ERR" "$broken_name"
 
 case_start "x-x plan list ignores non-matching filenames"
 PROJ_PL5="$(fresh_project)"
 seed_project_scaffold "$PROJ_PL5"
 keep_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-keep.md"
-write_plan "$PROJ_PL5/${PLAN_DIR}" "$keep_name" "valid" "Auth"
+write_plan "$PROJ_PL5/${PLAN_DIR}" "$keep_name" "valid" "auth"
 echo "x" > "$PROJ_PL5/${PLAN_DIR}/README.md"
 echo "x" > "$PROJ_PL5/${PLAN_DIR}/123-short.md"
 echo "x" > "$PROJ_PL5/${PLAN_DIR}/$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-no-ext"
 cd "$PROJ_PL5"
 run_capture "" plan list
 assert_eq "exit 0" "$RUN_RC" "0"
-assert_eq "only keep matched" "$RUN_OUT" "$(printf '%s\tvalid\tAuth' "${keep_name%.md}")"
+assert_eq "only keep matched" "$RUN_OUT" "$(printf '%s\tvalid\tauth' "${keep_name%.md}")"
 [ -z "$RUN_ERR" ] && ok "no spurious warnings" || fail "no spurious warnings" "got: $RUN_ERR"
 
 case_start "x-x plan list rejects positional args"
@@ -1685,6 +1691,159 @@ cd "$(fresh_project)"
 run_capture "" plan list foo
 assert_eq "exit 2" "$RUN_RC" "2"
 assert_contains "diagnostic" "$RUN_ERR" "takes no positional"
+
+# ---------- plan list: --system id-aware filter ----------
+#
+# `--system` matches the kebab `id:` value plans carry in their
+# frontmatter `systems:` array. Both sides are id strings — no name
+# resolution, no fuzzy match, and `--system` does NOT consult
+# `_data_systems.yaml` to validate the requested id (an unknown id
+# simply matches zero rows). These cases pin every observable corner
+# of the id contract beyond the basic OR semantics covered above.
+
+case_start "x-x plan list --system <kebab-id> matches multi-word system id"
+PROJ_PSI1="$(fresh_project)"
+seed_project_scaffold "$PROJ_PSI1"
+write_plan "$PROJ_PSI1/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-alpha.md" "valid" "checkout-service"
+write_plan "$PROJ_PSI1/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-bravo.md" "valid" "payment-audit-log"
+cd "$PROJ_PSI1"
+run_capture "" plan list --system checkout-service
+assert_eq "exit 0" "$RUN_RC" "0"
+assert_eq "only checkout-service plan returned" "$RUN_OUT" \
+  "$(printf '%s-alpha\tvalid\tcheckout-service' "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)")"
+
+case_start "x-x plan list --system <unknown-id> returns zero rows silently"
+PROJ_PSI2="$(fresh_project)"
+seed_project_scaffold "$PROJ_PSI2"
+write_plan "$PROJ_PSI2/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-alpha.md" "valid" "checkout-service"
+cd "$PROJ_PSI2"
+run_capture "" plan list --system never-declared
+assert_eq "exit 0" "$RUN_RC" "0"
+assert_eq "no rows for unknown id" "$RUN_OUT" ""
+[ -z "$RUN_ERR" ] && ok "no stderr noise for unknown id" || fail "no stderr noise for unknown id" "got: $RUN_ERR"
+
+case_start "x-x plan list --system <id> doesn't match display name even when shaped similarly"
+# Plan frontmatter id is `checkout-service`; passing the display name
+# `Checkout Service` (with space + capitals) must not match. Pins that
+# the filter is a literal id string-compare, not a slugify-and-compare.
+PROJ_PSI_DN="$(fresh_project)"
+seed_project_scaffold "$PROJ_PSI_DN"
+write_plan "$PROJ_PSI_DN/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-alpha.md" "valid" "checkout-service"
+cd "$PROJ_PSI_DN"
+run_capture "" plan list --system "Checkout Service"
+assert_eq "exit 0" "$RUN_RC" "0"
+assert_eq "display name doesn't match kebab id" "$RUN_OUT" ""
+
+case_start "x-x plan list --system <id1>,<id2> OR semantics via comma list"
+PROJ_PSI3="$(fresh_project)"
+seed_project_scaffold "$PROJ_PSI3"
+write_plan "$PROJ_PSI3/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-a.md" "valid" "checkout-service"
+write_plan "$PROJ_PSI3/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-b.md" "valid" "payment-audit-log"
+write_plan "$PROJ_PSI3/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 3)-c.md" "valid" "other-system"
+cd "$PROJ_PSI3"
+run_capture "" plan list --system checkout-service,payment-audit-log --order=asc
+assert_eq "exit 0" "$RUN_RC" "0"
+expected="$(printf '%s-a\tvalid\tcheckout-service\n%s-b\tvalid\tpayment-audit-log' \
+  "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)" \
+  "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)")"
+assert_eq "comma-list OR semantics" "$RUN_OUT" "$expected"
+
+case_start "x-x plan list --system <id1> --system <id2> repeated flag = comma list"
+cd "$PROJ_PSI3"
+run_capture "" plan list --system checkout-service --system payment-audit-log --order=asc
+assert_eq "exit 0" "$RUN_RC" "0"
+expected="$(printf '%s-a\tvalid\tcheckout-service\n%s-b\tvalid\tpayment-audit-log' \
+  "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)" \
+  "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)")"
+assert_eq "repeated-flag OR matches comma form" "$RUN_OUT" "$expected"
+
+case_start "x-x plan list --system mixed forms (one comma + one repeat) still OR"
+cd "$PROJ_PSI3"
+run_capture "" plan list --system checkout-service,other-system --system payment-audit-log --order=asc
+assert_eq "exit 0" "$RUN_RC" "0"
+expected="$(printf '%s-a\tvalid\tcheckout-service\n%s-b\tvalid\tpayment-audit-log\n%s-c\tvalid\tother-system' \
+  "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)" \
+  "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)" \
+  "$(prefix "$DEFAULT_PREFIX_WIDTH" 3)")"
+assert_eq "mixed comma+repeat OR" "$RUN_OUT" "$expected"
+
+case_start "x-x plan list --system <id> matches any element of multi-id systems array"
+PROJ_PSI4="$(fresh_project)"
+seed_project_scaffold "$PROJ_PSI4"
+write_plan "$PROJ_PSI4/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-a.md" "valid" "checkout-service, payment-audit-log"
+write_plan "$PROJ_PSI4/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-b.md" "valid" "other-system"
+cd "$PROJ_PSI4"
+run_capture "" plan list --system payment-audit-log
+assert_eq "exit 0" "$RUN_RC" "0"
+assert_eq "single-id flag matches multi-id row" "$RUN_OUT" \
+  "$(printf '%s-a\tvalid\tcheckout-service,payment-audit-log' "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)")"
+
+case_start "x-x plan list combined --status valid --system <id> intersects both"
+PROJ_PSI5="$(fresh_project)"
+seed_project_scaffold "$PROJ_PSI5"
+write_plan "$PROJ_PSI5/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-a.md" "valid"      "checkout-service"
+write_plan "$PROJ_PSI5/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-b.md" "superseded" "checkout-service"
+write_plan "$PROJ_PSI5/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 3)-c.md" "valid"      "other-system"
+cd "$PROJ_PSI5"
+run_capture "" plan list --status valid --system checkout-service
+assert_eq "exit 0" "$RUN_RC" "0"
+assert_eq "status+id intersection (single match)" "$RUN_OUT" \
+  "$(printf '%s-a\tvalid\tcheckout-service' "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)")"
+
+case_start "x-x plan list --system <id> + --overflow-keywords narrows after id filter"
+PROJ_PSI6="$(fresh_project)"
+seed_project_scaffold "$PROJ_PSI6"
+# Seed enough payment-system plans to cross threshold so overflow engages
+# AFTER the --system filter has been applied. Body keyword `retry` then
+# narrows further to the one plan whose body mentions retry.
+over=$((PLAN_LIST_OVERFLOW_THRESHOLD + 5))
+for ((i=1; i<=over; i++)); do
+  pad="$(printf '%03d' "$i")"
+  name="$(prefix "$DEFAULT_PREFIX_WIDTH" "$i")-plan${pad}.md"
+  cat > "$PROJ_PSI6/${PLAN_DIR}/$name" <<EOF
+---
+status: valid
+systems: [payment-service]
+---
+${i} generic body
+EOF
+done
+cat > "$PROJ_PSI6/${PLAN_DIR}/$(prefix "$DEFAULT_PREFIX_WIDTH" 7)-plan007.md" <<EOF
+---
+status: valid
+systems: [payment-service]
+---
+this one is about exponential retry backoff
+EOF
+# An unrelated plan on a different system; same keyword in body — must be
+# gated out by --system before the overflow narrow sees it.
+cat > "$PROJ_PSI6/${PLAN_DIR}/$(prefix "$DEFAULT_PREFIX_WIDTH" 99)-unrelated.md" <<EOF
+---
+status: valid
+systems: [unrelated-system]
+---
+also mentions retry but on a different system
+EOF
+cd "$PROJ_PSI6"
+run_capture "" plan list --system payment-service --overflow-keywords retry
+assert_eq "exit 0" "$RUN_RC" "0"
+assert_contains "plan007 in match"      "$RUN_OUT" "plan007"
+assert_not_contains "unrelated gated out before narrow" "$RUN_OUT" "unrelated"
+n="$(printf '%s\n' "$RUN_OUT" | grep -c '^.')"
+assert_eq "exactly one match (id ∩ keyword)" "$n" "1"
+
+case_start "x-x plan list --system <id> below threshold makes --overflow-keywords a no-op"
+PROJ_PSI7="$(fresh_project)"
+seed_project_scaffold "$PROJ_PSI7"
+write_plan "$PROJ_PSI7/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-a.md" "valid" "checkout-service"
+write_plan "$PROJ_PSI7/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-b.md" "valid" "checkout-service"
+cd "$PROJ_PSI7"
+# Two plans pass --system; the count (2) is well under the threshold, so
+# --overflow-keywords engages no matter what we pass.
+run_capture "" plan list --system checkout-service --overflow-keywords zzz-no-match
+assert_eq "exit 0" "$RUN_RC" "0"
+n="$(printf '%s\n' "$RUN_OUT" | grep -c '^.')"
+assert_eq "both rows pass through (threshold not exceeded)" "$n" "2"
 
 # ---------- plan list: --overflow-keywords + threshold behavior ----------
 #
@@ -1806,8 +1965,11 @@ seed_project_scaffold "$PROJ_OK7"
 over=$((PLAN_LIST_OVERFLOW_THRESHOLD + 1))
 seed_many_plans "$PROJ_OK7/${PLAN_DIR}" "$over" "body content"
 cd "$PROJ_OK7"
-# "Auth" is in every plan's frontmatter `systems:` but never in body.
-# Keyword search is body-only → no matches → top-threshold fallback.
+# "auth" is in every plan's frontmatter `systems:` (the kebab id) but
+# never in body. Keyword search is body-only → no matches → top-threshold
+# fallback. The capitalized `Auth` keyword would not match either; the
+# real point is that frontmatter scalars (whatever their case) never feed
+# the body-only narrow.
 run_capture "" plan list --overflow-keywords Auth
 assert_eq "exit 0" "$RUN_RC" "0"
 n="$(printf '%s\n' "$RUN_OUT" | grep -c '^.')"
@@ -1890,7 +2052,7 @@ PROJ_LN1="$(fresh_project)"
 seed_project_scaffold "$PROJ_LN1"
 write_registry "$PROJ_LN1/${PLAN_DIR}" "Auth Service"
 plan1_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md"
-write_full_plan "$PROJ_LN1/${PLAN_DIR}" "$plan1_name" "valid" "Auth Service" "Auth Service"
+write_full_plan "$PROJ_LN1/${PLAN_DIR}" "$plan1_name" "valid" "auth-service" "Auth Service"
 cd "$PROJ_LN1"
 run_capture "" plan lint
 assert_eq "exit 0"               "$RUN_RC" "0"
@@ -1901,7 +2063,7 @@ case_start "x-x plan lint flags bad filename"
 PROJ_LN2="$(fresh_project)"
 seed_project_scaffold "$PROJ_LN2"
 write_registry "$PROJ_LN2/${PLAN_DIR}" "Auth Service"
-write_full_plan "$PROJ_LN2/${PLAN_DIR}" "BAD-NAME.md" "valid" "Auth Service" "Auth Service"
+write_full_plan "$PROJ_LN2/${PLAN_DIR}" "BAD-NAME.md" "valid" "auth-service" "Auth Service"
 cd "$PROJ_LN2"
 run_capture "" plan lint
 assert_eq "exit 1"               "$RUN_RC" "1"
@@ -1923,7 +2085,7 @@ PROJ_LN4="$(fresh_project)"
 seed_project_scaffold "$PROJ_LN4"
 write_registry "$PROJ_LN4/${PLAN_DIR}" "Auth Service"
 write_full_plan "$PROJ_LN4/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md" \
-  "bogus" "Auth Service" "Auth Service"
+  "bogus" "auth-service" "Auth Service"
 cd "$PROJ_LN4"
 run_capture "" plan lint
 assert_eq "exit 1"           "$RUN_RC" "1"
@@ -1934,11 +2096,11 @@ PROJ_LN5="$(fresh_project)"
 seed_project_scaffold "$PROJ_LN5"
 write_registry "$PROJ_LN5/${PLAN_DIR}" "Auth Service"
 write_full_plan "$PROJ_LN5/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md" \
-  "valid" "Ghost Service" "Ghost Service"
+  "valid" "ghost-service" "Ghost Service"
 cd "$PROJ_LN5"
 run_capture "" plan lint
 assert_eq "exit 1"                "$RUN_RC" "1"
-assert_contains "system finding"  "$RUN_OUT" "declared system \"Ghost Service\" is not in"
+assert_contains "system finding"  "$RUN_OUT" "declared system \"ghost-service\" is not in"
 
 case_start "x-x plan lint flags dangling supersedes"
 PROJ_LN6="$(fresh_project)"
@@ -1949,7 +2111,7 @@ cat > "$PROJ_LN6/${PLAN_DIR}/$super_name" <<EOF
 ---
 title: foo
 status: valid
-systems: [Auth Service]
+systems: [auth-service]
 supersedes: [00099-nope]
 created: 2026-05-23T14:30:00Z
 ---
@@ -1974,7 +2136,7 @@ seed_project_scaffold "$PROJ_LN7"
 write_registry "$PROJ_LN7/${PLAN_DIR}" "Auth Service,Billing Service"
 # Declares Auth but task names Billing — both diff directions fire.
 write_full_plan "$PROJ_LN7/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md" \
-  "valid" "Auth Service" "Billing Service"
+  "valid" "auth-service" "Billing Service"
 cd "$PROJ_LN7"
 run_capture "" plan lint
 assert_eq "exit 1"                       "$RUN_RC" "1"
@@ -1995,7 +2157,7 @@ no_title_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md"
 cat > "$PROJ_LN_TT/${PLAN_DIR}/$no_title_name" <<EOF
 ---
 status: valid
-systems: [Auth Service]
+systems: [auth-service]
 created: 2026-05-23T14:30:00Z
 ---
 
@@ -2022,7 +2184,7 @@ cat > "$PROJ_LN_CR/${PLAN_DIR}/$no_created_name" <<EOF
 ---
 title: foo
 status: valid
-systems: [Auth Service]
+systems: [auth-service]
 ---
 
 ## Goal
@@ -2048,7 +2210,7 @@ cat > "$PROJ_LN_CD/${PLAN_DIR}/$bad_created_name" <<EOF
 ---
 title: foo
 status: valid
-systems: [Auth Service]
+systems: [auth-service]
 created: yesterday
 ---
 
@@ -2075,7 +2237,7 @@ cat > "$PROJ_LN_DO/${PLAN_DIR}/$date_only_name" <<EOF
 ---
 title: foo
 status: valid
-systems: [Auth Service]
+systems: [auth-service]
 created: 2026-05-23
 ---
 
@@ -2102,7 +2264,7 @@ cat > "$PROJ_LN_TO/${PLAN_DIR}/$order_name" <<EOF
 ---
 status: valid
 title: foo
-systems: [Auth Service]
+systems: [auth-service]
 created: 2026-05-23T14:30:00Z
 ---
 
@@ -2125,7 +2287,7 @@ PROJ_LN_FT="$(fresh_project)"
 seed_project_scaffold "$PROJ_LN_FT"
 write_registry "$PROJ_LN_FT/${PLAN_DIR}" "Auth Service"
 mismatch_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md"
-write_full_plan "$PROJ_LN_FT/${PLAN_DIR}" "$mismatch_name" "valid" "Auth Service" "Auth Service"
+write_full_plan "$PROJ_LN_FT/${PLAN_DIR}" "$mismatch_name" "valid" "auth-service" "Auth Service"
 # Overwrite title with one that slugifies to "something-else".
 sed -i.bak -e 's/^title: foo/title: Something Else/' "$PROJ_LN_FT/${PLAN_DIR}/$mismatch_name"
 rm -f "$PROJ_LN_FT/${PLAN_DIR}/$mismatch_name.bak"
@@ -2133,6 +2295,230 @@ cd "$PROJ_LN_FT"
 run_capture "" plan lint
 assert_eq "exit 1"                  "$RUN_RC" "1"
 assert_contains "filename↔title"    "$RUN_OUT" "does not match slugify(title)"
+
+# ---------- plan lint: id-aware registry + EARS-name resolution ----------
+#
+# After the registry switched to carrying explicit kebab `id:` values
+# (parsed by parseRegistry into id↔name maps), the linter performs two
+# distinct lookups against `_data_systems.yaml`:
+#
+#   1) Every entry in frontmatter `systems:` must be a known `id:` —
+#      checked against registry.byID. A plan that left a display name in
+#      `systems:` (a common migration slip) fails here.
+#   2) Every EARS subject in body text (a display name like "Auth
+#      Service") must resolve to an id via registry.byName; the resolved
+#      id set must equal the declared `systems:` id set exactly.
+#
+# Partial registry entries (missing `id:` OR missing `name:`) are dropped
+# silently by parseRegistry — the per-file lint surfaces them at the
+# point a plan tries to reference the half-defined entry.
+
+case_start "lint passes: id frontmatter + display-name EARS subject resolves cleanly"
+PROJ_ID_HP="$(fresh_project)"
+seed_project_scaffold "$PROJ_ID_HP"
+write_registry "$PROJ_ID_HP/${PLAN_DIR}" "Auth Service"
+hp_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md"
+write_full_plan "$PROJ_ID_HP/${PLAN_DIR}" "$hp_name" "valid" "auth-service" "Auth Service"
+cd "$PROJ_ID_HP"
+run_capture "" plan lint
+assert_eq "exit 0"        "$RUN_RC" "0"
+assert_contains "ok line" "$RUN_OUT" "$hp_name: ok"
+
+case_start "lint flags frontmatter that uses a display name where an id belongs"
+# A typical migration slip: author left `Auth Service` (the display name)
+# in `systems:` instead of switching to the kebab id. Lint must surface
+# it as "declared system not in registry".
+PROJ_ID_BAD="$(fresh_project)"
+seed_project_scaffold "$PROJ_ID_BAD"
+write_registry "$PROJ_ID_BAD/${PLAN_DIR}" "Auth Service"
+bad_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md"
+cat > "$PROJ_ID_BAD/${PLAN_DIR}/$bad_name" <<EOF
+---
+title: foo
+status: valid
+systems: [Auth Service]
+created: 2026-05-23T14:30:00Z
+---
+
+## Goal
+g
+
+## Approach
+- A
+
+## Tasks
+- [ ] The Auth Service shall do.
+EOF
+cd "$PROJ_ID_BAD"
+run_capture "" plan lint
+assert_eq "exit 1"                    "$RUN_RC" "1"
+assert_contains "id-not-in-registry"  "$RUN_OUT" "declared system \"Auth Service\" is not in"
+
+case_start "lint flags EARS subject whose display name isn't in registry"
+# Registry has only Auth Service. Frontmatter declares its id cleanly,
+# but the body's EARS task names a system that has no registry entry —
+# the new name→id resolution surfaces "EARS subject is not in <registry>".
+PROJ_ID_ES="$(fresh_project)"
+seed_project_scaffold "$PROJ_ID_ES"
+write_registry "$PROJ_ID_ES/${PLAN_DIR}" "Auth Service"
+es_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md"
+cat > "$PROJ_ID_ES/${PLAN_DIR}/$es_name" <<EOF
+---
+title: foo
+status: valid
+systems: [auth-service]
+created: 2026-05-23T14:30:00Z
+---
+
+## Goal
+g
+
+## Approach
+- A
+
+## Tasks
+- [ ] The Phantom Service shall haunt.
+EOF
+cd "$PROJ_ID_ES"
+run_capture "" plan lint
+assert_eq "exit 1"                       "$RUN_RC" "1"
+assert_contains "unknown-subject"        "$RUN_OUT" "EARS subject \"Phantom Service\" is not in"
+
+case_start "lint passes on multi-system plan with all subjects resolved cleanly"
+# Two registered systems, both declared in frontmatter by id and both
+# named in the body. The name→id translation collapses to the same id
+# set on both sides; no findings should fire.
+PROJ_ID_MS="$(fresh_project)"
+seed_project_scaffold "$PROJ_ID_MS"
+write_registry "$PROJ_ID_MS/${PLAN_DIR}" "Auth Service,Billing Service"
+ms_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md"
+cat > "$PROJ_ID_MS/${PLAN_DIR}/$ms_name" <<EOF
+---
+title: foo
+status: valid
+systems: [auth-service, billing-service]
+created: 2026-05-23T14:30:00Z
+---
+
+## Goal
+g
+
+## Approach
+- A
+
+## Tasks
+- [ ] The Auth Service shall authenticate.
+- [ ] The Billing Service shall invoice.
+EOF
+cd "$PROJ_ID_MS"
+run_capture "" plan lint
+assert_eq "exit 0"        "$RUN_RC" "0"
+assert_contains "ok line" "$RUN_OUT" "$ms_name: ok"
+
+case_start "lint flags partial registry entry (id only): plan can't reference it"
+# parseRegistry drops entries with no `name:`. Referencing the dropped
+# id from frontmatter therefore surfaces an "id not in registry" finding.
+PROJ_ID_PI="$(fresh_project)"
+seed_project_scaffold "$PROJ_ID_PI"
+cat > "$PROJ_ID_PI/${PLAN_DIR}/${PLAN_SYSTEMS_FILE}" <<EOF
+systems:
+  - id: auth-service
+    name: Auth Service
+    brief: handles auth
+  - id: partial-thing
+    brief: missing name field
+EOF
+pi_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md"
+cat > "$PROJ_ID_PI/${PLAN_DIR}/$pi_name" <<EOF
+---
+title: foo
+status: valid
+systems: [partial-thing]
+created: 2026-05-23T14:30:00Z
+---
+
+## Goal
+g
+
+## Approach
+- A
+
+## Tasks
+- [ ] The Auth Service shall do.
+EOF
+cd "$PROJ_ID_PI"
+run_capture "" plan lint
+assert_eq "exit 1"                       "$RUN_RC" "1"
+assert_contains "partial entry dropped"  "$RUN_OUT" "declared system \"partial-thing\" is not in"
+
+case_start "lint flags partial registry entry (name only): EARS subject can't resolve"
+# Mirror image of the previous case: an entry with `name:` but no `id:`
+# is dropped, so body subject "Lone Name" has no id to resolve to.
+PROJ_ID_PN="$(fresh_project)"
+seed_project_scaffold "$PROJ_ID_PN"
+cat > "$PROJ_ID_PN/${PLAN_DIR}/${PLAN_SYSTEMS_FILE}" <<EOF
+systems:
+  - id: auth-service
+    name: Auth Service
+    brief: handles auth
+  - name: Lone Name
+    brief: missing id field
+EOF
+pn_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md"
+cat > "$PROJ_ID_PN/${PLAN_DIR}/$pn_name" <<EOF
+---
+title: foo
+status: valid
+systems: [auth-service]
+created: 2026-05-23T14:30:00Z
+---
+
+## Goal
+g
+
+## Approach
+- A
+
+## Tasks
+- [ ] The Lone Name shall do.
+EOF
+cd "$PROJ_ID_PN"
+run_capture "" plan lint
+assert_eq "exit 1"                        "$RUN_RC" "1"
+assert_contains "name-only entry dropped" "$RUN_OUT" "EARS subject \"Lone Name\" is not in"
+
+case_start "lint flags display-name-in-systems AND subject-id-not-resolved together"
+# Author put a display name in `systems:` AND the body subject happens to
+# match an existing registry name. The id-membership check fails on the
+# frontmatter; the EARS check ALSO fires because subject→id resolves to
+# "auth-service" which isn't in the declared set ["Auth Service"].
+PROJ_ID_BOTH="$(fresh_project)"
+seed_project_scaffold "$PROJ_ID_BOTH"
+write_registry "$PROJ_ID_BOTH/${PLAN_DIR}" "Auth Service"
+both_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md"
+cat > "$PROJ_ID_BOTH/${PLAN_DIR}/$both_name" <<EOF
+---
+title: foo
+status: valid
+systems: [Auth Service]
+created: 2026-05-23T14:30:00Z
+---
+
+## Goal
+g
+
+## Approach
+- A
+
+## Tasks
+- [ ] The Auth Service shall do.
+EOF
+cd "$PROJ_ID_BOTH"
+run_capture "" plan lint
+assert_eq "exit 1"                              "$RUN_RC" "1"
+assert_contains "frontmatter id rejected"       "$RUN_OUT" "declared system \"Auth Service\" is not in"
+assert_contains "EARS subject not declared"     "$RUN_OUT" "EARS tasks name systems not in \`systems:\`"
+assert_contains "frontmatter id orphaned"       "$RUN_OUT" "\`systems:\` declares systems not used in any EARS task"
 
 # ---------- relation back-links: supersedes/superseded_by + extends/extended_by ----------
 #
@@ -2158,7 +2544,7 @@ write_relation_plan() {
 ---
 title: ${slug}
 status: ${status}
-systems: [Auth Service]
+systems: [auth-service]
 ${relation}
 created: 2026-05-23T14:30:00Z
 ---

@@ -93,13 +93,15 @@ The prefix width is read from `.x-plan/_config.lock` (`prefix_width`), which `x-
 Lists every plan in `./.x-plan` whose filename matches `<prefix>-<slug>.md`, one tab-separated row per plan:
 
 ```
-<slug>\t<status>\t<sys1>,<sys2>,...
+<slug>\t<status>\t<id1>,<id2>,...
 ```
+
+The third column lists the kebab-case `id:` of every system the plan declares in its frontmatter `systems:` array (the `id:` keys from `.x-plan/_data_systems.yaml`).
 
 Flags (all repeatable / comma-aware where applicable):
 
 - `--status NAME[,NAME...]` — keep only plans whose `status:` matches.
-- `--system NAME` — keep only plans whose `systems:` array contains `NAME` (OR semantics across multiple `--system` flags).
+- `--system ID` — keep only plans whose `systems:` array contains `ID` (OR semantics across multiple `--system` flags). `ID` is the kebab `id:` from `.x-plan/_data_systems.yaml`, not the display name. The flag does not validate the requested id against the registry — an unknown id simply matches zero plans.
 - `--order asc|desc` — sort by zero-padded prefix. Default `desc` (latest first). Use `--order=asc` when sequential / oldest-first iteration matters (e.g. `/x-x` ground-truth lookup).
 - `--overflow-keywords TERM[,...]` — case-insensitive literal substring(s). **Engages only when** the post-`--status`/`--system` row count exceeds `planListOverflowThreshold` (default 20, in `constants.go`). At or below the threshold the flag is a no-op — the caller pays nothing for declaring an unused narrow.
 
@@ -113,16 +115,16 @@ Overflow-narrow behavior, when it engages:
 ```bash
 x-x plan list
 x-x plan list --status valid
-x-x plan list --status valid,superseded --system Auth
+x-x plan list --status valid,superseded --system auth-service
 x-x plan list --order=asc                                  # /x-x sequential execution
-x-x plan list --status valid --overflow-keywords payment,retry  # narrow on overflow
+x-x plan list --status valid --system payment-service --overflow-keywords webhook,retry  # narrow on overflow
 ```
 
 Files matching the filename pattern but missing frontmatter, `status:`, or `systems:` produce a warning on stderr and are skipped (they don't fail the command — for that, use `x-x plan lint`).
 
 ### `x-x plan lint`
 
-Validates every `*.md` plan file in `./.x-plan` against the contract: filename pattern (`<prefix>-<slug>.md`), file length (≤ `max_plan_lines` from `_config.lock`, default 30), YAML frontmatter shape, mandatory `title:` (first key) and `created:` (last key, ISO 8601 UTC timestamp `YYYY-MM-DDTHH:MM:SSZ`), allowed `status:` values, `systems:` membership in `.x-plan/_data_systems.yaml`, every slug in `supersedes:` / `superseded_by:` / `extends:` / `extended_by:` resolves to a sibling plan and is not the plan itself, the `supersedes` ↔ `superseded_by` and `extends` ↔ `extended_by` back links are symmetric across plans, filename slug ↔ `slugify(title)` equality, required body sections (`## Goal`, `## Approach`, `## Tasks`), and EARS subjects ↔ `systems:` exact match.
+Validates every `*.md` plan file in `./.x-plan` against the contract: filename pattern (`<prefix>-<slug>.md`), file length (≤ `max_plan_lines` from `_config.lock`, default 30), YAML frontmatter shape, mandatory `title:` (first key) and `created:` (last key, ISO 8601 UTC timestamp `YYYY-MM-DDTHH:MM:SSZ`), allowed `status:` values, every id in `systems:` is a known `id:` in `.x-plan/_data_systems.yaml`, every slug in `supersedes:` / `superseded_by:` / `extends:` / `extended_by:` resolves to a sibling plan and is not the plan itself, the `supersedes` ↔ `superseded_by` and `extends` ↔ `extended_by` back links are symmetric across plans, filename slug ↔ `slugify(title)` equality, required body sections (`## Goal`, `## Approach`, `## Tasks`), and the set of EARS subject names (each resolved to its registry id) equals the declared `systems:` id set exactly.
 
 ```bash
 x-x plan lint

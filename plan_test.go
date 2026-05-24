@@ -192,14 +192,16 @@ func TestToFilterSet(t *testing.T) {
 }
 
 // TestAnySystemMatches pins the OR semantics of --system: a plan
-// matches if ANY of its declared systems is in the requested set. An
+// matches if ANY of its declared system ids is in the requested set. An
 // AND interpretation would be a much narrower filter — easy regression.
+// Both sides are kebab-case ids (the frontmatter `systems:` array and the
+// `--system <id>` flag), so the matcher is a plain string-set check.
 func TestAnySystemMatches(t *testing.T) {
-	needles := map[string]bool{"Auth": true}
-	if !anySystemMatches([]string{"Other", "Auth"}, needles) {
+	needles := map[string]bool{"auth": true}
+	if !anySystemMatches([]string{"other", "auth"}, needles) {
 		t.Fatal("expected match")
 	}
-	if anySystemMatches([]string{"Other"}, needles) {
+	if anySystemMatches([]string{"other"}, needles) {
 		t.Fatal("unexpected match")
 	}
 	if anySystemMatches(nil, needles) {
@@ -627,7 +629,7 @@ func TestApplyOverflowNarrow_BodyOnlyNotFrontmatter(t *testing.T) {
 	dir := t.TempDir()
 	threshold := 2
 	path := filepath.Join(dir, "00001-alpha.md")
-	content := "---\nstatus: valid\nsystems: [Auth Service]\n---\nno mention here\n"
+	content := "---\nstatus: valid\nsystems: [auth-service]\n---\nno mention here\n"
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -733,37 +735,110 @@ func TestIsIndented(t *testing.T) {
 	}
 }
 
-func TestParseRegistryNames_MissingFileReturnsNil(t *testing.T) {
-	if got := parseRegistryNames(filepath.Join(t.TempDir(), "absent")); got != nil {
-		t.Fatalf("expected nil, got %v", got)
+// TestParseRegistry_MissingFileReturnsEmpty: an absent _data_systems.yaml
+// is a legitimate pre-init / fresh-project state — the parser must return
+// an empty (but non-nil) registry so callers don't need a special-case
+// guard before indexing byID/byName.
+func TestParseRegistry_MissingFileReturnsEmpty(t *testing.T) {
+	reg := parseRegistry(filepath.Join(t.TempDir(), "absent"))
+	if reg.byID == nil || reg.byName == nil {
+		t.Fatalf("expected non-nil maps, got %+v", reg)
+	}
+	if len(reg.byID) != 0 || len(reg.byName) != 0 {
+		t.Fatalf("expected empty maps, got %+v", reg)
 	}
 }
 
-func TestParseRegistryNames_HappyPath(t *testing.T) {
+// TestParseRegistry_HappyPath covers the realistic _data_systems.yaml
+// shape: each entry carries id + name + brief, the id is kebab-case, and
+// entries living under sibling top-level keys (`other:` below) are
+// ignored. Both lookup directions are populated symmetrically.
+func TestParseRegistry_HappyPath(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, planSystemsFile)
 	body := `# top comment
 systems:
-  - id: a
+  - id: auth-service
     name: Auth Service
     brief: handles auth
-  - id: b
+  - id: billing-service
     name: "Billing Service"
     brief: handles billing
 
 other:
-  - id: c
+  - id: not-in-systems
     name: NotInSystems
 `
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	got := parseRegistryNames(path)
-	if !got["Auth Service"] || !got["Billing Service"] {
-		t.Fatalf("missing expected names: %v", got)
+	reg := parseRegistry(path)
+	if reg.byID["auth-service"] != "Auth Service" || reg.byID["billing-service"] != "Billing Service" {
+		t.Fatalf("byID missing entries: %v", reg.byID)
 	}
-	if got["NotInSystems"] {
-		t.Fatalf("entries outside the systems block must be ignored: %v", got)
+	if reg.byName["Auth Service"] != "auth-service" || reg.byName["Billing Service"] != "billing-service" {
+		t.Fatalf("byName missing entries: %v", reg.byName)
+	}
+	if _, has := reg.byID["not-in-systems"]; has {
+		t.Fatalf("entries outside the systems block must be ignored: %v", reg.byID)
+	}
+}
+
+// TestParseRegistry_SkipsPartialEntries: an entry with only `id:` or only
+// `name:` is dropped silently — lint surfaces the gap when a plan
+// references the half-defined slug, so the parser doesn't need to fail
+// here. Whole entries on either side of the bad one must still land.
+func TestParseRegistry_SkipsPartialEntries(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, planSystemsFile)
+	body := `systems:
+  - id: complete-one
+    name: Complete One
+  - id: id-only
+  - name: Name Only
+  - id: complete-two
+    name: Complete Two
+`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	reg := parseRegistry(path)
+	if reg.byID["complete-one"] != "Complete One" {
+		t.Fatalf("complete-one missing: %v", reg.byID)
+	}
+	if reg.byID["complete-two"] != "Complete Two" {
+		t.Fatalf("complete-two missing: %v", reg.byID)
+	}
+	if _, has := reg.byID["id-only"]; has {
+		t.Fatalf("id-only entry should be dropped (no name): %v", reg.byID)
+	}
+	if _, has := reg.byName["Name Only"]; has {
+		t.Fatalf("Name Only entry should be dropped (no id): %v", reg.byName)
+	}
+}
+
+// TestParseRegistry_MultilineEntries pins that an item's `id:` and
+// `name:` can live on the same line as `- ` or on indented continuation
+// lines — both shapes appear in the wild because _systems.md shows the
+// continuation form but a hand-edit may collapse onto one line.
+func TestParseRegistry_MultilineEntries(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, planSystemsFile)
+	body := `systems:
+  - id: same-line
+    name: Same Line
+  - name: Name First
+    id: name-first
+`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	reg := parseRegistry(path)
+	if reg.byID["same-line"] != "Same Line" {
+		t.Fatalf("same-line missing: %v", reg.byID)
+	}
+	if reg.byID["name-first"] != "Name First" {
+		t.Fatalf("name-first missing: %v", reg.byID)
 	}
 }
 
@@ -783,7 +858,7 @@ func TestSetDifference(t *testing.T) {
 // Defined once so per-failure cases can override one field at a time. The
 // title must slugify to "foo" so the filename "00001-foo.md" matches.
 const (
-	validPlanFM   = "title: Foo\nstatus: valid\nsystems: [Auth Service]\ncreated: 2026-05-23T14:30:00Z"
+	validPlanFM   = "title: Foo\nstatus: valid\nsystems: [auth-service]\ncreated: 2026-05-23T14:30:00Z"
 	validPlanBody = "## Goal\nDo a thing.\n\n## Approach\n- A\n\n## Tasks\n- [ ] The Auth Service shall do a thing.\n"
 )
 
@@ -797,18 +872,29 @@ var fixturePlanName = "00001-foo" + planFileExt
 // a rename of planDir or planSystemsFile lands in exactly one place.
 var fixtureRegistryPath = filepath.Join(planDir, planSystemsFile)
 
-func registryWith(names ...string) map[string]bool {
-	m := make(map[string]bool, len(names))
-	for _, n := range names {
-		m[n] = true
+// newRegistry builds a `registry` value from alternating id, name args:
+// `newRegistry("auth-service", "Auth Service", "billing-service",
+// "Billing Service")`. Panics on an odd-length call so a typo'd fixture
+// fails loudly inside the test rather than via a confusing downstream
+// mismatch. The two maps end up inverses of each other.
+func newRegistry(pairs ...string) registry {
+	if len(pairs)%2 != 0 {
+		panic("newRegistry: pairs must be even (alternating id, name)")
 	}
-	return m
+	byID := make(map[string]string, len(pairs)/2)
+	byName := make(map[string]string, len(pairs)/2)
+	for i := 0; i+1 < len(pairs); i += 2 {
+		id, name := pairs[i], pairs[i+1]
+		byID[id] = name
+		byName[name] = id
+	}
+	return registry{byID: byID, byName: byName}
 }
 
 func TestLintPlanFile_HappyPath(t *testing.T) {
 	dir := t.TempDir()
 	path := writePlanFile(t, dir, fixturePlanName, validPlanFM, validPlanBody)
-	findings := lintPlanFile(path, 5, 30, registryWith("Auth Service"),
+	findings := lintPlanFile(path, 5, 30, newRegistry("auth-service", "Auth Service"),
 		map[string]bool{"00001-foo": true}, planRelations{}, fixtureRegistryPath)
 	if len(findings) != 0 {
 		t.Fatalf("expected no findings, got %v", findings)
@@ -818,7 +904,7 @@ func TestLintPlanFile_HappyPath(t *testing.T) {
 func TestLintPlanFile_BadFilename(t *testing.T) {
 	dir := t.TempDir()
 	path := writePlanFile(t, dir, "BAD-foo.md", validPlanFM, validPlanBody)
-	findings := lintPlanFile(path, 5, 30, registryWith("Auth Service"),
+	findings := lintPlanFile(path, 5, 30, newRegistry("auth-service", "Auth Service"),
 		map[string]bool{}, planRelations{}, fixtureRegistryPath)
 	if !containsSubstr(findings, "filename") {
 		t.Fatalf("expected filename finding, got %v", findings)
@@ -829,7 +915,7 @@ func TestLintPlanFile_TooLong(t *testing.T) {
 	dir := t.TempDir()
 	bigBody := validPlanBody + strings.Repeat("x\n", 100)
 	path := writePlanFile(t, dir, fixturePlanName, validPlanFM, bigBody)
-	findings := lintPlanFile(path, 5, 30, registryWith("Auth Service"),
+	findings := lintPlanFile(path, 5, 30, newRegistry("auth-service", "Auth Service"),
 		map[string]bool{"00001-foo": true}, planRelations{}, fixtureRegistryPath)
 	if !containsSubstr(findings, "max is 30") {
 		t.Fatalf("expected line-cap finding, got %v", findings)
@@ -842,7 +928,7 @@ func TestLintPlanFile_NoFrontmatter(t *testing.T) {
 	if err := os.WriteFile(path, []byte("just body\n"), 0o600); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	findings := lintPlanFile(path, 5, 30, registryWith("X"),
+	findings := lintPlanFile(path, 5, 30, newRegistry(),
 		map[string]bool{}, planRelations{}, fixtureRegistryPath)
 	if !containsSubstr(findings, "missing YAML frontmatter") {
 		t.Fatalf("expected frontmatter finding, got %v", findings)
@@ -852,8 +938,8 @@ func TestLintPlanFile_NoFrontmatter(t *testing.T) {
 func TestLintPlanFile_BadStatus(t *testing.T) {
 	dir := t.TempDir()
 	path := writePlanFile(t, dir, fixturePlanName,
-		"title: Foo\nstatus: bogus\nsystems: [Auth Service]\ncreated: 2026-05-23T14:30:00Z", validPlanBody)
-	findings := lintPlanFile(path, 5, 30, registryWith("Auth Service"),
+		"title: Foo\nstatus: bogus\nsystems: [auth-service]\ncreated: 2026-05-23T14:30:00Z", validPlanBody)
+	findings := lintPlanFile(path, 5, 30, newRegistry("auth-service", "Auth Service"),
 		map[string]bool{"00001-foo": true}, planRelations{}, fixtureRegistryPath)
 	if !containsSubstr(findings, `status "bogus" is not one of`) {
 		t.Fatalf("expected status finding, got %v", findings)
@@ -865,7 +951,7 @@ func TestLintPlanFile_SystemNotInRegistry(t *testing.T) {
 	path := writePlanFile(t, dir, fixturePlanName,
 		"title: Foo\nstatus: valid\nsystems: [Ghost]\ncreated: 2026-05-23T14:30:00Z",
 		"## Goal\n## Approach\n## Tasks\n- [ ] The Ghost shall haunt.\n")
-	findings := lintPlanFile(path, 5, 30, registryWith("Auth Service"),
+	findings := lintPlanFile(path, 5, 30, newRegistry("auth-service", "Auth Service"),
 		map[string]bool{"00001-foo": true}, planRelations{}, fixtureRegistryPath)
 	if !containsSubstr(findings, `declared system "Ghost" is not in`) {
 		t.Fatalf("expected registry finding, got %v", findings)
@@ -875,9 +961,9 @@ func TestLintPlanFile_SystemNotInRegistry(t *testing.T) {
 func TestLintPlanFile_SupersedesMissingSibling(t *testing.T) {
 	dir := t.TempDir()
 	path := writePlanFile(t, dir, fixturePlanName,
-		"title: Foo\nstatus: valid\nsystems: [Auth Service]\nsupersedes: [00099-nope]\ncreated: 2026-05-23T14:30:00Z",
+		"title: Foo\nstatus: valid\nsystems: [auth-service]\nsupersedes: [00099-nope]\ncreated: 2026-05-23T14:30:00Z",
 		validPlanBody)
-	findings := lintPlanFile(path, 5, 30, registryWith("Auth Service"),
+	findings := lintPlanFile(path, 5, 30, newRegistry("auth-service", "Auth Service"),
 		map[string]bool{"00001-foo": true}, planRelations{}, fixtureRegistryPath)
 	if !containsSubstr(findings, `supersedes "00099-nope"`) {
 		t.Fatalf("expected supersedes finding, got %v", findings)
@@ -889,14 +975,90 @@ func TestLintPlanFile_EARSSubjectMismatch(t *testing.T) {
 	// systems declares Auth, task body names Billing — both violations should fire.
 	body := "## Goal\n## Approach\n## Tasks\n- [ ] The Billing Service shall send invoices.\n"
 	path := writePlanFile(t, dir, fixturePlanName,
-		"title: Foo\nstatus: valid\nsystems: [Auth Service]\ncreated: 2026-05-23T14:30:00Z", body)
-	findings := lintPlanFile(path, 5, 30, registryWith("Auth Service", "Billing Service"),
+		"title: Foo\nstatus: valid\nsystems: [auth-service]\ncreated: 2026-05-23T14:30:00Z", body)
+	findings := lintPlanFile(path, 5, 30,
+		newRegistry("auth-service", "Auth Service", "billing-service", "Billing Service"),
 		map[string]bool{"00001-foo": true}, planRelations{}, fixtureRegistryPath)
 	if !containsSubstr(findings, "EARS tasks name systems not in `systems:`") {
 		t.Fatalf("expected EARS-in-tasks finding, got %v", findings)
 	}
 	if !containsSubstr(findings, "`systems:` declares systems not used in any EARS task") {
 		t.Fatalf("expected EARS-in-systems finding, got %v", findings)
+	}
+}
+
+// TestLintPlanFile_FrontmatterIDNotInRegistry covers the id-membership
+// half of the new id-based contract: an inline `systems:` entry that
+// isn't a key in the registry's id index must surface a finding even
+// though the EARS body might still resolve cleanly through a different
+// registered name.
+func TestLintPlanFile_FrontmatterIDNotInRegistry(t *testing.T) {
+	dir := t.TempDir()
+	// Frontmatter declares an unknown id; EARS body references the only
+	// registered system. Both findings should fire (id-not-in-registry +
+	// the declared/subject id-set divergence).
+	body := "## Goal\n## Approach\n## Tasks\n- [ ] The Auth Service shall do.\n"
+	path := writePlanFile(t, dir, fixturePlanName,
+		"title: Foo\nstatus: valid\nsystems: [ghost-service]\ncreated: 2026-05-23T14:30:00Z", body)
+	findings := lintPlanFile(path, 5, 30,
+		newRegistry("auth-service", "Auth Service"),
+		map[string]bool{"00001-foo": true}, planRelations{}, fixtureRegistryPath)
+	if !containsSubstr(findings, `declared system "ghost-service" is not in`) {
+		t.Fatalf("expected id-not-in-registry finding, got %v", findings)
+	}
+}
+
+// TestLintPlanFile_EARSSubjectUnknownName: an EARS subject (display name
+// in the body text) that has no registry entry surfaces the new
+// "EARS subject is not in <registry>" finding. The subject-name → id
+// resolution is the load-bearing part of the new id-aware lint.
+func TestLintPlanFile_EARSSubjectUnknownName(t *testing.T) {
+	dir := t.TempDir()
+	body := "## Goal\n## Approach\n## Tasks\n- [ ] The Phantom Service shall haunt.\n"
+	path := writePlanFile(t, dir, fixturePlanName,
+		"title: Foo\nstatus: valid\nsystems: [auth-service]\ncreated: 2026-05-23T14:30:00Z", body)
+	findings := lintPlanFile(path, 5, 30,
+		newRegistry("auth-service", "Auth Service"),
+		map[string]bool{"00001-foo": true}, planRelations{}, fixtureRegistryPath)
+	if !containsSubstr(findings, `EARS subject "Phantom Service" is not in`) {
+		t.Fatalf("expected unknown-subject finding, got %v", findings)
+	}
+}
+
+// TestLintPlanFile_EARSNameResolvesToDeclaredID is the happy path of the
+// name↔id translation: the body uses the display name, the frontmatter
+// uses the kebab id, and the registry resolves one to the other. No
+// findings should fire.
+func TestLintPlanFile_EARSNameResolvesToDeclaredID(t *testing.T) {
+	dir := t.TempDir()
+	body := "## Goal\nDo a thing.\n\n## Approach\n- A\n\n## Tasks\n- [ ] The Auth Service shall act.\n"
+	path := writePlanFile(t, dir, fixturePlanName,
+		"title: Foo\nstatus: valid\nsystems: [auth-service]\ncreated: 2026-05-23T14:30:00Z", body)
+	findings := lintPlanFile(path, 5, 30,
+		newRegistry("auth-service", "Auth Service"),
+		map[string]bool{"00001-foo": true}, planRelations{}, fixtureRegistryPath)
+	if len(findings) != 0 {
+		t.Fatalf("expected zero findings on resolved name/id pair, got %v", findings)
+	}
+}
+
+// TestLintPlanFile_MultipleEARSSubjectsResolvedConsistently: a plan with
+// two distinct subjects in the body, both registered and both declared
+// in `systems:` by their ids, lints cleanly. Guards against the
+// id-set comparison silently collapsing duplicates when it shouldn't.
+func TestLintPlanFile_MultipleEARSSubjectsResolvedConsistently(t *testing.T) {
+	dir := t.TempDir()
+	body := "## Goal\nx\n\n## Approach\n- A\n\n## Tasks\n" +
+		"- [ ] The Auth Service shall authenticate.\n" +
+		"- [ ] The Billing Service shall invoice.\n"
+	path := writePlanFile(t, dir, fixturePlanName,
+		"title: Foo\nstatus: valid\nsystems: [auth-service, billing-service]\ncreated: 2026-05-23T14:30:00Z",
+		body)
+	findings := lintPlanFile(path, 5, 30,
+		newRegistry("auth-service", "Auth Service", "billing-service", "Billing Service"),
+		map[string]bool{"00001-foo": true}, planRelations{}, fixtureRegistryPath)
+	if len(findings) != 0 {
+		t.Fatalf("expected zero findings on two cleanly-resolved subjects, got %v", findings)
 	}
 }
 
@@ -974,8 +1136,8 @@ func TestSlugify(t *testing.T) {
 func TestLintPlanFile_MissingTitle(t *testing.T) {
 	dir := t.TempDir()
 	path := writePlanFile(t, dir, fixturePlanName,
-		"status: valid\nsystems: [Auth Service]\ncreated: 2026-05-23T14:30:00Z", validPlanBody)
-	findings := lintPlanFile(path, 5, 30, registryWith("Auth Service"),
+		"status: valid\nsystems: [auth-service]\ncreated: 2026-05-23T14:30:00Z", validPlanBody)
+	findings := lintPlanFile(path, 5, 30, newRegistry("auth-service", "Auth Service"),
 		map[string]bool{"00001-foo": true}, planRelations{}, fixtureRegistryPath)
 	if !containsSubstr(findings, "missing required `title:`") {
 		t.Fatalf("expected title finding, got %v", findings)
@@ -985,8 +1147,8 @@ func TestLintPlanFile_MissingTitle(t *testing.T) {
 func TestLintPlanFile_EmptyTitle(t *testing.T) {
 	dir := t.TempDir()
 	path := writePlanFile(t, dir, fixturePlanName,
-		"title: \"\"\nstatus: valid\nsystems: [Auth Service]\ncreated: 2026-05-23T14:30:00Z", validPlanBody)
-	findings := lintPlanFile(path, 5, 30, registryWith("Auth Service"),
+		"title: \"\"\nstatus: valid\nsystems: [auth-service]\ncreated: 2026-05-23T14:30:00Z", validPlanBody)
+	findings := lintPlanFile(path, 5, 30, newRegistry("auth-service", "Auth Service"),
 		map[string]bool{"00001-foo": true}, planRelations{}, fixtureRegistryPath)
 	if !containsSubstr(findings, "`title:` value is empty") {
 		t.Fatalf("expected empty-title finding, got %v", findings)
@@ -996,8 +1158,8 @@ func TestLintPlanFile_EmptyTitle(t *testing.T) {
 func TestLintPlanFile_MissingCreated(t *testing.T) {
 	dir := t.TempDir()
 	path := writePlanFile(t, dir, fixturePlanName,
-		"title: Foo\nstatus: valid\nsystems: [Auth Service]", validPlanBody)
-	findings := lintPlanFile(path, 5, 30, registryWith("Auth Service"),
+		"title: Foo\nstatus: valid\nsystems: [auth-service]", validPlanBody)
+	findings := lintPlanFile(path, 5, 30, newRegistry("auth-service", "Auth Service"),
 		map[string]bool{"00001-foo": true}, planRelations{}, fixtureRegistryPath)
 	if !containsSubstr(findings, "missing required `created:`") {
 		t.Fatalf("expected created finding, got %v", findings)
@@ -1007,8 +1169,8 @@ func TestLintPlanFile_MissingCreated(t *testing.T) {
 func TestLintPlanFile_MalformedCreated(t *testing.T) {
 	dir := t.TempDir()
 	path := writePlanFile(t, dir, fixturePlanName,
-		"title: Foo\nstatus: valid\nsystems: [Auth Service]\ncreated: yesterday", validPlanBody)
-	findings := lintPlanFile(path, 5, 30, registryWith("Auth Service"),
+		"title: Foo\nstatus: valid\nsystems: [auth-service]\ncreated: yesterday", validPlanBody)
+	findings := lintPlanFile(path, 5, 30, newRegistry("auth-service", "Auth Service"),
 		map[string]bool{"00001-foo": true}, planRelations{}, fixtureRegistryPath)
 	if !containsSubstr(findings, `"yesterday" is not an ISO 8601 UTC timestamp`) {
 		t.Fatalf("expected malformed-created finding, got %v", findings)
@@ -1022,8 +1184,8 @@ func TestLintPlanFile_MalformedCreated(t *testing.T) {
 func TestLintPlanFile_DateOnlyCreated(t *testing.T) {
 	dir := t.TempDir()
 	path := writePlanFile(t, dir, fixturePlanName,
-		"title: Foo\nstatus: valid\nsystems: [Auth Service]\ncreated: 2026-05-23", validPlanBody)
-	findings := lintPlanFile(path, 5, 30, registryWith("Auth Service"),
+		"title: Foo\nstatus: valid\nsystems: [auth-service]\ncreated: 2026-05-23", validPlanBody)
+	findings := lintPlanFile(path, 5, 30, newRegistry("auth-service", "Auth Service"),
 		map[string]bool{"00001-foo": true}, planRelations{}, fixtureRegistryPath)
 	if !containsSubstr(findings, `"2026-05-23" is not an ISO 8601 UTC timestamp`) {
 		t.Fatalf("expected date-only-rejection finding, got %v", findings)
@@ -1033,8 +1195,8 @@ func TestLintPlanFile_DateOnlyCreated(t *testing.T) {
 func TestLintPlanFile_TitleNotFirst(t *testing.T) {
 	dir := t.TempDir()
 	path := writePlanFile(t, dir, fixturePlanName,
-		"status: valid\ntitle: Foo\nsystems: [Auth Service]\ncreated: 2026-05-23T14:30:00Z", validPlanBody)
-	findings := lintPlanFile(path, 5, 30, registryWith("Auth Service"),
+		"status: valid\ntitle: Foo\nsystems: [auth-service]\ncreated: 2026-05-23T14:30:00Z", validPlanBody)
+	findings := lintPlanFile(path, 5, 30, newRegistry("auth-service", "Auth Service"),
 		map[string]bool{"00001-foo": true}, planRelations{}, fixtureRegistryPath)
 	if !containsSubstr(findings, "must be the first frontmatter field") {
 		t.Fatalf("expected order finding, got %v", findings)
@@ -1044,8 +1206,8 @@ func TestLintPlanFile_TitleNotFirst(t *testing.T) {
 func TestLintPlanFile_CreatedNotLast(t *testing.T) {
 	dir := t.TempDir()
 	path := writePlanFile(t, dir, fixturePlanName,
-		"title: Foo\ncreated: 2026-05-23T14:30:00Z\nstatus: valid\nsystems: [Auth Service]", validPlanBody)
-	findings := lintPlanFile(path, 5, 30, registryWith("Auth Service"),
+		"title: Foo\ncreated: 2026-05-23T14:30:00Z\nstatus: valid\nsystems: [auth-service]", validPlanBody)
+	findings := lintPlanFile(path, 5, 30, newRegistry("auth-service", "Auth Service"),
 		map[string]bool{"00001-foo": true}, planRelations{}, fixtureRegistryPath)
 	if !containsSubstr(findings, "must be the last frontmatter field") {
 		t.Fatalf("expected order finding, got %v", findings)
@@ -1056,9 +1218,9 @@ func TestLintPlanFile_FilenameDoesNotMatchTitle(t *testing.T) {
 	dir := t.TempDir()
 	// Title slugifies to "totally-different" but filename slug is "foo".
 	path := writePlanFile(t, dir, fixturePlanName,
-		"title: Totally Different\nstatus: valid\nsystems: [Auth Service]\ncreated: 2026-05-23T14:30:00Z",
+		"title: Totally Different\nstatus: valid\nsystems: [auth-service]\ncreated: 2026-05-23T14:30:00Z",
 		validPlanBody)
-	findings := lintPlanFile(path, 5, 30, registryWith("Auth Service"),
+	findings := lintPlanFile(path, 5, 30, newRegistry("auth-service", "Auth Service"),
 		map[string]bool{"00001-foo": true}, planRelations{}, fixtureRegistryPath)
 	if !containsSubstr(findings, "does not match slugify(title)") {
 		t.Fatalf("expected filename↔title finding, got %v", findings)
@@ -1074,9 +1236,9 @@ func TestLintPlanFile_FilenameDoesNotMatchTitle(t *testing.T) {
 func TestLintPlanFile_DanglingExtends(t *testing.T) {
 	dir := t.TempDir()
 	path := writePlanFile(t, dir, fixturePlanName,
-		"title: Foo\nstatus: valid\nsystems: [Auth Service]\nextends: [00099-nope]\ncreated: 2026-05-23T14:30:00Z",
+		"title: Foo\nstatus: valid\nsystems: [auth-service]\nextends: [00099-nope]\ncreated: 2026-05-23T14:30:00Z",
 		validPlanBody)
-	findings := lintPlanFile(path, 5, 30, registryWith("Auth Service"),
+	findings := lintPlanFile(path, 5, 30, newRegistry("auth-service", "Auth Service"),
 		map[string]bool{"00001-foo": true}, planRelations{}, fixtureRegistryPath)
 	if !containsSubstr(findings, `extends "00099-nope"`) {
 		t.Fatalf("expected dangling-extends finding, got %v", findings)
@@ -1088,9 +1250,9 @@ func TestLintPlanFile_DanglingExtends(t *testing.T) {
 func TestLintPlanFile_DanglingExtendedBy(t *testing.T) {
 	dir := t.TempDir()
 	path := writePlanFile(t, dir, fixturePlanName,
-		"title: Foo\nstatus: valid\nsystems: [Auth Service]\nextended_by: [00099-nope]\ncreated: 2026-05-23T14:30:00Z",
+		"title: Foo\nstatus: valid\nsystems: [auth-service]\nextended_by: [00099-nope]\ncreated: 2026-05-23T14:30:00Z",
 		validPlanBody)
-	findings := lintPlanFile(path, 5, 30, registryWith("Auth Service"),
+	findings := lintPlanFile(path, 5, 30, newRegistry("auth-service", "Auth Service"),
 		map[string]bool{"00001-foo": true}, planRelations{}, fixtureRegistryPath)
 	if !containsSubstr(findings, `extended_by "00099-nope"`) {
 		t.Fatalf("expected dangling-extended_by finding, got %v", findings)
@@ -1103,9 +1265,9 @@ func TestLintPlanFile_DanglingExtendedBy(t *testing.T) {
 func TestLintPlanFile_SelfExtendsRejected(t *testing.T) {
 	dir := t.TempDir()
 	path := writePlanFile(t, dir, fixturePlanName,
-		"title: Foo\nstatus: valid\nsystems: [Auth Service]\nextends: [00001-foo]\ncreated: 2026-05-23T14:30:00Z",
+		"title: Foo\nstatus: valid\nsystems: [auth-service]\nextends: [00001-foo]\ncreated: 2026-05-23T14:30:00Z",
 		validPlanBody)
-	findings := lintPlanFile(path, 5, 30, registryWith("Auth Service"),
+	findings := lintPlanFile(path, 5, 30, newRegistry("auth-service", "Auth Service"),
 		map[string]bool{"00001-foo": true}, planRelations{}, fixtureRegistryPath)
 	if !containsSubstr(findings, "extends cannot reference the plan itself") {
 		t.Fatalf("expected self-extends finding, got %v", findings)
@@ -1118,7 +1280,7 @@ func TestLintPlanFile_SelfExtendsRejected(t *testing.T) {
 func TestLintPlanFile_ExtendsBidirectionalMissingBacklink(t *testing.T) {
 	dir := t.TempDir()
 	path := writePlanFile(t, dir, fixturePlanName,
-		"title: Foo\nstatus: valid\nsystems: [Auth Service]\nextends: [00002-bar]\ncreated: 2026-05-23T14:30:00Z",
+		"title: Foo\nstatus: valid\nsystems: [auth-service]\nextends: [00002-bar]\ncreated: 2026-05-23T14:30:00Z",
 		validPlanBody)
 	relations := planRelations{
 		extends: map[string]map[string]bool{
@@ -1127,7 +1289,7 @@ func TestLintPlanFile_ExtendsBidirectionalMissingBacklink(t *testing.T) {
 		// 00002-bar exists in knownSlugs but its extended_by set is empty.
 		extendedBy: map[string]map[string]bool{},
 	}
-	findings := lintPlanFile(path, 5, 30, registryWith("Auth Service"),
+	findings := lintPlanFile(path, 5, 30, newRegistry("auth-service", "Auth Service"),
 		map[string]bool{"00001-foo": true, "00002-bar": true},
 		relations, fixtureRegistryPath)
 	if !containsSubstr(findings, "does not list this plan in its `extended_by:` array") {
@@ -1141,7 +1303,7 @@ func TestLintPlanFile_ExtendsBidirectionalMissingBacklink(t *testing.T) {
 func TestLintPlanFile_ExtendedByBidirectionalMissingForwardLink(t *testing.T) {
 	dir := t.TempDir()
 	path := writePlanFile(t, dir, fixturePlanName,
-		"title: Foo\nstatus: valid\nsystems: [Auth Service]\nextended_by: [00002-bar]\ncreated: 2026-05-23T14:30:00Z",
+		"title: Foo\nstatus: valid\nsystems: [auth-service]\nextended_by: [00002-bar]\ncreated: 2026-05-23T14:30:00Z",
 		validPlanBody)
 	relations := planRelations{
 		extendedBy: map[string]map[string]bool{
@@ -1149,7 +1311,7 @@ func TestLintPlanFile_ExtendedByBidirectionalMissingForwardLink(t *testing.T) {
 		},
 		extends: map[string]map[string]bool{},
 	}
-	findings := lintPlanFile(path, 5, 30, registryWith("Auth Service"),
+	findings := lintPlanFile(path, 5, 30, newRegistry("auth-service", "Auth Service"),
 		map[string]bool{"00001-foo": true, "00002-bar": true},
 		relations, fixtureRegistryPath)
 	if !containsSubstr(findings, "does not list this plan in its `extends:` array") {
@@ -1162,7 +1324,7 @@ func TestLintPlanFile_ExtendedByBidirectionalMissingForwardLink(t *testing.T) {
 func TestLintPlanFile_ExtendsBidirectionalHappy(t *testing.T) {
 	dir := t.TempDir()
 	path := writePlanFile(t, dir, fixturePlanName,
-		"title: Foo\nstatus: valid\nsystems: [Auth Service]\nextends: [00002-bar]\ncreated: 2026-05-23T14:30:00Z",
+		"title: Foo\nstatus: valid\nsystems: [auth-service]\nextends: [00002-bar]\ncreated: 2026-05-23T14:30:00Z",
 		validPlanBody)
 	relations := planRelations{
 		extends: map[string]map[string]bool{
@@ -1172,7 +1334,7 @@ func TestLintPlanFile_ExtendsBidirectionalHappy(t *testing.T) {
 			"00002-bar": {"00001-foo": true},
 		},
 	}
-	findings := lintPlanFile(path, 5, 30, registryWith("Auth Service"),
+	findings := lintPlanFile(path, 5, 30, newRegistry("auth-service", "Auth Service"),
 		map[string]bool{"00001-foo": true, "00002-bar": true},
 		relations, fixtureRegistryPath)
 	for _, f := range findings {
@@ -1227,9 +1389,9 @@ func TestScanPlanRelations(t *testing.T) {
 func TestLintPlanFile_DanglingSupersededBy(t *testing.T) {
 	dir := t.TempDir()
 	path := writePlanFile(t, dir, fixturePlanName,
-		"title: Foo\nstatus: superseded\nsystems: [Auth Service]\nsuperseded_by: [00099-nope]\ncreated: 2026-05-23T14:30:00Z",
+		"title: Foo\nstatus: superseded\nsystems: [auth-service]\nsuperseded_by: [00099-nope]\ncreated: 2026-05-23T14:30:00Z",
 		validPlanBody)
-	findings := lintPlanFile(path, 5, 30, registryWith("Auth Service"),
+	findings := lintPlanFile(path, 5, 30, newRegistry("auth-service", "Auth Service"),
 		map[string]bool{"00001-foo": true}, planRelations{}, fixtureRegistryPath)
 	if !containsSubstr(findings, `superseded_by "00099-nope"`) {
 		t.Fatalf("expected dangling-superseded_by finding, got %v", findings)
@@ -1240,9 +1402,9 @@ func TestLintPlanFile_DanglingSupersededBy(t *testing.T) {
 func TestLintPlanFile_SelfSupersedesRejected(t *testing.T) {
 	dir := t.TempDir()
 	path := writePlanFile(t, dir, fixturePlanName,
-		"title: Foo\nstatus: valid\nsystems: [Auth Service]\nsupersedes: [00001-foo]\ncreated: 2026-05-23T14:30:00Z",
+		"title: Foo\nstatus: valid\nsystems: [auth-service]\nsupersedes: [00001-foo]\ncreated: 2026-05-23T14:30:00Z",
 		validPlanBody)
-	findings := lintPlanFile(path, 5, 30, registryWith("Auth Service"),
+	findings := lintPlanFile(path, 5, 30, newRegistry("auth-service", "Auth Service"),
 		map[string]bool{"00001-foo": true}, planRelations{}, fixtureRegistryPath)
 	if !containsSubstr(findings, "supersedes cannot reference the plan itself") {
 		t.Fatalf("expected self-supersedes finding, got %v", findings)
@@ -1254,7 +1416,7 @@ func TestLintPlanFile_SelfSupersedesRejected(t *testing.T) {
 func TestLintPlanFile_SupersedesBidirectionalMissingBacklink(t *testing.T) {
 	dir := t.TempDir()
 	path := writePlanFile(t, dir, fixturePlanName,
-		"title: Foo\nstatus: valid\nsystems: [Auth Service]\nsupersedes: [00002-bar]\ncreated: 2026-05-23T14:30:00Z",
+		"title: Foo\nstatus: valid\nsystems: [auth-service]\nsupersedes: [00002-bar]\ncreated: 2026-05-23T14:30:00Z",
 		validPlanBody)
 	relations := planRelations{
 		supersedes: map[string]map[string]bool{
@@ -1262,7 +1424,7 @@ func TestLintPlanFile_SupersedesBidirectionalMissingBacklink(t *testing.T) {
 		},
 		supersededBy: map[string]map[string]bool{},
 	}
-	findings := lintPlanFile(path, 5, 30, registryWith("Auth Service"),
+	findings := lintPlanFile(path, 5, 30, newRegistry("auth-service", "Auth Service"),
 		map[string]bool{"00001-foo": true, "00002-bar": true},
 		relations, fixtureRegistryPath)
 	if !containsSubstr(findings, "does not list this plan in its `superseded_by:` array") {
@@ -1275,7 +1437,7 @@ func TestLintPlanFile_SupersedesBidirectionalMissingBacklink(t *testing.T) {
 func TestLintPlanFile_SupersededByBidirectionalMissingForwardLink(t *testing.T) {
 	dir := t.TempDir()
 	path := writePlanFile(t, dir, fixturePlanName,
-		"title: Foo\nstatus: superseded\nsystems: [Auth Service]\nsuperseded_by: [00002-bar]\ncreated: 2026-05-23T14:30:00Z",
+		"title: Foo\nstatus: superseded\nsystems: [auth-service]\nsuperseded_by: [00002-bar]\ncreated: 2026-05-23T14:30:00Z",
 		validPlanBody)
 	relations := planRelations{
 		supersededBy: map[string]map[string]bool{
@@ -1283,7 +1445,7 @@ func TestLintPlanFile_SupersededByBidirectionalMissingForwardLink(t *testing.T) 
 		},
 		supersedes: map[string]map[string]bool{},
 	}
-	findings := lintPlanFile(path, 5, 30, registryWith("Auth Service"),
+	findings := lintPlanFile(path, 5, 30, newRegistry("auth-service", "Auth Service"),
 		map[string]bool{"00001-foo": true, "00002-bar": true},
 		relations, fixtureRegistryPath)
 	if !containsSubstr(findings, "does not list this plan in its `supersedes:` array") {
@@ -1296,7 +1458,7 @@ func TestLintPlanFile_SupersededByBidirectionalMissingForwardLink(t *testing.T) 
 func TestLintPlanFile_SupersedesBidirectionalHappy(t *testing.T) {
 	dir := t.TempDir()
 	path := writePlanFile(t, dir, fixturePlanName,
-		"title: Foo\nstatus: valid\nsystems: [Auth Service]\nsupersedes: [00002-bar]\ncreated: 2026-05-23T14:30:00Z",
+		"title: Foo\nstatus: valid\nsystems: [auth-service]\nsupersedes: [00002-bar]\ncreated: 2026-05-23T14:30:00Z",
 		validPlanBody)
 	relations := planRelations{
 		supersedes: map[string]map[string]bool{
@@ -1306,7 +1468,7 @@ func TestLintPlanFile_SupersedesBidirectionalHappy(t *testing.T) {
 			"00002-bar": {"00001-foo": true},
 		},
 	}
-	findings := lintPlanFile(path, 5, 30, registryWith("Auth Service"),
+	findings := lintPlanFile(path, 5, 30, newRegistry("auth-service", "Auth Service"),
 		map[string]bool{"00001-foo": true, "00002-bar": true},
 		relations, fixtureRegistryPath)
 	for _, f := range findings {

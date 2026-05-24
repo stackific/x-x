@@ -129,7 +129,9 @@ func scanHighestPrefix(plansDir string, width int) int {
 // `<slug>\t<status>\t<sys1>,<sys2>,...`. Flags:
 //
 //	--status NAME[,NAME...]            repeatable; keeps only matching statuses
-//	--system NAME                      repeatable; OR semantics across declared systems
+//	--system ID                        repeatable; OR semantics; matches the
+//	                                   kebab-case `id:` values that plans carry
+//	                                   in their frontmatter `systems:` array
 //	--order asc|desc                   prefix sort direction (default desc = latest first)
 //	--overflow-keywords TERM[,...]     case-insensitive substring(s) (OR); engages
 //	                                   only when the post-filter row count exceeds
@@ -144,10 +146,10 @@ func runPlanList(args []string) {
 	var statusFlag, systemFlag, keywordsFlag stringSliceFlag
 	orderFlag := fs.String("order", "desc", "sort by prefix: asc|desc (default desc = latest first)")
 	fs.Var(&statusFlag, "status", "keep only plans whose status matches (repeatable, comma-separated)")
-	fs.Var(&systemFlag, "system", "keep only plans whose systems contain this name (repeatable; OR semantics)")
+	fs.Var(&systemFlag, "system", "keep only plans whose systems contain this id (repeatable; OR semantics; matches the kebab `id:` from _data_systems.yaml)")
 	fs.Var(&keywordsFlag, "overflow-keywords", "case-insensitive substring(s) narrowing the output when the post-filter count exceeds planListOverflowThreshold (repeatable; OR semantics; matched against plan body only)")
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: x-x plan list [--status NAME[,NAME...]] [--system NAME] [--order asc|desc] [--overflow-keywords PATTERN[,PATTERN...]]")
+		fmt.Fprintln(os.Stderr, "Usage: x-x plan list [--status NAME[,NAME...]] [--system ID] [--order asc|desc] [--overflow-keywords PATTERN[,PATTERN...]]")
 	}
 	_ = fs.Parse(args)
 	if fs.NArg() > 0 {
@@ -340,7 +342,9 @@ func toFilterSet(vs []string) map[string]bool {
 }
 
 // anySystemMatches reports whether any element of haystack appears in
-// needles. Used to implement OR semantics for the `--system` filter.
+// needles. Used to implement OR semantics for the `--system` filter —
+// both sides are kebab-case ids (the `id:` field from _data_systems.yaml,
+// which is also what plan frontmatter `systems:` arrays carry).
 func anySystemMatches(haystack []string, needles map[string]bool) bool {
 	for _, h := range haystack {
 		if needles[h] {
@@ -509,8 +513,18 @@ var (
 	earsSubjectRe = regexp.MustCompile(`\b[Tt]he ([A-Z][A-Za-z0-9]*(?:\s+[A-Z0-9][A-Za-z0-9]*)*)\s+shall\b`)
 	taskLineRe    = regexp.MustCompile(`(?m)^\s*-\s*\[[ x]\]\s+(.*)$`)
 	// (?ms): ^ matches line start, . matches newline. Block ends at next H2 or EOF.
-	tasksBlockRe       = regexp.MustCompile(`(?ms)^## Tasks\s*\n(.+?)(?:\n## |\z)`)
-	registryNameLineRe = regexp.MustCompile(`^\s*name:\s*(.+?)\s*$`)
+	tasksBlockRe = regexp.MustCompile(`(?ms)^## Tasks\s*\n(.+?)(?:\n## |\z)`)
+	// registryItemStartRe matches an indented YAML list-item marker inside
+	// the `systems:` block — captures (leading whitespace, content after
+	// `-`). The content is then re-run through registryKVLineRe so a one-line
+	// `- id: foo` entry is parsed the same way as a multi-line entry whose
+	// id/name live on indented continuation lines.
+	registryItemStartRe = regexp.MustCompile(`^(\s+)-\s*(.*)$`)
+	// registryKVLineRe captures `<key>: <value>` pairs anywhere — the
+	// leading `\s*` swallows the per-entry indent. parseRegistry only cares
+	// about the `id` and `name` keys; everything else (e.g. `brief`) is
+	// matched and discarded by setRegistryField.
+	registryKVLineRe = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_-]*):\s*(.*)$`)
 )
 
 // loadMaxPlanLines mirrors loadPrefixWidth for the max_plan_lines key in
@@ -553,13 +567,13 @@ func runPlanLint(args []string) {
 	width := loadPrefixWidth(planDir)
 	maxLines := loadMaxPlanLines(planDir)
 	registryPath := filepath.Join(planDir, planSystemsFile)
-	registry := parseRegistryNames(registryPath)
+	reg := parseRegistry(registryPath)
 	// No pre-flight warning when the registry is empty or missing: the
 	// project gate now keys solely on the lock file, so a project where
 	// the user never created (or has since removed) _data_systems.yaml is
-	// still legitimate. parseRegistryNames returns a nil map in that case;
-	// plan files that reference a system will surface their own per-file
-	// finding via lintPlanFile.
+	// still legitimate. parseRegistry returns an empty registry in that
+	// case; plan files that reference a system will surface their own
+	// per-file finding via lintPlanFile.
 
 	// Glob only errors on bad pattern; ours is fixed. Missing planDir → empty.
 	files, _ := filepath.Glob(filepath.Join(planDir, "*"+planFileExt))
@@ -578,7 +592,7 @@ func runPlanLint(args []string) {
 
 	okCount, failCount := 0, 0
 	for _, path := range files {
-		findings := lintPlanFile(path, width, maxLines, registry, knownSlugs, relations, registryPath)
+		findings := lintPlanFile(path, width, maxLines, reg, knownSlugs, relations, registryPath)
 		if len(findings) > 0 {
 			failCount++
 			for _, f := range findings {
@@ -595,43 +609,124 @@ func runPlanLint(args []string) {
 	}
 }
 
-// parseRegistryNames walks the systems registry YAML and returns the set
-// of `name:` values inside the top-level `systems:` block. Hand-rolled
-// parser tracking the specific shape of _data_systems.yaml so we don't
-// pull in a full YAML dependency for one file we control end-to-end.
-// Missing/unreadable file → empty set; caller decides how to flag it.
-func parseRegistryNames(path string) map[string]bool {
+// registry pairs the two lookup directions parseRegistry produces:
+//
+//	byID   — "is this id from a plan's frontmatter `systems:` array
+//	         actually declared in _data_systems.yaml?" (lint frontmatter
+//	         membership). Maps id → display name.
+//	byName — "what id does this EARS subject (a display name like
+//	         `Auth Service` from criterion text) resolve to?" Used by
+//	         lintEarsTasks to translate before set-comparing against the
+//	         declared id array. Maps display name → id.
+//
+// Both maps are always non-nil so callers can index without a guard.
+type registry struct {
+	byID   map[string]string
+	byName map[string]string
+}
+
+// parseRegistry walks the systems registry YAML and returns id↔name maps
+// for every entry that carries BOTH an `id:` and a `name:` field.
+// Hand-rolled to avoid pulling in a full YAML dependency for one file we
+// control end-to-end; tracks current list-entry boundaries so a multi-line
+// `- id: foo\n    name: Foo` shape and the single-line `- id: foo` shape
+// produce the same in-memory result.
+//
+// Missing/unreadable file → empty registry; caller decides how to flag it.
+// Entries that carry only `id:` or only `name:` are dropped silently —
+// the broken plan referencing such a slug will surface its own lint
+// finding instead.
+func parseRegistry(path string) registry {
+	empty := registry{byID: make(map[string]string), byName: make(map[string]string)}
 	f, err := os.Open(path) // #nosec G304 -- path = planDir/planSystemsFile, both constants.
 	if err != nil {
-		return nil
+		return empty
 	}
 	defer func() { _ = f.Close() }()
-	names := make(map[string]bool)
-	inSystems := false
+
+	p := registryParser{reg: registry{byID: make(map[string]string), byName: make(map[string]string)}}
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.TrimRight(line, " \t\r") == "systems:" {
-			inSystems = true
-			continue
-		}
-		if !inSystems {
-			continue
-		}
-		// Block ends at any unindented non-blank line that isn't a list item.
-		if line != "" && !isIndented(line) && !strings.HasPrefix(line, "-") {
-			inSystems = false
-			continue
-		}
-		if m := registryNameLineRe.FindStringSubmatch(line); m != nil {
-			names[strings.Trim(strings.TrimSpace(m[1]), `"'`)] = true
-		}
+		p.feed(scanner.Text())
 	}
-	return names
+	if err := scanner.Err(); err != nil {
+		return empty
+	}
+	p.flush()
+	return p.reg
+}
+
+// registryParser carries the line-by-line state parseRegistry walks: the
+// accumulating registry, the partial entry being assembled, and whether
+// we're inside the top-level `systems:` block. Lifted out of parseRegistry
+// so the per-line branches live in feed() and parseRegistry stays a thin
+// scan loop.
+type registryParser struct {
+	reg                registry
+	curID, curName     string
+	inSystems, inEntry bool
+}
+
+func (p *registryParser) flush() {
+	if p.inEntry && p.curID != "" && p.curName != "" {
+		p.reg.byID[p.curID] = p.curName
+		p.reg.byName[p.curName] = p.curID
+	}
+	p.curID, p.curName = "", ""
+	p.inEntry = false
+}
+
+func (p *registryParser) feed(line string) {
+	trimmedRight := strings.TrimRight(line, " \t\r")
+	if trimmedRight == "systems:" {
+		p.flush()
+		p.inSystems = true
+		return
+	}
+	if !p.inSystems {
+		return
+	}
+	// Blank lines stay inside the entry (and the block).
+	if trimmedRight == "" {
+		return
+	}
+	// Any unindented non-blank line that isn't a list item ends the block.
+	if !isIndented(line) && !strings.HasPrefix(line, "-") {
+		p.flush()
+		p.inSystems = false
+		return
+	}
+	if m := registryItemStartRe.FindStringSubmatch(line); m != nil {
+		p.flush()
+		p.inEntry = true
+		if rest := strings.TrimSpace(m[2]); rest != "" {
+			if kv := registryKVLineRe.FindStringSubmatch(rest); kv != nil {
+				setRegistryField(&p.curID, &p.curName, kv[1], kv[2])
+			}
+		}
+		return
+	}
+	if kv := registryKVLineRe.FindStringSubmatch(line); kv != nil {
+		setRegistryField(&p.curID, &p.curName, kv[1], kv[2])
+	}
+}
+
+// setRegistryField writes the id/name fields parseRegistry tracks; every
+// other key (`brief`, future ad-hoc fields) is dropped. Pulled out so the
+// item-start and continuation-line paths share one normalization
+// (whitespace trim + quote strip).
+func setRegistryField(id, name *string, key, raw string) {
+	v := strings.Trim(strings.TrimSpace(raw), `"'`)
+	switch key {
+	case "id":
+		*id = v
+	case "name":
+		*name = v
+	}
 }
 
 // isIndented reports whether the first byte is a space or tab. Sufficient
-// for parseRegistryNames' YAML-block boundary check.
+// for parseRegistry's YAML-block boundary check.
 func isIndented(line string) bool {
 	if line == "" {
 		return false
@@ -644,10 +739,10 @@ func isIndented(line string) bool {
 // finding strings (empty = pass). Each finding is human-readable and
 // stateless — callers prepend the file path. registryPath is passed in
 // (rather than recomputed) so the "system not in registry" message uses
-// the same string the lint hook logged at startup. extendsMap and
-// extendedByMap are pre-computed adjacency tables (slug → set of slugs)
-// so the bidirectional extends/extended_by check is O(1) per link.
-func lintPlanFile(path string, width, maxLines int, registry, knownSlugs map[string]bool, relations planRelations, registryPath string) []string {
+// the same string the lint hook logged at startup. reg carries both
+// directions of the registry lookup (id→name and name→id) so the
+// frontmatter check and the EARS-subject resolution share one parse.
+func lintPlanFile(path string, width, maxLines int, reg registry, knownSlugs map[string]bool, relations planRelations, registryPath string) []string {
 	findings := lintFilename(filepath.Base(path), width)
 
 	data, err := os.ReadFile(path) // #nosec G304 -- path is a planDir glob result.
@@ -668,7 +763,7 @@ func lintPlanFile(path string, width, maxLines int, registry, knownSlugs map[str
 	title, titleFindings := lintTitle(fm)
 	findings = append(findings, titleFindings...)
 	findings = append(findings, lintStatus(fm)...)
-	declaredSystems, sysFindings := lintSystems(fm, registry, registryPath)
+	declaredSystems, sysFindings := lintSystems(fm, reg, registryPath)
 	findings = append(findings, sysFindings...)
 	findings = append(findings, lintRelationArray(slug, fm, "supersedes", planSupersedesRe, knownSlugs)...)
 	findings = append(findings, lintRelationArray(slug, fm, "superseded_by", planSupersededByRe, knownSlugs)...)
@@ -680,7 +775,7 @@ func lintPlanFile(path string, width, maxLines int, registry, knownSlugs map[str
 	findings = append(findings, lintFrontmatterOrder(fm)...)
 	findings = append(findings, lintFilenameMatchesTitle(filepath.Base(path), width, title)...)
 	findings = append(findings, lintRequiredSections(body)...)
-	findings = append(findings, lintEarsTasks(body, declaredSystems, registry, registryPath)...)
+	findings = append(findings, lintEarsTasks(body, declaredSystems, reg, registryPath)...)
 
 	return findings
 }
@@ -740,11 +835,12 @@ func lintStatus(fm string) []string {
 	return nil
 }
 
-// lintSystems validates the `systems:` frontmatter field. Returns the
-// parsed list of declared systems (for the downstream EARS-equality
-// check) alongside any findings. Block-form `systems:` is rejected by
-// the regex; only inline-array form is recognized.
-func lintSystems(fm string, registry map[string]bool, registryPath string) (declared, findings []string) {
+// lintSystems validates the `systems:` frontmatter field. Each entry is
+// an id (the kebab key from `_data_systems.yaml`); membership is checked
+// against reg.byID. Returns the declared id list for the downstream
+// EARS-equality check alongside any findings. Block-form `systems:` is
+// rejected by the regex; only inline-array form is recognized.
+func lintSystems(fm string, reg registry, registryPath string) (declared, findings []string) {
 	m := planSystemsRe.FindStringSubmatch(fm)
 	if m == nil {
 		return nil, []string{"missing required `systems:` field (must be inline array)"}
@@ -753,9 +849,9 @@ func lintSystems(fm string, registry map[string]bool, registryPath string) (decl
 	if len(declared) == 0 {
 		findings = append(findings, "`systems:` array is empty; at least one system is required")
 	}
-	for _, s := range declared {
-		if !registry[s] {
-			findings = append(findings, fmt.Sprintf("declared system %q is not in %s", s, registryPath))
+	for _, id := range declared {
+		if _, ok := reg.byID[id]; !ok {
+			findings = append(findings, fmt.Sprintf("declared system %q is not in %s", id, registryPath))
 		}
 	}
 	return declared, findings
@@ -969,44 +1065,55 @@ func lintRequiredSections(body string) []string {
 }
 
 // lintEarsTasks extracts EARS-criterion subjects from the `## Tasks`
-// block and checks two invariants: every subject exists in the registry,
-// and the subject set equals the declared `systems:` set exactly. The
-// equality rule keeps frontmatter honest — declared systems can't drift
-// from what the tasks actually exercise.
-func lintEarsTasks(body string, declared []string, registry map[string]bool, registryPath string) []string {
+// block and checks two invariants:
+//
+//  1. Every subject (a display name like "Auth Service") resolves to a
+//     registry entry via reg.byName.
+//  2. The set of resolved subject ids equals the declared `systems:`
+//     id set exactly. The equality rule keeps frontmatter honest —
+//     declared systems can't drift from what the tasks actually exercise.
+//
+// declared carries the kebab ids parsed from the plan's frontmatter; EARS
+// subjects are translated to ids before the set comparison so both sides
+// share the same coordinate system.
+func lintEarsTasks(body string, declared []string, reg registry, registryPath string) []string {
 	var tasksBlock string
 	if m := tasksBlockRe.FindStringSubmatch(body); m != nil {
 		tasksBlock = m[1]
 	}
-	subjects := make(map[string]bool)
+	subjectIDs := make(map[string]bool)
+	unknownNames := make(map[string]bool)
 	for _, lineMatch := range taskLineRe.FindAllStringSubmatch(tasksBlock, -1) {
 		for _, subjMatch := range earsSubjectRe.FindAllStringSubmatch(lineMatch[1], -1) {
-			subjects[subjMatch[1]] = true
+			name := subjMatch[1]
+			if id, ok := reg.byName[name]; ok {
+				subjectIDs[id] = true
+			} else {
+				unknownNames[name] = true
+			}
 		}
 	}
 
 	// Stable iteration order so findings are deterministic in tests.
-	sortedSubjects := make([]string, 0, len(subjects))
-	for s := range subjects {
-		sortedSubjects = append(sortedSubjects, s)
+	sortedUnknown := make([]string, 0, len(unknownNames))
+	for n := range unknownNames {
+		sortedUnknown = append(sortedUnknown, n)
 	}
-	sort.Strings(sortedSubjects)
+	sort.Strings(sortedUnknown)
 
 	var findings []string
-	for _, s := range sortedSubjects {
-		if !registry[s] {
-			findings = append(findings, fmt.Sprintf("EARS subject %q is not in %s", s, registryPath))
-		}
+	for _, n := range sortedUnknown {
+		findings = append(findings, fmt.Sprintf("EARS subject %q is not in %s", n, registryPath))
 	}
 
 	declaredSet := make(map[string]bool, len(declared))
 	for _, s := range declared {
 		declaredSet[s] = true
 	}
-	if extra := setDifference(subjects, declaredSet); len(extra) > 0 {
+	if extra := setDifference(subjectIDs, declaredSet); len(extra) > 0 {
 		findings = append(findings, fmt.Sprintf("EARS tasks name systems not in `systems:`: %v", extra))
 	}
-	if missing := setDifference(declaredSet, subjects); len(missing) > 0 {
+	if missing := setDifference(declaredSet, subjectIDs); len(missing) > 0 {
 		findings = append(findings, fmt.Sprintf("`systems:` declares systems not used in any EARS task: %v", missing))
 	}
 	return findings
