@@ -1,0 +1,178 @@
+name: exp / claude code on deepseek + llm judge
+
+# Manually-triggered experiment from the agent-eval lineage. The loop:
+#
+#   1. Install Claude Code (npm) on the runner; install x-x to PATH.
+#   2. Init a throwaway eval workspace under /tmp so we never touch the
+#      x-x repo itself.
+#   3. Invoke `/x-plan <task>` then `/x-x` inside that workspace, with
+#      Claude Code routed at DeepSeek's Anthropic-compatible endpoint.
+#   4. Run the skills-evals runner (uv + DeepEval) which scores the
+#      produced artifacts against the registered judges; exits 0/1.
+#   5. Upload the workspace + judgment JSON as an artifact for inspection.
+#
+# See docs/internal/manually-triggered-workflows.md for the convention this
+# file follows and the rationale for not using Docker `sbx` here.
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: 'Eval scenario file under skills-evals/ (without the .md extension)'
+        type: string
+        default: claude-deepseek-baseline
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # Workspace lives outside the repo checkout so the planner/executor are
+    # operating on a fresh project, not editing x-x itself. The eval is about
+    # what /x-plan + /x-x produce for a downstream user, not about modifying
+    # this codebase.
+    env:
+      EVAL_WORKSPACE: /tmp/eval-workspace
+      # Claude Code env block — routes the Messages API at DeepSeek's
+      # Anthropic-compatible endpoint. Documented in
+      # docs/internal/manually-triggered-workflows.md.
+      ANTHROPIC_BASE_URL: https://api.deepseek.com/anthropic
+      ANTHROPIC_AUTH_TOKEN: ${{ secrets.DEEPSEEK_API_KEY }}
+      ANTHROPIC_MODEL: deepseek-v4-pro[1m]
+      ANTHROPIC_DEFAULT_OPUS_MODEL: deepseek-v4-pro[1m]
+      ANTHROPIC_DEFAULT_SONNET_MODEL: deepseek-v4-pro[1m]
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: deepseek-v4-flash
+      CLAUDE_CODE_SUBAGENT_MODEL: deepseek-v4-flash
+      CLAUDE_CODE_EFFORT_LEVEL: max
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # `go install .` lands a release-flavored x-x in $(go env GOPATH)/bin.
+      # The setup-go action puts that directory on PATH, so subsequent steps
+      # can call `x-x` directly.
+      - name: install x-x to PATH
+        run: |
+          go install .
+          x-x --version
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Pin a known-good Claude Code build with -g so it's on PATH for every
+      # subsequent step. The CLI is the only Anthropic dependency we need;
+      # everything else routes through env vars to DeepSeek.
+      - name: install claude code
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          claude --version
+
+      # uv manages the skills-evals Python project (deepeval + openai). The
+      # action also installs Python per skills-evals/.python-version.
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: install skills-evals deps
+        working-directory: skills-evals
+        run: uv sync --frozen || uv sync
+
+      # Read the scenario file's YAML frontmatter and surface the `task:`
+      # value as a step output. Multiline-safe via the GH-Actions heredoc
+      # form, even though every scenario today fits on one line — future
+      # scenarios may not.
+      - name: read scenario
+        id: scenario
+        env:
+          SCENARIO: ${{ inputs.scenario }}
+        run: |
+          scenario_file="skills-evals/scenarios/${SCENARIO}.md"
+          if [ ! -f "$scenario_file" ]; then
+            echo "::error::scenario file not found: $scenario_file"
+            exit 1
+          fi
+          task="$(
+            awk '
+              /^---$/ { in_fm = !in_fm; next }
+              in_fm && /^task:/ {
+                sub(/^task:[[:space:]]*/, "");
+                print;
+                exit;
+              }
+            ' "$scenario_file"
+          )"
+          if [ -z "$task" ]; then
+            echo "::error::no \`task:\` key found in frontmatter of $scenario_file"
+            exit 1
+          fi
+          echo "task<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$task"     >> "$GITHUB_OUTPUT"
+          echo "EOF"       >> "$GITHUB_OUTPUT"
+          echo "task: $task"
+
+      # Fresh git repo + x-x init seed the eval workspace. The init wires up
+      # .claude/skills/, .x-plans/_config.lock, and .x-plans/_data_systems.yaml
+      # exactly as a real user's first-run would. All flags are passed so the
+      # interactive prompts are skipped.
+      - name: seed eval workspace
+        run: |
+          rm -rf "$EVAL_WORKSPACE"
+          mkdir -p "$EVAL_WORKSPACE"
+          cd "$EVAL_WORKSPACE"
+          git init -q
+          git config user.email "ci@example.com"
+          git config user.name "CI"
+          x-x init \
+            --scope project \
+            --agents claude \
+            --prefix-width 4 \
+            --max-plan-lines 30 \
+            --review-per plan
+
+      # --dangerously-skip-permissions is the documented non-interactive
+      # toggle for Claude Code: it suppresses the per-tool approval prompts
+      # that would otherwise hang the run. The runner is ephemeral so the
+      # safety lost there has nowhere to land.
+      - name: invoke /x-plan
+        working-directory: ${{ env.EVAL_WORKSPACE }}
+        run: |
+          claude --dangerously-skip-permissions -p "/x-plan ${{ steps.scenario.outputs.task }}"
+
+      - name: invoke /x-x
+        working-directory: ${{ env.EVAL_WORKSPACE }}
+        run: |
+          claude --dangerously-skip-permissions -p "/x-x"
+
+      # `if: always()` runs the judge even if a prior `claude` invocation
+      # exited non-zero — a failure mid-loop is itself a judgable artifact
+      # ("the loop crashed before producing the deliverable").
+      - name: judge
+        if: always()
+        working-directory: skills-evals
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          uv run skills-evals \
+            --task "${{ steps.scenario.outputs.task }}" \
+            --workspace "$EVAL_WORKSPACE" \
+            --output /tmp/judgment.json
+
+      - name: upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-${{ inputs.scenario }}-${{ github.run_id }}
+          path: |
+            ${{ env.EVAL_WORKSPACE }}
+            /tmp/judgment.json
+          if-no-files-found: warn
+          retention-days: 14

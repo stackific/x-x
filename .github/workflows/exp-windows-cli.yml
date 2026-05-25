@@ -1,0 +1,101 @@
+name: exp / windows cli smoke
+
+# Manually-triggered Windows smoke test. Builds the binary, installs it via
+# scripts\INSTALL_LOCAL.ps1, drives every CLI surface through
+# scripts\e2e_test.ps1, then uninstalls via scripts\UNINSTALL.ps1 and asserts
+# the install dir is clean. Standalone — never merges with the agent-eval
+# lineage (see docs/internal/manually-triggered-workflows.md).
+#
+# Why a separate workflow rather than extending .github/workflows/test.yml:
+# the bash e2e in that workflow runs inside a Linux container and exercises
+# behavior that's deliberately POSIX-shaped. Windows has its own constraints
+# (no symlinks without Dev Mode, %USERPROFILE% scope, CRLF line endings,
+# reserved filenames, case-insensitive filesystem) that need a native run.
+
+on:
+  workflow_dispatch:
+    inputs:
+      verbose:
+        description: 'Print extra diagnostics (PowerShell -Verbose)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    # All steps run in pwsh (PowerShell 7) — that's the default shell on
+    # windows-latest, but pinning it explicitly removes ambiguity if a
+    # future runner image changes the default.
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Bypass Taskfile: `task` isn't preinstalled on windows-latest and the
+      # one target we need (cross-platform build into bin\) is a single
+      # `go build` line. Keeping it in-line means the workflow has no
+      # task-runner dependency.
+      - name: build x-x for windows-amd64
+        run: |
+          New-Item -ItemType Directory -Force -Path bin | Out-Null
+          $env:CGO_ENABLED = '0'
+          go build -ldflags "-s -w" -o bin\x-x-windows-amd64.exe .
+          if ($LASTEXITCODE -ne 0) { throw "go build failed" }
+          Get-Item bin\x-x-windows-amd64.exe | Format-List FullName, Length
+
+      # Install via the local installer to verify INSTALL_LOCAL.ps1 itself.
+      # The release-flow INSTALL.ps1 isn't exercised here — it pulls a
+      # published binary and depends on a real GitHub release, which isn't
+      # guaranteed on every commit.
+      - name: install via INSTALL_LOCAL.ps1
+        run: |
+          .\scripts\INSTALL_LOCAL.ps1
+          if ($LASTEXITCODE -ne 0) { throw "INSTALL_LOCAL.ps1 failed" }
+
+      - name: verify installed binary on PATH
+        run: |
+          # INSTALL_LOCAL.ps1 patches the current session's PATH, but a fresh
+          # workflow step starts in a new shell. Re-resolve via the documented
+          # install dir.
+          $bin = Join-Path $HOME '.x-x\x-x.exe'
+          if (-not (Test-Path -LiteralPath $bin)) { throw "binary not at $bin" }
+          & $bin --version
+          if ($LASTEXITCODE -ne 0) { throw "$bin --version exited $LASTEXITCODE" }
+
+      # The e2e driver does its own go build into a sandbox and pivots HOME
+      # for assertion isolation; this step is the main coverage.
+      - name: run e2e suite
+        run: |
+          $verboseFlag = if ('${{ inputs.verbose }}' -eq 'true') { '-Verbose' } else { '' }
+          & pwsh -NoLogo -NonInteractive -File .\scripts\e2e_test.ps1 $verboseFlag
+          if ($LASTEXITCODE -ne 0) { throw "e2e_test.ps1 failed with exit $LASTEXITCODE" }
+
+      - name: uninstall via UNINSTALL.ps1
+        if: always()
+        run: |
+          .\scripts\UNINSTALL.ps1
+          if ($LASTEXITCODE -ne 0) { throw "UNINSTALL.ps1 failed" }
+
+      - name: verify install dir is removed
+        if: always()
+        run: |
+          $xxDir = Join-Path $HOME '.x-x'
+          if (Test-Path -LiteralPath $xxDir) {
+            $leftovers = Get-ChildItem -Recurse -Force -LiteralPath $xxDir |
+                         Select-Object -ExpandProperty FullName
+            throw "expected $xxDir to be removed; leftovers:`n$($leftovers -join "`n")"
+          }
+          $bin = Join-Path $HOME '.x-x\x-x.exe'
+          if (Test-Path -LiteralPath $bin) { throw "binary still present: $bin" }
