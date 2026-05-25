@@ -1210,10 +1210,23 @@ case_start "bare x-x is idempotent (no re-bootstrap)"
 reset_user_home
 run_capture ""
 sentinel_path="$HOME/${XX_AGENTS_SKILLS_DIR}/${SKILL_X_X_DIR}/SKILL.md"
-first_mtime="$(stat -f %m "$sentinel_path" 2>/dev/null || stat -c %Y "$sentinel_path")"
+# stat is non-portable: BSD/macOS uses `-f %m`, GNU/Linux uses `-c %Y`. The
+# prior `stat -f %m … || stat -c %Y …` form looked clever but broke on Linux
+# — GNU's `-f` flag means "filesystem status" (a multi-line block of free-
+# block counts etc.) and treats `%m` as a second file argument, so the LHS
+# exits 0 with garbage output and the fallback never fires. Branch on OS
+# explicitly so each path gets just the mtime epoch.
+read_mtime() {
+  if [ "$(uname)" = "Darwin" ]; then
+    stat -f %m "$1"
+  else
+    stat -c %Y "$1"
+  fi
+}
+first_mtime="$(read_mtime "$sentinel_path")"
 sleep 1
 run_capture ""
-second_mtime="$(stat -f %m "$sentinel_path" 2>/dev/null || stat -c %Y "$sentinel_path")"
+second_mtime="$(read_mtime "$sentinel_path")"
 assert_eq "mtime unchanged across runs" "$first_mtime" "$second_mtime"
 
 case_start "init refuses re-run on an initialized project (lock-file marker)"
