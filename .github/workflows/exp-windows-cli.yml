@@ -1,16 +1,20 @@
 name: exp / windows cli smoke
 
-# Manually-triggered Windows smoke test. Builds the binary, installs it via
-# scripts\INSTALL_LOCAL.ps1, drives every CLI surface through
-# scripts\e2e_test.ps1, then uninstalls via scripts\UNINSTALL.ps1 and asserts
-# the install dir is clean. Standalone — never merges with the agent-eval
-# lineage (see docs/internal/manually-triggered-workflows.md).
+# Manually-triggered Windows smoke test, two-job pipeline:
 #
-# Why a separate workflow rather than extending .github/workflows/test.yml:
-# the bash e2e in that workflow runs inside a Linux container and exercises
-# behavior that's deliberately POSIX-shaped. Windows has its own constraints
-# (no symlinks without Dev Mode, %USERPROFILE% scope, CRLF line endings,
-# reserved filenames, case-insensitive filesystem) that need a native run.
+#   build  (ubuntu-latest, golang container) -> `task build` -> upload bin/
+#   smoke  (windows-latest)                  -> download bin/ ->
+#                                               INSTALL_LOCAL.ps1 -> e2e_test.ps1
+#                                               -> UNINSTALL.ps1 -> assert clean
+#
+# Why the split: building inside a Linux container is non-negotiable -
+# `task build` cross-compiles every supported platform into ./bin in one
+# pass, matching the release pipeline, so the Windows binary the smoke
+# tests run against is bit-equivalent with what real users would download.
+# The Windows runner only consumes the artifact; it doesn't build.
+#
+# Standalone - never merges with the agent-eval lineage (see
+# docs/internal/manually-triggered-workflows.md).
 
 on:
   workflow_dispatch:
@@ -24,13 +28,54 @@ permissions:
   contents: read
 
 jobs:
+  build:
+    # Build the cross-platform bin/ tree inside a real Linux container so
+    # the artifact matches what a release would produce. Uses the same
+    # golang image .github/workflows/test.yml does, plus an inline `task`
+    # install (the Taskfile orchestrates the multi-platform build).
+    runs-on: ubuntu-latest
+    container:
+      image: golang:1.26-bookworm
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # Recent Git refuses to operate on a repo with mismatched ownership
+      # ("fatal: detected dubious ownership"). The checkout writes as the
+      # runner user but the container runs as root. Mirror the trust step
+      # from test.yml so downstream git/go calls don't fail with exit 128.
+      - name: Trust workspace inside container
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # `task` isn't in the golang image. Install via the official installer
+      # to $GOPATH/bin which the container's PATH already includes.
+      - name: install task
+        run: |
+          sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b "$(go env GOPATH)/bin"
+          task --version
+
+      # `task build` cross-compiles for linux/{amd64,arm64}, darwin/{amd64,
+      # arm64}, windows/{amd64,arm64} into ./bin. The Windows smoke job
+      # only needs windows-amd64, but uploading the full set keeps the
+      # artifact useful for inspection / debugging.
+      - name: task build
+        run: task build
+
+      - name: upload bin
+        uses: actions/upload-artifact@v4
+        with:
+          name: bin
+          path: bin/
+          if-no-files-found: error
+          retention-days: 7
+
   smoke:
     runs-on: windows-latest
+    needs: build
     timeout-minutes: 30
 
-    # All steps run in pwsh (PowerShell 7) — that's the default shell on
-    # windows-latest, but pinning it explicitly removes ambiguity if a
-    # future runner image changes the default.
+    # All steps run in pwsh (PowerShell 7) - the default on windows-latest,
+    # pinned explicitly so a future image change can't surprise us.
     defaults:
       run:
         shell: pwsh
@@ -38,44 +83,44 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      # Pull the artifact built by the Linux container job. INSTALL_LOCAL.ps1
+      # reads bin\x-x-windows-amd64.exe (computed from
+      # $env:PROCESSOR_ARCHITECTURE - windows-latest is x64, so this picks
+      # the amd64 variant).
+      - name: download bin
+        uses: actions/download-artifact@v4
         with:
-          go-version-file: go.mod
-          cache: true
+          name: bin
+          path: bin
 
-      # Bypass Taskfile: `task` isn't preinstalled on windows-latest and the
-      # one target we need (cross-platform build into bin\) is a single
-      # `go build` line. Keeping it in-line means the workflow has no
-      # task-runner dependency.
-      - name: build x-x for windows-amd64
+      - name: list bin contents
         run: |
-          New-Item -ItemType Directory -Force -Path bin | Out-Null
-          $env:CGO_ENABLED = '0'
-          go build -ldflags "-s -w" -o bin\x-x-windows-amd64.exe .
-          if ($LASTEXITCODE -ne 0) { throw "go build failed" }
-          Get-Item bin\x-x-windows-amd64.exe | Format-List FullName, Length
+          Get-ChildItem -LiteralPath bin | Format-Table Name, Length, LastWriteTime
 
-      # Install via the local installer to verify INSTALL_LOCAL.ps1 itself.
-      # The release-flow INSTALL.ps1 isn't exercised here — it pulls a
-      # published binary and depends on a real GitHub release, which isn't
-      # guaranteed on every commit.
+      # INSTALL_LOCAL.ps1 picks the right binary from bin/ based on the
+      # host architecture, copies it to $HOME\.x-x\x-x.exe, patches the
+      # user PATH, and seeds ~/.x-x/.config.json + materialized agents
+      # tree. This is the install flow we want to verify end-to-end.
       - name: install via INSTALL_LOCAL.ps1
         run: |
           .\scripts\INSTALL_LOCAL.ps1
-          if ($LASTEXITCODE -ne 0) { throw "INSTALL_LOCAL.ps1 failed" }
+          if ($LASTEXITCODE -ne 0) { throw "INSTALL_LOCAL.ps1 failed with exit $LASTEXITCODE" }
 
-      - name: verify installed binary on PATH
+      - name: verify installed binary
         run: |
-          # INSTALL_LOCAL.ps1 patches the current session's PATH, but a fresh
-          # workflow step starts in a new shell. Re-resolve via the documented
-          # install dir.
           $bin = Join-Path $HOME '.x-x\x-x.exe'
           if (-not (Test-Path -LiteralPath $bin)) { throw "binary not at $bin" }
           & $bin --version
           if ($LASTEXITCODE -ne 0) { throw "$bin --version exited $LASTEXITCODE" }
 
-      # The e2e driver does its own go build into a sandbox and pivots HOME
-      # for assertion isolation; this step is the main coverage.
+      # e2e_test.ps1 consumes the installed binary at $HOME\.x-x\x-x.exe
+      # and runs ~180 cases covering bare invocation, init matrix, skills
+      # remove, plans next-prefix/list/lint/slugify, and Windows-specific
+      # behaviors (copy-not-symlink, %USERPROFILE% scope, CRLF, reserved
+      # filenames, case-insensitive filesystem, etc.). Case #1 is a
+      # meta-smoke that aborts the whole suite if the harness itself is
+      # broken, so a regression in Invoke-XX never cascades into hundreds
+      # of misleading failures.
       - name: run e2e suite
         run: |
           $verboseFlag = if ('${{ inputs.verbose }}' -eq 'true') { '-Verbose' } else { '' }
@@ -86,7 +131,7 @@ jobs:
         if: always()
         run: |
           .\scripts\UNINSTALL.ps1
-          if ($LASTEXITCODE -ne 0) { throw "UNINSTALL.ps1 failed" }
+          if ($LASTEXITCODE -ne 0) { throw "UNINSTALL.ps1 failed with exit $LASTEXITCODE" }
 
       - name: verify install dir is removed
         if: always()
