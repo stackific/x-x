@@ -18,72 +18,72 @@ import (
 	"strings"
 )
 
-// runPlan dispatches `x-x plan <subcommand>`. Future plan-tooling commands
+// runPlans dispatches `x-x plans <subcommand>`. Future plan-tooling commands
 // (e.g. `lint`) can be added here without restructuring, the same way
-// `runSkill` is shaped.
-func runPlan(args []string) {
+// `runSkills` is shaped.
+func runPlans(args []string) {
 	if len(args) == 0 {
-		printPlanUsage(os.Stderr)
+		printPlansUsage(os.Stderr)
 		os.Exit(2)
 	}
 	switch args[0] {
 	case "next-prefix":
-		runPlanNextPrefix(args[1:])
+		runPlansNextPrefix(args[1:])
 	case "list":
-		runPlanList(args[1:])
+		runPlansList(args[1:])
 	case "lint":
-		runPlanLint(args[1:])
+		runPlansLint(args[1:])
 	case "slugify":
-		runPlanSlugify(args[1:])
+		runPlansSlugify(args[1:])
 	default:
-		fmt.Fprintf(os.Stderr, "unknown plan subcommand: %s\n", args[0])
-		printPlanUsage(os.Stderr)
+		fmt.Fprintf(os.Stderr, "unknown plans subcommand: %s\n", args[0])
+		printPlansUsage(os.Stderr)
 		os.Exit(2)
 	}
 }
 
-// printPlanUsage writes the `x-x plan` help block to w. Mirrors the
-// printSkillUsage shape (one-line subcommand summaries) so the two help
+// printPlansUsage writes the `x-x plans` help block to w. Mirrors the
+// printSkillsUsage shape (one-line subcommand summaries) so the two help
 // surfaces stay visually aligned; both ride on a writer parameter rather
 // than os.Stderr directly so future `--help` paths can redirect to stdout.
-func printPlanUsage(w io.Writer) {
-	_, _ = fmt.Fprintln(w, "Usage: x-x plan <subcommand>")
+func printPlansUsage(w io.Writer) {
+	_, _ = fmt.Fprintln(w, "Usage: x-x plans <subcommand>")
 	_, _ = fmt.Fprintln(w, "  next-prefix   Print the next unused zero-padded plan prefix")
 	_, _ = fmt.Fprintln(w, "  list          List plans with slug, status, and declared systems")
 	_, _ = fmt.Fprintln(w, "  lint          Validate every plan file against the project schema")
 	_, _ = fmt.Fprintln(w, "  slugify       Print the kebab-case slug for a plan title")
 }
 
-// runPlanNextPrefix prints the next available zero-padded plan prefix in
-// planDir (the canonical ".x-plan" under cwd). Takes no arguments — the
-// directory is not user-configurable; planDir is the single source of truth.
+// runPlansNextPrefix prints the next available zero-padded plan prefix in
+// plansDir (the canonical ".x-plans" under cwd). Takes no arguments — the
+// directory is not user-configurable; plansDir is the single source of truth.
 //
-// Prefix width is read from <planDir>/<planConfigLockFile> (JSON), falling
+// Prefix width is read from <plansDir>/<plansConfigLockFile> (JSON), falling
 // back to defaultPrefixWidth when the lock file is missing or malformed.
-// Missing planDir is treated as empty (next prefix = 1), so the command is
+// Missing plansDir is treated as empty (next prefix = 1), so the command is
 // safe to run before `x-x init` has seeded the scaffold.
-func runPlanNextPrefix(args []string) {
-	fs := flag.NewFlagSet("plan next-prefix", flag.ExitOnError)
+func runPlansNextPrefix(args []string) {
+	fs := flag.NewFlagSet("plans next-prefix", flag.ExitOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: x-x plan next-prefix")
+		fmt.Fprintln(os.Stderr, "Usage: x-x plans next-prefix")
 	}
 	_ = fs.Parse(args)
 	if fs.NArg() > 0 {
-		fmt.Fprintf(os.Stderr, "x-x plan next-prefix takes no arguments (got %q)\n", fs.Arg(0))
+		fmt.Fprintf(os.Stderr, "x-x plans next-prefix takes no arguments (got %q)\n", fs.Arg(0))
 		os.Exit(2)
 	}
 	requireProject()
 
-	width := loadPrefixWidth(planDir)
-	highest := scanHighestPrefix(planDir, width)
+	width := loadPrefixWidth(plansDir)
+	highest := scanHighestPrefix(plansDir, width)
 	fmt.Printf("%0*d\n", width, highest+1)
 }
 
-// loadPrefixWidth reads prefix_width from <plansDir>/<planConfigLockFile>.
+// loadPrefixWidth reads prefix_width from <plansDir>/<plansConfigLockFile>.
 // Returns defaultPrefixWidth on any read/parse failure so the command is
 // usable before `x-x init` has seeded the lock file.
 func loadPrefixWidth(plansDir string) int {
-	data, err := os.ReadFile(filepath.Join(plansDir, planConfigLockFile)) // #nosec G304 -- plansDir is a CLI arg, path is project-local.
+	data, err := os.ReadFile(filepath.Join(plansDir, plansConfigLockFile)) // #nosec G304 -- plansDir is a CLI arg, path is project-local.
 	if err != nil {
 		return defaultPrefixWidth
 	}
@@ -99,7 +99,7 @@ func loadPrefixWidth(plansDir string) int {
 // scanHighestPrefix returns the largest numeric prefix found among entry
 // names in plansDir whose first `width` characters are digits. Matches the
 // regex `^(\d{width})` — the prefix does NOT have to be followed by `-`
-// here; that stricter shape is enforced by lint-plans, not by the
+// here; that stricter shape is enforced by `plans lint`, not by the
 // next-prefix lookup.
 func scanHighestPrefix(plansDir string, width int) int {
 	entries, err := os.ReadDir(plansDir)
@@ -124,7 +124,7 @@ func scanHighestPrefix(plansDir string, width int) int {
 	return highest
 }
 
-// runPlanList prints one tab-separated row per plan in planDir whose
+// runPlansList prints one tab-separated row per plan in plansDir whose
 // filename matches `<prefix-digits>-<slug>.md`. Each row is
 // `<slug>\t<status>\t<sys1>,<sys2>,...`. Flags:
 //
@@ -135,32 +135,32 @@ func scanHighestPrefix(plansDir string, width int) int {
 //	--order asc|desc                   prefix sort direction (default desc = latest first)
 //	--overflow-keywords TERM[,...]     case-insensitive substring(s) (OR); engages
 //	                                   only when the post-filter row count exceeds
-//	                                   planListOverflowThreshold (see constants.go)
+//	                                   plansListOverflowThreshold (see constants.go)
 //
 // Files matching the filename pattern but missing frontmatter, `status:`,
-// or `systems:` produce stderr warnings and are skipped. Missing planDir
+// or `systems:` produce stderr warnings and are skipped. Missing plansDir
 // is treated as empty (no rows, no error) so the command is safe to run
 // before `x-x init` has seeded the scaffold.
-func runPlanList(args []string) {
-	fs := flag.NewFlagSet("plan list", flag.ExitOnError)
+func runPlansList(args []string) {
+	fs := flag.NewFlagSet("plans list", flag.ExitOnError)
 	var statusFlag, systemFlag, keywordsFlag stringSliceFlag
 	orderFlag := fs.String("order", "desc", "sort by prefix: asc|desc (default desc = latest first)")
 	fs.Var(&statusFlag, "status", "keep only plans whose status matches (repeatable, comma-separated)")
 	fs.Var(&systemFlag, "system", "keep only plans whose systems contain this id (repeatable; OR semantics; matches the kebab `id:` from _data_systems.yaml)")
-	fs.Var(&keywordsFlag, "overflow-keywords", "case-insensitive substring(s) narrowing the output when the post-filter count exceeds planListOverflowThreshold (repeatable; OR semantics; matched against plan body only)")
+	fs.Var(&keywordsFlag, "overflow-keywords", "case-insensitive substring(s) narrowing the output when the post-filter count exceeds plansListOverflowThreshold (repeatable; OR semantics; matched against plan body only)")
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: x-x plan list [--status NAME[,NAME...]] [--system ID] [--order asc|desc] [--overflow-keywords PATTERN[,PATTERN...]]")
+		fmt.Fprintln(os.Stderr, "Usage: x-x plans list [--status NAME[,NAME...]] [--system ID] [--order asc|desc] [--overflow-keywords PATTERN[,PATTERN...]]")
 	}
 	_ = fs.Parse(args)
 	if fs.NArg() > 0 {
-		fmt.Fprintf(os.Stderr, "x-x plan list takes no positional arguments (got %q)\n", fs.Arg(0))
+		fmt.Fprintf(os.Stderr, "x-x plans list takes no positional arguments (got %q)\n", fs.Arg(0))
 		os.Exit(2)
 	}
 	requireProject()
 
 	order, err := parseOrder(*orderFlag)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "x-x plan list: %v\n", err)
+		fmt.Fprintf(os.Stderr, "x-x plans list: %v\n", err)
 		os.Exit(2)
 	}
 	keywords := normalizeKeywords(keywordsFlag)
@@ -168,10 +168,10 @@ func runPlanList(args []string) {
 	statusSet := toFilterSet(statusFlag)
 	systemSet := toFilterSet(systemFlag)
 
-	width := loadPrefixWidth(planDir)
-	rows, err := listPlans(planDir, width, os.Stderr)
+	width := loadPrefixWidth(plansDir)
+	rows, err := listPlans(plansDir, width, os.Stderr)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "x-x plan list: %v\n", err)
+		fmt.Fprintf(os.Stderr, "x-x plans list: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -189,25 +189,25 @@ func runPlanList(args []string) {
 	}
 
 	sortPlanRows(filtered, order)
-	filtered = applyOverflowNarrow(filtered, keywords, planDir, planListOverflowThreshold)
+	filtered = applyOverflowNarrow(filtered, keywords, plansDir, plansListOverflowThreshold)
 
 	for _, r := range filtered {
 		fmt.Printf("%s\t%s\t%s\n", r.slug, r.status, strings.Join(r.systems, ","))
 	}
 }
 
-// planListOrder enumerates the two values --order accepts. Defined as a
+// plansListOrder enumerates the two values --order accepts. Defined as a
 // typed int (not strings) so the sort-by-value switch in sortPlanRows
 // can't be invoked with an arbitrary, unvalidated string.
-type planListOrder int
+type plansListOrder int
 
 const (
-	orderAsc  planListOrder = 1
-	orderDesc planListOrder = 2
+	orderAsc  plansListOrder = 1
+	orderDesc plansListOrder = 2
 )
 
 // parseOrder validates the --order CLI value and returns its enum.
-func parseOrder(s string) (planListOrder, error) {
+func parseOrder(s string) (plansListOrder, error) {
 	switch s {
 	case "asc":
 		return orderAsc, nil
@@ -222,7 +222,7 @@ func parseOrder(s string) (planListOrder, error) {
 // the zero-padded numeric prefix, equals prefix-numeric order. Ascending
 // or descending per the order argument; desc is the CLI default (latest
 // first).
-func sortPlanRows(rows []planRow, order planListOrder) {
+func sortPlanRows(rows []planRow, order plansListOrder) {
 	if order == orderAsc {
 		sort.Slice(rows, func(i, j int) bool { return rows[i].slug < rows[j].slug })
 		return
@@ -386,7 +386,7 @@ func listPlans(plansDir string, width int, warnW io.Writer) ([]planRow, error) {
 	}
 
 	// `<width digits>-<at least one char><planFileExt>`. The trailing
-	// extension is part of the contract enforced by lint-plans; we match
+	// extension is part of the contract enforced by `plans lint`; we match
 	// the same shape so stray docs (README.md, _data_systems.yaml) are
 	// silently ignored.
 	nameRe := regexp.MustCompile(fmt.Sprintf(`^\d{%d}-.+%s$`, width, regexp.QuoteMeta(planFileExt)))
@@ -417,7 +417,7 @@ func listPlans(plansDir string, width int, warnW io.Writer) ([]planRow, error) {
 // parsePlan reads one plan file and extracts (slug, status, systems).
 // Returns (_, false) and emits a stderr-style warning to warnW when the
 // file lacks frontmatter or is missing a required field — warn-and-skip
-// so a single bad file never aborts the whole `plan list` walk.
+// so a single bad file never aborts the whole `plans list` walk.
 func parsePlan(path string, warnW io.Writer) (planRow, bool) {
 	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from a CLI-driven ReadDir of plansDir.
 	if err != nil {
@@ -474,7 +474,7 @@ func parseInlineSystems(raw string) []string {
 	return out
 }
 
-// ---------- plan lint ----------
+// ---------- plans lint ----------
 
 // Allowed plan statuses. allowedStatusesSorted is the alphabetised form
 // rendered in finding messages so the user always sees the same set in
@@ -530,7 +530,7 @@ var (
 // loadMaxPlanLines mirrors loadPrefixWidth for the max_plan_lines key in
 // _config.lock. Falls back to defaultMaxPlanLines on any failure.
 func loadMaxPlanLines(plansDir string) int {
-	data, err := os.ReadFile(filepath.Join(plansDir, planConfigLockFile)) // #nosec G304 -- plansDir is project-local.
+	data, err := os.ReadFile(filepath.Join(plansDir, plansConfigLockFile)) // #nosec G304 -- plansDir is project-local.
 	if err != nil {
 		return defaultMaxPlanLines
 	}
@@ -543,30 +543,30 @@ func loadMaxPlanLines(plansDir string) int {
 	return cfg.MaxPlanLines
 }
 
-// runPlanLint validates every *.md file in planDir against the plan schema.
-// Takes no arguments — always operates on the canonical .x-plan/ scaffold.
+// runPlansLint validates every *.md file in plansDir against the plan schema.
+// Takes no arguments — always operates on the canonical .x-plans/ scaffold.
 // Output contract:
 //
 //   - Per-file findings → stdout, one per line, prefixed with file path.
 //   - A passing file emits `<path>: ok`.
 //   - Summary `<ok> ok, <fail> failed` → stderr.
-//   - Missing planDir → 0 plans, exit 0.
+//   - Missing plansDir → 0 plans, exit 0.
 //   - Exit 0 if every file passed, exit 1 if any failed.
-func runPlanLint(args []string) {
-	fs := flag.NewFlagSet("plan lint", flag.ExitOnError)
+func runPlansLint(args []string) {
+	fs := flag.NewFlagSet("plans lint", flag.ExitOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: x-x plan lint")
+		fmt.Fprintln(os.Stderr, "Usage: x-x plans lint")
 	}
 	_ = fs.Parse(args)
 	if fs.NArg() > 0 {
-		fmt.Fprintf(os.Stderr, "x-x plan lint takes no arguments (got %q)\n", fs.Arg(0))
+		fmt.Fprintf(os.Stderr, "x-x plans lint takes no arguments (got %q)\n", fs.Arg(0))
 		os.Exit(2)
 	}
 	requireProject()
 
-	width := loadPrefixWidth(planDir)
-	maxLines := loadMaxPlanLines(planDir)
-	registryPath := filepath.Join(planDir, planSystemsFile)
+	width := loadPrefixWidth(plansDir)
+	maxLines := loadMaxPlanLines(plansDir)
+	registryPath := filepath.Join(plansDir, plansSystemsFile)
 	reg := parseRegistry(registryPath)
 	// No pre-flight warning when the registry is empty or missing: the
 	// project gate now keys solely on the lock file, so a project where
@@ -575,8 +575,8 @@ func runPlanLint(args []string) {
 	// case; plan files that reference a system will surface their own
 	// per-file finding via lintPlanFile.
 
-	// Glob only errors on bad pattern; ours is fixed. Missing planDir → empty.
-	files, _ := filepath.Glob(filepath.Join(planDir, "*"+planFileExt))
+	// Glob only errors on bad pattern; ours is fixed. Missing plansDir → empty.
+	files, _ := filepath.Glob(filepath.Join(plansDir, "*"+planFileExt))
 	sort.Strings(files)
 
 	// Pre-compute slugs so per-file supersedes checks are O(1).
@@ -588,7 +588,7 @@ func runPlanLint(args []string) {
 	// Pre-compute the forward/back-link adjacency maps so the per-file
 	// bidirectional check can verify symmetry without re-reading sibling
 	// files. Covers both supersedes/superseded_by and extends/extended_by.
-	relations := scanPlanRelations(files)
+	relations := scanPlansRelations(files)
 
 	okCount, failCount := 0, 0
 	for _, path := range files {
@@ -638,7 +638,7 @@ type registry struct {
 // finding instead.
 func parseRegistry(path string) registry {
 	empty := registry{byID: make(map[string]string), byName: make(map[string]string)}
-	f, err := os.Open(path) // #nosec G304 -- path = planDir/planSystemsFile, both constants.
+	f, err := os.Open(path) // #nosec G304 -- path = plansDir/plansSystemsFile, both constants.
 	if err != nil {
 		return empty
 	}
@@ -742,10 +742,10 @@ func isIndented(line string) bool {
 // the same string the lint hook logged at startup. reg carries both
 // directions of the registry lookup (id→name and name→id) so the
 // frontmatter check and the EARS-subject resolution share one parse.
-func lintPlanFile(path string, width, maxLines int, reg registry, knownSlugs map[string]bool, relations planRelations, registryPath string) []string {
+func lintPlanFile(path string, width, maxLines int, reg registry, knownSlugs map[string]bool, relations plansRelations, registryPath string) []string {
 	findings := lintFilename(filepath.Base(path), width)
 
-	data, err := os.ReadFile(path) // #nosec G304 -- path is a planDir glob result.
+	data, err := os.ReadFile(path) // #nosec G304 -- path is a plansDir glob result.
 	if err != nil {
 		return append(findings, fmt.Sprintf("read error: %v", err))
 	}
@@ -902,30 +902,30 @@ func lintBidirectional(self string, fwd, back map[string]map[string]bool, fwdFie
 	return findings
 }
 
-// planRelations bundles the four cross-plan adjacency maps the linter
+// plansRelations bundles the four cross-plan adjacency maps the linter
 // consults for forward/back-link integrity. Each entry is `slug → set of
 // slugs in that plan's <field>:` array. Zero values are usable — nil-map
 // lookups return false, which is the correct "no link" answer.
-type planRelations struct {
+type plansRelations struct {
 	extends      map[string]map[string]bool
 	extendedBy   map[string]map[string]bool
 	supersedes   map[string]map[string]bool
 	supersededBy map[string]map[string]bool
 }
 
-// scanPlanRelations walks every plan file once and populates the four
-// adjacency maps in planRelations. Files that can't be read or have
+// scanPlansRelations walks every plan file once and populates the four
+// adjacency maps in plansRelations. Files that can't be read or have
 // malformed frontmatter contribute nothing — lintPlanFile surfaces those
 // as per-file findings on its own pass.
-func scanPlanRelations(files []string) planRelations {
-	r := planRelations{
+func scanPlansRelations(files []string) plansRelations {
+	r := plansRelations{
 		extends:      make(map[string]map[string]bool, len(files)),
 		extendedBy:   make(map[string]map[string]bool, len(files)),
 		supersedes:   make(map[string]map[string]bool, len(files)),
 		supersededBy: make(map[string]map[string]bool, len(files)),
 	}
 	for _, path := range files {
-		data, err := os.ReadFile(path) // #nosec G304 -- path is a planDir glob result.
+		data, err := os.ReadFile(path) // #nosec G304 -- path is a plansDir glob result.
 		if err != nil {
 			continue
 		}
@@ -1132,7 +1132,7 @@ func setDifference(a, b map[string]bool) []string {
 	return out
 }
 
-// ---------- plan slugify ----------
+// ---------- plans slugify ----------
 
 // slugifySepRe matches one-or-more runs of non-slug bytes after lowercasing.
 // Anything outside [a-z0-9] collapses into a single `-`; leading/trailing
@@ -1148,23 +1148,23 @@ func slugify(title string) string {
 	return strings.Trim(slugifySepRe.ReplaceAllString(strings.ToLower(title), "-"), "-")
 }
 
-// runPlanSlugify takes a single positional argument (the title) and prints
+// runPlansSlugify takes a single positional argument (the title) and prints
 // its kebab-case slug to stdout. Exits 2 on missing/extra arguments or when
 // the title contains no characters that survive slugification. No project
 // gate — slugify is a pure transform and is useful before `x-x init`.
-func runPlanSlugify(args []string) {
-	fs := flag.NewFlagSet("plan slugify", flag.ExitOnError)
+func runPlansSlugify(args []string) {
+	fs := flag.NewFlagSet("plans slugify", flag.ExitOnError)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, `Usage: x-x plan slugify "<title>"`)
+		fmt.Fprintln(os.Stderr, `Usage: x-x plans slugify "<title>"`)
 	}
 	_ = fs.Parse(args)
 	if fs.NArg() != 1 {
-		fmt.Fprintln(os.Stderr, `x-x plan slugify takes exactly one positional argument: the title (quote it)`)
+		fmt.Fprintln(os.Stderr, `x-x plans slugify takes exactly one positional argument: the title (quote it)`)
 		os.Exit(2)
 	}
 	slug := slugify(fs.Arg(0))
 	if slug == "" {
-		fmt.Fprintf(os.Stderr, "x-x plan slugify: title %q has no slug-able characters\n", fs.Arg(0))
+		fmt.Fprintf(os.Stderr, "x-x plans slugify: title %q has no slug-able characters\n", fs.Arg(0))
 		os.Exit(2)
 	}
 	fmt.Println(slug)

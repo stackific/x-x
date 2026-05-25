@@ -12,47 +12,47 @@ import (
 	"path/filepath"
 )
 
-// runSkill dispatches `x-x skill <subcommand>`. Kept minimal — the only
-// subcommand today is `remove`, but the file layout (separate runSkill /
-// runSkillRemove / helpers) leaves room for `list`, `info`, etc. without
+// runSkills dispatches `x-x skills <subcommand>`. Kept minimal — the only
+// subcommand today is `remove`, but the file layout (separate runSkills /
+// runSkillsRemove / helpers) leaves room for `list`, `info`, etc. without
 // restructuring.
 //
-// Receives the post-"skill" args slice (e.g. `["remove", "--user"]`).
+// Receives the post-"skills" args slice (e.g. `["remove", "--user"]`).
 // Unknown or missing subcommands exit with code 2 and a usage hint, never
 // fall through silently.
-func runSkill(args []string) {
+func runSkills(args []string) {
 	if len(args) == 0 {
-		// `x-x skill` with no subcommand is an error, not the same as
+		// `x-x skills` with no subcommand is an error, not the same as
 		// the bare-`x-x` banner — we want a typo to be loud, not friendly.
-		printSkillUsage(os.Stderr)
+		printSkillsUsage(os.Stderr)
 		os.Exit(2)
 	}
 	switch args[0] {
 	case "remove":
-		// Pass the remaining args (after "remove") so runSkillRemove
+		// Pass the remaining args (after "remove") so runSkillsRemove
 		// sees just its own flags, not the full os.Args tail.
-		runSkillRemove(args[1:])
+		runSkillsRemove(args[1:])
 	default:
-		fmt.Fprintf(os.Stderr, "unknown skill subcommand: %s\n", args[0])
-		printSkillUsage(os.Stderr)
+		fmt.Fprintf(os.Stderr, "unknown skills subcommand: %s\n", args[0])
+		printSkillsUsage(os.Stderr)
 		os.Exit(2)
 	}
 }
 
-// printSkillUsage writes the `x-x skill` help text to the given writer.
+// printSkillsUsage writes the `x-x skills` help text to the given writer.
 // Taking an io.Writer (rather than always writing to os.Stderr) lets future
 // callers redirect to stdout for `--help`-style invocations without code
 // duplication. Today every caller passes os.Stderr.
-func printSkillUsage(w io.Writer) {
+func printSkillsUsage(w io.Writer) {
 	// Discards on Fprintln are deliberate: writes go to os.Stderr in practice
 	// (where Write failures are unrecoverable anyway) and errcheck under our
 	// lint config flags io.Writer-typed sinks if returns are ignored implicitly.
-	_, _ = fmt.Fprintln(w, "Usage: x-x skill <subcommand>")
+	_, _ = fmt.Fprintln(w, "Usage: x-x skills <subcommand>")
 	_, _ = fmt.Fprintln(w, "  remove --user      Uninstall bundled x-x skills from $HOME")
 	_, _ = fmt.Fprintln(w, "  remove --project   Uninstall bundled x-x skills from the current directory")
 }
 
-// runSkillRemove uninstalls every bundled-skill directory `x-x init` could
+// runSkillsRemove uninstalls every bundled-skill directory `x-x init` could
 // have written at one scope and subtracts the hook records `x-x init`
 // merged into per-agent JSON config files. Skill directories use the
 // ownedSkills allowlist (strict name match); hook subtraction uses
@@ -63,7 +63,7 @@ func printSkillUsage(w io.Writer) {
 // What is NOT removed, on purpose:
 //   - Any folder whose name is not in ownedSkills (user-authored skills
 //     sitting alongside ours).
-//   - The .x-plan/ scaffold at project scope. It is user content from the
+//   - The .x-plans/ scaffold at project scope. It is user content from the
 //     moment init writes it (think of `git init`'s .gitignore — once written,
 //     it's yours).
 //   - Parent directories (.claude/, .codex/). Only the skills/ subdirectory
@@ -76,18 +76,18 @@ func printSkillUsage(w io.Writer) {
 //     deep-equality check and is preserved.
 //   - Non-JSON per-agent config files (none today). They have no
 //     subtraction path, so they are not consulted at all.
-func runSkillRemove(args []string) {
-	flags := flag.NewFlagSet("skill remove", flag.ExitOnError)
+func runSkillsRemove(args []string) {
+	flags := flag.NewFlagSet("skills remove", flag.ExitOnError)
 	userScope := flags.Bool("user", false, "remove skills installed at user scope ($HOME)")
 	projectScope := flags.Bool("project", false, "remove skills installed at project scope (current directory)")
 	flags.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: x-x skill remove (--user | --project)")
+		fmt.Fprintln(os.Stderr, "Usage: x-x skills remove (--user | --project)")
 	}
 	_ = flags.Parse(args)
 
 	// Mirror init.go's two-choice model: exactly one scope, never both.
 	// We require an explicit flag rather than defaulting to a scope so a
-	// careless `x-x skill remove` can't surprise the user by wiping the
+	// careless `x-x skills remove` can't surprise the user by wiping the
 	// wrong set of files.
 	switch {
 	case *userScope && *projectScope:

@@ -23,7 +23,7 @@ func main() {
 	// bare, --version, and every subcommand. Centralizing it here (rather
 	// than peppering each runner with its own call) makes the upsell
 	// behavior uniform: the user sees the same upgrade nudge whether they
-	// ran `x-x`, `x-x init`, `x-x plan lint`, or anything else. The
+	// ran `x-x`, `x-x init`, `x-x plans lint`, or anything else. The
 	// function is best-effort and silent on every failure mode — a missing
 	// config, no network, rate-limited, etc. — so it never disrupts the
 	// real command. We run it BEFORE dispatch so any "new version
@@ -38,15 +38,15 @@ func main() {
 			// into Claude Code + Codex CLI directories. Lives in init.go.
 			runInit(os.Args[2:])
 			return
-		case "skill":
-			// `x-x skill <subcmd>` — currently only `remove --user|--project`.
+		case "skills":
+			// `x-x skills <subcmd>` — currently only `remove --user|--project`.
 			// Lives in skill.go.
-			runSkill(os.Args[2:])
+			runSkills(os.Args[2:])
 			return
-		case "plan":
-			// `x-x plan <subcmd>` — plan-tooling commands (today: next-prefix).
+		case "plans":
+			// `x-x plans <subcmd>` — plan-tooling commands (today: next-prefix).
 			// Lives in plan.go.
-			runPlan(os.Args[2:])
+			runPlans(os.Args[2:])
 			return
 		default:
 			// Unknown bare subcommand. We deliberately do NOT fall through
@@ -146,12 +146,12 @@ func printAbout() {
 	// because the about banner is often the first thing a user sees and
 	// should be self-sufficient.
 	fmt.Println("Usage:")
-	fmt.Println("  x-x init                       Install bundled agent skills + seed .x-plan/ (wizard or flag-driven)")
-	fmt.Println("  x-x skill remove --user        Uninstall bundled x-x skills from $HOME")
-	fmt.Println("  x-x skill remove --project     Uninstall bundled x-x skills from the current directory")
-	fmt.Println("  x-x plan next-prefix           Print the next unused zero-padded plan prefix")
-	fmt.Println("  x-x plan list                  List plans with slug, status, and declared systems")
-	fmt.Println("  x-x plan lint                  Validate every plan file against the project schema")
-	fmt.Println("  x-x plan slugify \"<title>\"     Print the kebab-case slug for a plan title")
+	fmt.Println("  x-x init                       Install bundled agent skills + seed .x-plans/ (wizard or flag-driven)")
+	fmt.Println("  x-x skills remove --user       Uninstall bundled x-x skills from $HOME")
+	fmt.Println("  x-x skills remove --project    Uninstall bundled x-x skills from the current directory")
+	fmt.Println("  x-x plans next-prefix          Print the next unused zero-padded plan prefix")
+	fmt.Println("  x-x plans list                 List plans with slug, status, and declared systems")
+	fmt.Println("  x-x plans lint                 Validate every plan file against the project schema")
+	fmt.Println("  x-x plans slugify \"<title>\"    Print the kebab-case slug for a plan title")
 	fmt.Println("  x-x --version                  Print version")
 }

@@ -103,22 +103,22 @@ func TestPromptScope_Empty(t *testing.T) {
 // ---------- project gate ----------
 
 // seedProject creates a fully initialized x-x project scaffold inside
-// dir (planDir/, the empty systems registry, and the config lock) so
+// dir (plansDir/, the empty systems registry, and the config lock) so
 // checkProject() returns nil. Used by every test that needs the gate
 // to pass without invoking the full runInit flow.
 func seedProject(t *testing.T, dir string) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Join(dir, planDir), 0o700); err != nil {
-		t.Fatalf("seed planDir: %v", err)
+	if err := os.MkdirAll(filepath.Join(dir, plansDir), 0o700); err != nil {
+		t.Fatalf("seed plansDir: %v", err)
 	}
-	for _, name := range []string{planSystemsFile, planConfigLockFile} {
-		if err := os.WriteFile(filepath.Join(dir, planDir, name), nil, 0o600); err != nil {
+	for _, name := range []string{plansSystemsFile, plansConfigLockFile} {
+		if err := os.WriteFile(filepath.Join(dir, plansDir, name), nil, 0o600); err != nil {
 			t.Fatalf("seed %s: %v", name, err)
 		}
 	}
 }
 
-// TestCheckProject_FullyInitialized is the happy path: with planDir AND
+// TestCheckProject_FullyInitialized is the happy path: with plansDir AND
 // both scaffold files present, the gate passes and project-level
 // subcommands proceed.
 func TestCheckProject_FullyInitialized(t *testing.T) {
@@ -139,28 +139,28 @@ func TestCheckProject_MissingDir(t *testing.T) {
 	chdir(t, t.TempDir())
 	err := checkProject()
 	if err == nil {
-		t.Fatal("expected error when planDir is missing")
+		t.Fatal("expected error when plansDir is missing")
 	}
 	if !strings.Contains(err.Error(), "not an x-x project") {
 		t.Fatalf("message = %q, want it to mention 'not an x-x project'", err.Error())
 	}
-	if strings.Contains(err.Error(), planDir) {
-		t.Fatalf("message %q leaks internal path %q", err.Error(), planDir)
+	if strings.Contains(err.Error(), plansDir) {
+		t.Fatalf("message %q leaks internal path %q", err.Error(), plansDir)
 	}
 }
 
 // TestCheckProject_PlanIsFileNotDir hardens the gate against the
-// pathological case where `.x-plan` exists but as a regular file — must
+// pathological case where `.x-plans` exists but as a regular file — must
 // still fail, since `os.ReadDir` on a file would crash the downstream
 // plan-list / next-prefix logic.
 func TestCheckProject_PlanIsFileNotDir(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, planDir), nil, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, plansDir), nil, 0o600); err != nil {
 		t.Fatalf("seed file: %v", err)
 	}
 	chdir(t, dir)
 	if err := checkProject(); err == nil {
-		t.Fatal("expected error when planDir is a regular file")
+		t.Fatal("expected error when plansDir is a regular file")
 	}
 }
 
@@ -173,7 +173,7 @@ func TestCheckProject_PlanIsFileNotDir(t *testing.T) {
 func TestCheckProject_SystemsFileNotRequired(t *testing.T) {
 	dir := t.TempDir()
 	seedProject(t, dir)
-	if err := os.Remove(filepath.Join(dir, planDir, planSystemsFile)); err != nil {
+	if err := os.Remove(filepath.Join(dir, plansDir, plansSystemsFile)); err != nil {
 		t.Fatalf("remove systems: %v", err)
 	}
 	chdir(t, dir)
@@ -188,7 +188,7 @@ func TestCheckProject_SystemsFileNotRequired(t *testing.T) {
 func TestCheckProject_MissingLockFile(t *testing.T) {
 	dir := t.TempDir()
 	seedProject(t, dir)
-	if err := os.Remove(filepath.Join(dir, planDir, planConfigLockFile)); err != nil {
+	if err := os.Remove(filepath.Join(dir, plansDir, plansConfigLockFile)); err != nil {
 		t.Fatalf("remove lock: %v", err)
 	}
 	chdir(t, dir)
@@ -196,8 +196,8 @@ func TestCheckProject_MissingLockFile(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when lock file is missing")
 	}
-	if strings.Contains(err.Error(), planConfigLockFile) {
-		t.Fatalf("message %q leaks internal path %q", err.Error(), planConfigLockFile)
+	if strings.Contains(err.Error(), plansConfigLockFile) {
+		t.Fatalf("message %q leaks internal path %q", err.Error(), plansConfigLockFile)
 	}
 }
 
@@ -459,23 +459,23 @@ func TestPromptMaxPlanLines_ValidInt(t *testing.T) {
 	}
 }
 
-// TestPromptPlanReviewPer covers the 1/2 numeric picker, the "empty
+// TestPromptReviewPer covers the 1/2 numeric picker, the "empty
 // accepts default", and the strict-error tail case. Three sub-cases in
 // one func because each is one-liner-tight.
-func TestPromptPlanReviewPer(t *testing.T) {
+func TestPromptReviewPer(t *testing.T) {
 	cases := []struct {
 		in      string
 		want    string
 		wantErr bool
 	}{
-		{"1\n", planReviewPerTask, false},
-		{"2\n", planReviewPerPlan, false},
-		{"\n", defaultPlanReviewPer, false},
+		{"1\n", reviewPerTask, false},
+		{"2\n", reviewPerPlan, false},
+		{"\n", defaultReviewPer, false},
 		{"3\n", "", true},
 		{"task\n", "", true}, // strings are NOT accepted at the line picker
 	}
 	for _, c := range cases {
-		got, err := promptPlanReviewPer(strings.NewReader(c.in))
+		got, err := promptReviewPer(strings.NewReader(c.in))
 		if c.wantErr {
 			if err == nil {
 				t.Fatalf("in=%q: expected error, got %q", c.in, got)
@@ -506,16 +506,16 @@ func TestParseScope(t *testing.T) {
 	}
 }
 
-// TestParsePlanReviewPer mirrors TestParseScope for the review cadence
+// TestParseReviewPer mirrors TestParseScope for the review cadence
 // validator. Allowlist semantics: anything outside {task, plan} errors.
-func TestParsePlanReviewPer(t *testing.T) {
-	if s, err := parsePlanReviewPer(planReviewPerTask); err != nil || s != planReviewPerTask {
+func TestParseReviewPer(t *testing.T) {
+	if s, err := parseReviewPer(reviewPerTask); err != nil || s != reviewPerTask {
 		t.Fatalf("task: %v %v", s, err)
 	}
-	if s, err := parsePlanReviewPer(planReviewPerPlan); err != nil || s != planReviewPerPlan {
+	if s, err := parseReviewPer(reviewPerPlan); err != nil || s != reviewPerPlan {
 		t.Fatalf("plan: %v %v", s, err)
 	}
-	if _, err := parsePlanReviewPer("commit"); err == nil {
+	if _, err := parseReviewPer("commit"); err == nil {
 		t.Fatal("expected error for commit")
 	}
 }
@@ -543,11 +543,11 @@ func TestValidatePositiveInt(t *testing.T) {
 // values verbatim. The panicReader is the trip-wire.
 func TestResolveInitConfig_AllFlagsSkipPrompts(t *testing.T) {
 	f := initFlags{
-		agents:        []string{"claude"},
-		scope:         "project",
-		prefixWidth:   3,
-		maxPlanLines:  10,
-		planReviewPer: planReviewPerPlan,
+		agents:       []string{"claude"},
+		scope:        "project",
+		prefixWidth:  3,
+		maxPlanLines: 10,
+		reviewPer:    reviewPerPlan,
 	}
 	got, err := resolveInitConfig(f, panicReader{}, false)
 	if err != nil {
@@ -556,7 +556,7 @@ func TestResolveInitConfig_AllFlagsSkipPrompts(t *testing.T) {
 	if got.scope != scopeProject ||
 		got.prefixWidth != 3 ||
 		got.maxPlanLines != 10 ||
-		got.planReviewPer != planReviewPerPlan {
+		got.reviewPer != reviewPerPlan {
 		t.Fatalf("config mismatch: %+v", got)
 	}
 	if len(got.agents) != 1 || got.agents[0].key != "claude" {
@@ -579,7 +579,7 @@ func TestResolveInitConfig_LinePromptsFillUnset(t *testing.T) {
 	}
 	if got.prefixWidth != defaultPrefixWidth ||
 		got.maxPlanLines != defaultMaxPlanLines ||
-		got.planReviewPer != defaultPlanReviewPer {
+		got.reviewPer != defaultReviewPer {
 		t.Fatalf("config = %+v", got)
 	}
 	if len(got.agents) != len(agentTargets) {
@@ -610,7 +610,7 @@ func TestResolveInitConfig_MixedFlagsAndPrompts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if got.prefixWidth != 5 || got.maxPlanLines != 50 || got.planReviewPer != planReviewPerPlan {
+	if got.prefixWidth != 5 || got.maxPlanLines != 50 || got.reviewPer != reviewPerPlan {
 		t.Fatalf("config = %+v", got)
 	}
 	if got.scope != scopeUser {
@@ -627,11 +627,11 @@ func TestResolveInitConfig_MixedFlagsAndPrompts(t *testing.T) {
 // added field is easy to forget here.
 func TestInitFlags_CompleteCoverage(t *testing.T) {
 	full := initFlags{
-		agents:        []string{"claude"},
-		scope:         "project",
-		prefixWidth:   4,
-		maxPlanLines:  30,
-		planReviewPer: planReviewPerTask,
+		agents:       []string{"claude"},
+		scope:        "project",
+		prefixWidth:  4,
+		maxPlanLines: 30,
+		reviewPer:    reviewPerTask,
 	}
 	if !full.complete() {
 		t.Fatal("full should be complete")
@@ -641,7 +641,7 @@ func TestInitFlags_CompleteCoverage(t *testing.T) {
 		func(f *initFlags) { f.scope = "" },
 		func(f *initFlags) { f.prefixWidth = 0 },
 		func(f *initFlags) { f.maxPlanLines = 0 },
-		func(f *initFlags) { f.planReviewPer = "" },
+		func(f *initFlags) { f.reviewPer = "" },
 	}
 	for i, mut := range mutations {
 		cp := full
@@ -657,11 +657,11 @@ func TestInitFlags_CompleteCoverage(t *testing.T) {
 // case per validated field keeps the failure messages legible.
 func TestInitFlags_ToConfig_InvalidValues(t *testing.T) {
 	base := initFlags{
-		agents:        []string{"claude"},
-		scope:         "project",
-		prefixWidth:   4,
-		maxPlanLines:  30,
-		planReviewPer: planReviewPerTask,
+		agents:       []string{"claude"},
+		scope:        "project",
+		prefixWidth:  4,
+		maxPlanLines: 30,
+		reviewPer:    reviewPerTask,
 	}
 	cases := []struct {
 		name string
@@ -669,7 +669,7 @@ func TestInitFlags_ToConfig_InvalidValues(t *testing.T) {
 	}{
 		{"unknown agent", func(f *initFlags) { f.agents = []string{"gemini"} }},
 		{"bad scope", func(f *initFlags) { f.scope = "workspace" }},
-		{"bad review", func(f *initFlags) { f.planReviewPer = "commit" }},
+		{"bad review", func(f *initFlags) { f.reviewPer = "commit" }},
 		{"zero prefix", func(f *initFlags) { f.prefixWidth = 0 }},
 		{"neg prefix", func(f *initFlags) { f.prefixWidth = -1 }},
 		{"zero lines", func(f *initFlags) { f.maxPlanLines = 0 }},
@@ -784,7 +784,7 @@ func TestWriteIfAbsent(t *testing.T) {
 }
 
 // TestWriteIfAbsent_NilContent confirms nil-body produces a zero-byte
-// file (not a broken write) — needed because writePlanScaffold seeds
+// file (not a broken write) — needed because writePlansScaffold seeds
 // `_data_systems.yaml` with no content as an empty placeholder.
 func TestWriteIfAbsent_NilContent(t *testing.T) {
 	dir := t.TempDir()
@@ -807,25 +807,25 @@ func TestWriteIfAbsent_NilContent(t *testing.T) {
 // if the constants ever move).
 func defaultInitConfig() initConfig {
 	return initConfig{
-		prefixWidth:   defaultPrefixWidth,
-		maxPlanLines:  defaultMaxPlanLines,
-		planReviewPer: defaultPlanReviewPer,
+		prefixWidth:  defaultPrefixWidth,
+		maxPlanLines: defaultMaxPlanLines,
+		reviewPer:    defaultReviewPer,
 	}
 }
 
-// TestWritePlanScaffold pins the on-disk wire format of `_config.lock`:
+// TestWritePlansScaffold pins the on-disk wire format of `_config.lock`:
 // trailing newline, JSON with the three configured fields. Plan tooling
 // (next-prefix, lint) reads these values, so a layout change here would
 // silently miscalibrate every downstream command.
-func TestWritePlanScaffold(t *testing.T) {
+func TestWritePlansScaffold(t *testing.T) {
 	dir := t.TempDir()
-	if err := writePlanScaffold(dir, defaultInitConfig()); err != nil {
-		t.Fatalf("writePlanScaffold: %v", err)
+	if err := writePlansScaffold(dir, defaultInitConfig()); err != nil {
+		t.Fatalf("writePlansScaffold: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, planDir, planSystemsFile)); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, plansDir, plansSystemsFile)); err != nil {
 		t.Fatalf("missing systems file: %v", err)
 	}
-	lockPath := filepath.Join(dir, planDir, planConfigLockFile)
+	lockPath := filepath.Join(dir, plansDir, plansConfigLockFile)
 	body, err := os.ReadFile(lockPath)
 	if err != nil {
 		t.Fatalf("read lock: %v", err)
@@ -834,61 +834,61 @@ func TestWritePlanScaffold(t *testing.T) {
 		t.Fatalf("expected trailing newline in lock file")
 	}
 	var got struct {
-		PrefixWidth   int    `json:"prefix_width"`
-		MaxPlanLines  int    `json:"max_plan_lines"`
-		PlanReviewPer string `json:"plan_review_per"`
+		PrefixWidth  int    `json:"prefix_width"`
+		MaxPlanLines int    `json:"max_plan_lines"`
+		ReviewPer    string `json:"review_per"`
 	}
 	if err := json.Unmarshal(body, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if got.PrefixWidth != defaultPrefixWidth ||
 		got.MaxPlanLines != defaultMaxPlanLines ||
-		got.PlanReviewPer != defaultPlanReviewPer {
+		got.ReviewPer != defaultReviewPer {
 		t.Fatalf("lock defaults wrong: %+v", got)
 	}
 }
 
-// TestWritePlanScaffold_HonorsConfig is the inverse of the defaults case:
+// TestWritePlansScaffold_HonorsConfig is the inverse of the defaults case:
 // custom user values from the wizard / flags MUST land in the lock file
 // verbatim rather than getting clobbered by the constants.
-func TestWritePlanScaffold_HonorsConfig(t *testing.T) {
+func TestWritePlansScaffold_HonorsConfig(t *testing.T) {
 	dir := t.TempDir()
-	cfg := initConfig{prefixWidth: 7, maxPlanLines: 120, planReviewPer: planReviewPerPlan}
-	if err := writePlanScaffold(dir, cfg); err != nil {
-		t.Fatalf("writePlanScaffold: %v", err)
+	cfg := initConfig{prefixWidth: 7, maxPlanLines: 120, reviewPer: reviewPerPlan}
+	if err := writePlansScaffold(dir, cfg); err != nil {
+		t.Fatalf("writePlansScaffold: %v", err)
 	}
-	body, err := os.ReadFile(filepath.Join(dir, planDir, planConfigLockFile))
+	body, err := os.ReadFile(filepath.Join(dir, plansDir, plansConfigLockFile))
 	if err != nil {
 		t.Fatalf("read lock: %v", err)
 	}
 	var got struct {
-		PrefixWidth   int    `json:"prefix_width"`
-		MaxPlanLines  int    `json:"max_plan_lines"`
-		PlanReviewPer string `json:"plan_review_per"`
+		PrefixWidth  int    `json:"prefix_width"`
+		MaxPlanLines int    `json:"max_plan_lines"`
+		ReviewPer    string `json:"review_per"`
 	}
 	if err := json.Unmarshal(body, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if got.PrefixWidth != 7 || got.MaxPlanLines != 120 || got.PlanReviewPer != planReviewPerPlan {
+	if got.PrefixWidth != 7 || got.MaxPlanLines != 120 || got.ReviewPer != reviewPerPlan {
 		t.Fatalf("lock didn't honor cfg: %+v", got)
 	}
 }
 
-// TestWritePlanScaffold_Idempotent is the lock-file semantics check:
+// TestWritePlansScaffold_Idempotent is the lock-file semantics check:
 // once a user has pinned values (Cargo.lock / package-lock.json
 // analog), a subsequent `x-x init` must NOT refresh them. This is what
 // keeps long-lived projects on their original prefix width / line caps.
-func TestWritePlanScaffold_Idempotent(t *testing.T) {
+func TestWritePlansScaffold_Idempotent(t *testing.T) {
 	dir := t.TempDir()
-	if err := writePlanScaffold(dir, defaultInitConfig()); err != nil {
+	if err := writePlansScaffold(dir, defaultInitConfig()); err != nil {
 		t.Fatalf("first: %v", err)
 	}
 	// Mutate the lock so we can verify re-run does not overwrite it.
-	lockPath := filepath.Join(dir, planDir, planConfigLockFile)
+	lockPath := filepath.Join(dir, plansDir, plansConfigLockFile)
 	if err := os.WriteFile(lockPath, []byte("USER\n"), 0o600); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	if err := writePlanScaffold(dir, defaultInitConfig()); err != nil {
+	if err := writePlansScaffold(dir, defaultInitConfig()); err != nil {
 		t.Fatalf("second: %v", err)
 	}
 	body, _ := os.ReadFile(lockPath)
@@ -1275,10 +1275,10 @@ func TestMergeJSONFile_RealBundle_AdditiveAndIdempotent(t *testing.T) {
   "fastMode": true,
   "hooks": {
     "PostToolUse": [
-      {"matcher": "Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": "x-x plan lint"}]}
+      {"matcher": "Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": "x-x plans lint"}]}
     ],
     "Stop": [
-      {"matcher": "", "hooks": [{"type": "command", "command": "x-x plan lint"}]}
+      {"matcher": "", "hooks": [{"type": "command", "command": "x-x plans lint"}]}
     ]
   }
 }`)
@@ -1377,7 +1377,7 @@ func TestInstallAgentConfig_NestedFile(t *testing.T) {
 
 // TestRunInit_ProjectScope_EndToEnd exercises the full project-scope
 // init from a fresh empty dir: every bundled skill lands under each
-// agent target's skills subdir, plus the .x-plan/ scaffold is seeded.
+// agent target's skills subdir, plus the .x-plans/ scaffold is seeded.
 // This is the broadest integration test in the unit suite.
 func TestRunInit_ProjectScope_EndToEnd(t *testing.T) {
 	pinHome(t)
@@ -1397,10 +1397,10 @@ func TestRunInit_ProjectScope_EndToEnd(t *testing.T) {
 		}
 	}
 	// Plan scaffold seeded.
-	if _, err := os.Stat(filepath.Join(projectDir, planDir, planConfigLockFile)); err != nil {
+	if _, err := os.Stat(filepath.Join(projectDir, plansDir, plansConfigLockFile)); err != nil {
 		t.Fatalf("missing lock: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(projectDir, planDir, planSystemsFile)); err != nil {
+	if _, err := os.Stat(filepath.Join(projectDir, plansDir, plansSystemsFile)); err != nil {
 		t.Fatalf("missing systems file: %v", err)
 	}
 }
@@ -1467,7 +1467,7 @@ func TestRunInit_UserScope_EndToEnd(t *testing.T) {
 // TestRunInit_InteractivePrompt drives the real stdin path: substitutes
 // os.Stdin with a pipe carrying the five line-prompt answers (default
 // agents, project scope, then default acceptances for prefix-width /
-// max-plan-lines / plan-review-per). Five reads must succeed off the
+// max-plan-lines / review-per). Five reads must succeed off the
 // same buffered reader — proves the shared-bufio.Reader fix from the
 // multi-prompt refactor is intact across the expanded sequence.
 func TestRunInit_InteractivePrompt(t *testing.T) {
@@ -1495,7 +1495,7 @@ func TestRunInit_InteractivePrompt(t *testing.T) {
 	t.Cleanup(func() { os.Stdin = origStdin })
 
 	runInit(nil)
-	if _, err := os.Stat(filepath.Join(projectDir, planDir, planConfigLockFile)); err != nil {
+	if _, err := os.Stat(filepath.Join(projectDir, plansDir, plansConfigLockFile)); err != nil {
 		t.Fatalf("interactive init didn't seed plan scaffold: %v", err)
 	}
 }
@@ -1524,22 +1524,22 @@ func TestRunInit_AllFlags(t *testing.T) {
 		"--agents", "claude,codex",
 		"--prefix-width", "6",
 		"--max-plan-lines", "42",
-		"--plan-review-per", planReviewPerPlan,
+		"--review-per", reviewPerPlan,
 	})
 
-	body, err := os.ReadFile(filepath.Join(projectDir, planDir, planConfigLockFile))
+	body, err := os.ReadFile(filepath.Join(projectDir, plansDir, plansConfigLockFile))
 	if err != nil {
 		t.Fatalf("read lock: %v", err)
 	}
 	var got struct {
-		PrefixWidth   int    `json:"prefix_width"`
-		MaxPlanLines  int    `json:"max_plan_lines"`
-		PlanReviewPer string `json:"plan_review_per"`
+		PrefixWidth  int    `json:"prefix_width"`
+		MaxPlanLines int    `json:"max_plan_lines"`
+		ReviewPer    string `json:"review_per"`
 	}
 	if err := json.Unmarshal(body, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if got.PrefixWidth != 6 || got.MaxPlanLines != 42 || got.PlanReviewPer != planReviewPerPlan {
+	if got.PrefixWidth != 6 || got.MaxPlanLines != 42 || got.ReviewPer != reviewPerPlan {
 		t.Fatalf("lock didn't honor flags: %+v", got)
 	}
 }

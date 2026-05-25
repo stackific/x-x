@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "x-x plan lint"
+            "command": "x-x plans lint"
           }
         ]
       }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "x-x plan lint"
+            "command": "x-x plans lint"
           }
         ]
       }

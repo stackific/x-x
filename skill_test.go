@@ -12,15 +12,15 @@ import (
 	"testing"
 )
 
-// TestPrintSkillUsage guards the `x-x skill` help surface — the two
+// TestPrintSkillsUsage guards the `x-x skills` help surface — the two
 // remove flags must both appear, so adding a third without updating the
 // help block fails here.
-func TestPrintSkillUsage(t *testing.T) {
+func TestPrintSkillsUsage(t *testing.T) {
 	var buf bytes.Buffer
-	printSkillUsage(&buf)
+	printSkillsUsage(&buf)
 	out := buf.String()
 	for _, want := range []string{
-		"Usage: x-x skill <subcommand>",
+		"Usage: x-x skills <subcommand>",
 		"remove --user",
 		"remove --project",
 	} {
@@ -180,7 +180,7 @@ func hookFixtureJSON(t *testing.T) (bundle, user string) {
 	bundle = `{
   "hooks": {
     "PostToolUse": [
-      {"matcher": "Write|Edit", "hooks": [{"type": "command", "command": "x-x plan lint"}]}
+      {"matcher": "Write|Edit", "hooks": [{"type": "command", "command": "x-x plans lint"}]}
     ]
   }
 }
@@ -189,7 +189,7 @@ func hookFixtureJSON(t *testing.T) (bundle, user string) {
   "fastMode": true,
   "hooks": {
     "PostToolUse": [
-      {"matcher": "Write|Edit", "hooks": [{"type": "command", "command": "x-x plan lint"}]},
+      {"matcher": "Write|Edit", "hooks": [{"type": "command", "command": "x-x plans lint"}]},
       {"matcher": "Bash",       "hooks": [{"type": "command", "command": "my-tool"}]}
     ],
     "UserPromptSubmit": [
@@ -243,8 +243,8 @@ func TestSubtractHooks_DropsDeepEqualRecord(t *testing.T) {
 // command string fails deep-equality with the bundle, and must therefore
 // survive the un-merge untouched. The unit of ownership is the leaf record.
 func TestSubtractHooks_PreservesUserTweakedVariant(t *testing.T) {
-	bundle := decodeJSON(t, `{"hooks":{"PostToolUse":[{"matcher":"Write|Edit","hooks":[{"type":"command","command":"x-x plan lint"}]}]}}`).(map[string]any)[configHooksKey]
-	user := decodeJSON(t, `{"hooks":{"PostToolUse":[{"matcher":"Write|Edit","hooks":[{"type":"command","command":"x-x plan lint --verbose"}]}]}}`).(map[string]any)[configHooksKey]
+	bundle := decodeJSON(t, `{"hooks":{"PostToolUse":[{"matcher":"Write|Edit","hooks":[{"type":"command","command":"x-x plans lint"}]}]}}`).(map[string]any)[configHooksKey]
+	user := decodeJSON(t, `{"hooks":{"PostToolUse":[{"matcher":"Write|Edit","hooks":[{"type":"command","command":"x-x plans lint --verbose"}]}]}}`).(map[string]any)[configHooksKey]
 
 	got, changed := subtractHooks(user, bundle)
 	if changed {
@@ -287,7 +287,7 @@ func TestSubtractHooks_NoOpWhenNotMap(t *testing.T) {
 // driven by the bundled keys (no fabrication of empty arrays in user when
 // it lacks an event key the bundle ships).
 func TestSubtractHooks_BundledEventKeyMissingInUser(t *testing.T) {
-	bundle := decodeJSON(t, `{"hooks":{"Stop":[{"matcher":"","hooks":[{"type":"command","command":"x-x plan lint"}]}]}}`).(map[string]any)[configHooksKey]
+	bundle := decodeJSON(t, `{"hooks":{"Stop":[{"matcher":"","hooks":[{"type":"command","command":"x-x plans lint"}]}]}}`).(map[string]any)[configHooksKey]
 	user := decodeJSON(t, `{"hooks":{"PostToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"mine"}]}]}}`).(map[string]any)[configHooksKey]
 
 	got, changed := subtractHooks(user, bundle)
@@ -449,7 +449,7 @@ func TestRunSkillRemove_EndToEnd_UserScope(t *testing.T) {
 			}
 		}
 	}
-	runSkillRemove([]string{"--user"})
+	runSkillsRemove([]string{"--user"})
 	for _, target := range agentTargets {
 		if _, err := os.Stat(filepath.Join(home, target.skillsRel, skillXXDir)); !os.IsNotExist(err) {
 			t.Fatalf("%s/%s should be removed, err=%v", target.skillsRel, skillXXDir, err)
@@ -476,7 +476,7 @@ func TestRunSkillRemove_EndToEnd_HookUnmerge(t *testing.T) {
 			seedHookFixture(t, home, &agentTargets[i], fname)
 		}
 	}
-	runSkillRemove([]string{"--user"})
+	runSkillsRemove([]string{"--user"})
 	for i := range agentTargets {
 		if agentTargets[i].configSrc != "" {
 			assertHookUnmergeResult(t, home, &agentTargets[i], fname)

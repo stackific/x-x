@@ -39,7 +39,7 @@ const (
 //  3. Ensure ~/.x-x/agents/ is materialized (lazy bootstrap).
 //  4. Enumerate skills under ~/.x-x/agents/skills/.
 //  5. For each registered agent: install skills + per-agent config files.
-//  6. Drop the .x-plan/ scaffold (idempotent — only writes missing files).
+//  6. Drop the .x-plans/ scaffold (idempotent — only writes missing files).
 //
 // Per-skill or per-target failures print to stderr but don't abort the
 // whole run, so a single permissions glitch on one agent's dir doesn't
@@ -55,16 +55,16 @@ func runInit(args []string) {
 	// Accepts "project" or "user"; any other value is rejected explicitly.
 	// Leave blank to fall back to the interactive flow.
 	scopeFlag := flags.String("scope", "", "project|user — skip the scope picker")
-	// --prefix-width / --max-plan-lines / --plan-review-per are the
+	// --prefix-width / --max-plan-lines / --review-per are the
 	// non-interactive twins of the three plan-tooling prompts. Pass them
 	// (alongside --agents and --scope) to drive `x-x init` end-to-end
 	// without touching the wizard or line prompts.
 	prefixWidthFlag := flags.Int("prefix-width", 0, "zero-padded width for plan prefixes (positive integer; default seeds the project default)")
-	maxPlanLinesFlag := flags.Int("max-plan-lines", 0, "line-count ceiling enforced by `x-x plan lint` (positive integer; default seeds the project default)")
-	planReviewPerFlag := flags.String("plan-review-per", "", "task|plan — pause for review after every task or every plan")
+	maxPlanLinesFlag := flags.Int("max-plan-lines", 0, "line-count ceiling enforced by `x-x plans lint` (positive integer; default seeds the project default)")
+	reviewPerFlag := flags.String("review-per", "", "task|plan — pause for review after every task or every plan")
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage: x-x init [--agents claude,codex] [--scope project|user]")
-		fmt.Fprintln(os.Stderr, "             [--prefix-width N] [--max-plan-lines N] [--plan-review-per task|plan]")
+		fmt.Fprintln(os.Stderr, "             [--prefix-width N] [--max-plan-lines N] [--review-per task|plan]")
 		fmt.Fprintln(os.Stderr, "  Installs the bundled agent skill library for Claude Code and Codex CLI.")
 	}
 	_ = flags.Parse(args)
@@ -86,7 +86,7 @@ func runInit(args []string) {
 	// same gate `requireProject` uses, so a directory that passes the
 	// project-scope gate elsewhere triggers this refusal here. Re-running
 	// init on a fresh / partially-initialized directory still works,
-	// which is what writePlanScaffold's writeIfAbsent semantics rely on.
+	// which is what writePlansScaffold's writeIfAbsent semantics rely on.
 	// Gate runs AFTER flag validation so a real usage error (bad flag,
 	// stray positional) still wins the diagnostic.
 	if checkProject() == nil {
@@ -96,11 +96,11 @@ func runInit(args []string) {
 	fmt.Printf("Setting up x-x in %s\n\n", cwd)
 
 	cfg, err := resolveInitConfig(initFlags{
-		agents:        agentsFlag,
-		scope:         *scopeFlag,
-		prefixWidth:   *prefixWidthFlag,
-		maxPlanLines:  *maxPlanLinesFlag,
-		planReviewPer: *planReviewPerFlag,
+		agents:       agentsFlag,
+		scope:        *scopeFlag,
+		prefixWidth:  *prefixWidthFlag,
+		maxPlanLines: *maxPlanLinesFlag,
+		reviewPer:    *reviewPerFlag,
 	}, os.Stdin, stdinIsTTY(os.Stdin))
 	if err != nil {
 		exitErr(err)
@@ -157,10 +157,10 @@ func runInit(args []string) {
 		installForTarget(&cfg.agents[i], skills, scopeRoot, skillsSource, agentsRoot, useSymlink)
 	}
 
-	// .x-plan/ scaffold is written after skills so it's the last thing the
+	// .x-plans/ scaffold is written after skills so it's the last thing the
 	// user sees. Failures here are non-fatal — they downgrade to a warning
 	// because the skill install (the primary purpose) already succeeded.
-	if err := writePlanScaffold(cwd, cfg); err != nil {
+	if err := writePlansScaffold(cwd, cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
 	}
 
@@ -169,7 +169,7 @@ func runInit(args []string) {
 	// not local state. Nudge the user to commit them so the team shares the
 	// same plan history. Phrased as a tip rather than auto-editing
 	// .gitignore so we never touch git config behind the user's back.
-	fmt.Printf("\nTip: commit %s/ to git so your team shares plan history.\n", planDir)
+	fmt.Printf("\nTip: commit %s/ to git so your team shares plan history.\n", plansDir)
 }
 
 // validateInitIntFlags rejects non-positive --prefix-width / --max-plan-lines
@@ -198,22 +198,22 @@ func validateInitIntFlags(flags *flag.FlagSet, prefixWidth, maxPlanLines *int) {
 // resolveInitConfig can distinguish "user passed a flag" from "user left
 // it for the prompt to fill in".
 type initFlags struct {
-	agents        []string // raw --agents values (empty = ask)
-	scope         string   // raw --scope value ("" = ask)
-	prefixWidth   int      // 0 = ask
-	maxPlanLines  int      // 0 = ask
-	planReviewPer string   // "" = ask
+	agents       []string // raw --agents values (empty = ask)
+	scope        string   // raw --scope value ("" = ask)
+	prefixWidth  int      // 0 = ask
+	maxPlanLines int      // 0 = ask
+	reviewPer    string   // "" = ask
 }
 
 // initConfig is the post-resolution, fully-typed set of choices the rest
 // of runInit needs. Every field is guaranteed valid by the time
 // resolveInitConfig returns nil.
 type initConfig struct {
-	agents        []agentTarget
-	scope         initScope
-	prefixWidth   int
-	maxPlanLines  int
-	planReviewPer string
+	agents       []agentTarget
+	scope        initScope
+	prefixWidth  int
+	maxPlanLines int
+	reviewPer    string
 }
 
 // resolveInitConfig collects every value runInit needs to perform the
@@ -249,7 +249,7 @@ func (f initFlags) complete() bool {
 		f.scope != "" &&
 		f.prefixWidth > 0 &&
 		f.maxPlanLines > 0 &&
-		f.planReviewPer != ""
+		f.reviewPer != ""
 }
 
 // toConfig converts a fully-populated initFlags into the typed initConfig,
@@ -264,7 +264,7 @@ func (f initFlags) toConfig() (initConfig, error) {
 	if err != nil {
 		return initConfig{}, err
 	}
-	review, err := parsePlanReviewPer(f.planReviewPer)
+	review, err := parseReviewPer(f.reviewPer)
 	if err != nil {
 		return initConfig{}, err
 	}
@@ -275,11 +275,11 @@ func (f initFlags) toConfig() (initConfig, error) {
 		return initConfig{}, fmt.Errorf("--max-plan-lines must be positive, got %d", f.maxPlanLines)
 	}
 	return initConfig{
-		agents:        agents,
-		scope:         scope,
-		prefixWidth:   f.prefixWidth,
-		maxPlanLines:  f.maxPlanLines,
-		planReviewPer: review,
+		agents:       agents,
+		scope:        scope,
+		prefixWidth:  f.prefixWidth,
+		maxPlanLines: f.maxPlanLines,
+		reviewPer:    review,
 	}, nil
 }
 
@@ -291,9 +291,9 @@ func (f initFlags) toConfig() (initConfig, error) {
 func runLinePrompts(f initFlags, in io.Reader) (initConfig, error) {
 	r := bufReader(in)
 	cfg := initConfig{
-		prefixWidth:   f.prefixWidth,
-		maxPlanLines:  f.maxPlanLines,
-		planReviewPer: f.planReviewPer,
+		prefixWidth:  f.prefixWidth,
+		maxPlanLines: f.maxPlanLines,
+		reviewPer:    f.reviewPer,
 	}
 	var err error
 
@@ -320,10 +320,10 @@ func runLinePrompts(f initFlags, in io.Reader) (initConfig, error) {
 		}
 	}
 
-	if cfg.planReviewPer == "" {
-		cfg.planReviewPer, err = promptPlanReviewPer(r)
+	if cfg.reviewPer == "" {
+		cfg.reviewPer, err = promptReviewPer(r)
 	} else {
-		cfg.planReviewPer, err = parsePlanReviewPer(cfg.planReviewPer)
+		cfg.reviewPer, err = parseReviewPer(cfg.reviewPer)
 	}
 	if err != nil {
 		return initConfig{}, err
@@ -357,9 +357,9 @@ func runHuhWizard(f initFlags) (initConfig, error) {
 	if f.maxPlanLines > 0 {
 		maxPlanLines = f.maxPlanLines
 	}
-	planReviewPer := defaultPlanReviewPer
-	if f.planReviewPer != "" {
-		planReviewPer = f.planReviewPer
+	reviewPer := defaultReviewPer
+	if f.reviewPer != "" {
+		reviewPer = f.reviewPer
 	}
 
 	// huh's Input value bindings are strings; the integer fields use
@@ -414,10 +414,10 @@ func runHuhWizard(f initFlags) (initConfig, error) {
 				Title("Pause for review after every…").
 				Description("`task` — review each EARS criterion as the planner finishes it (tight loop, more interruptions).  `plan` — review at the end of each plan (looser loop, larger diffs).").
 				Options(
-					huh.NewOption(planReviewPerTask+" — tight feedback loop", planReviewPerTask),
-					huh.NewOption(planReviewPerPlan+" — review only at plan boundaries", planReviewPerPlan),
+					huh.NewOption(reviewPerTask+" — tight feedback loop", reviewPerTask),
+					huh.NewOption(reviewPerPlan+" — review only at plan boundaries", reviewPerPlan),
 				).
-				Value(&planReviewPer),
+				Value(&reviewPer),
 		),
 	)
 
@@ -438,11 +438,11 @@ func runHuhWizard(f initFlags) (initConfig, error) {
 		return initConfig{}, err
 	}
 	return initConfig{
-		agents:        agents,
-		scope:         scope,
-		prefixWidth:   pw,
-		maxPlanLines:  ml,
-		planReviewPer: planReviewPer,
+		agents:       agents,
+		scope:        scope,
+		prefixWidth:  pw,
+		maxPlanLines: ml,
+		reviewPer:    reviewPer,
 	}, nil
 }
 
@@ -467,11 +467,11 @@ func stdinIsTTY(f *os.File) bool {
 	return isatty.IsTerminal(f.Fd())
 }
 
-// writePlanScaffold creates the project-local .x-plan/ directory and seeds
+// writePlansScaffold creates the project-local .x-plans/ directory and seeds
 // the two files that the plan tooling expects to find on disk:
 //
 //	_data_systems.yaml — empty placeholder; populated by the user as systems are added
-//	_config.lock  — plan-tooling pins (prefix_width, max_plan_lines, plan_review_per)
+//	_config.lock  — plan-tooling pins (prefix_width, max_plan_lines, review_per)
 //
 // Both files are only written when ABSENT so existing content survives
 // re-runs. _config.lock specifically acts as a pin: re-running init
@@ -479,26 +479,26 @@ func stdinIsTTY(f *os.File) bool {
 // (Cargo.lock, package-lock.json, etc.) — the values stored come from
 // cfg, which carries either the user's wizard / flag choices or the
 // project defaults.
-func writePlanScaffold(cwd string, cfg initConfig) error {
-	dir := filepath.Join(cwd, planDir)
+func writePlansScaffold(cwd string, cfg initConfig) error {
+	dir := filepath.Join(cwd, plansDir)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create %s: %w", dir, err)
 	}
 	// Empty placeholder — the plan tooling populates this as the project
 	// grows. Writing nil content creates a zero-byte file.
-	if err := writeIfAbsent(filepath.Join(dir, planSystemsFile), nil); err != nil {
+	if err := writeIfAbsent(filepath.Join(dir, plansSystemsFile), nil); err != nil {
 		return err
 	}
 	// Inline anonymous struct: the lock file is JSON-shaped, but the only
 	// place we materialize it is here, so a dedicated type would be overkill.
 	lock := struct {
-		PrefixWidth   int    `json:"prefix_width"`
-		MaxPlanLines  int    `json:"max_plan_lines"`
-		PlanReviewPer string `json:"plan_review_per"`
+		PrefixWidth  int    `json:"prefix_width"`
+		MaxPlanLines int    `json:"max_plan_lines"`
+		ReviewPer    string `json:"review_per"`
 	}{
-		PrefixWidth:   cfg.prefixWidth,
-		MaxPlanLines:  cfg.maxPlanLines,
-		PlanReviewPer: cfg.planReviewPer,
+		PrefixWidth:  cfg.prefixWidth,
+		MaxPlanLines: cfg.maxPlanLines,
+		ReviewPer:    cfg.reviewPer,
 	}
 	body, err := json.MarshalIndent(lock, "", "  ")
 	if err != nil {
@@ -507,12 +507,12 @@ func writePlanScaffold(cwd string, cfg initConfig) error {
 	// Append a trailing newline so the file matches standard text-file
 	// conventions (every line ends with \n).
 	body = append(body, '\n')
-	return writeIfAbsent(filepath.Join(dir, planConfigLockFile), body)
+	return writeIfAbsent(filepath.Join(dir, plansConfigLockFile), body)
 }
 
 // writeIfAbsent is the "create only if missing" primitive. Stat first;
 // if the file exists, return nil and leave it alone. If it doesn't,
-// write the given content with 0o600 perms. Used by writePlanScaffold.
+// write the given content with 0o600 perms. Used by writePlansScaffold.
 func writeIfAbsent(path string, content []byte) error {
 	if _, err := os.Stat(path); err == nil {
 		return nil
@@ -590,17 +590,17 @@ func parseScope(s string) (initScope, error) {
 	}
 }
 
-// parsePlanReviewPer is the canonical validator for the plan_review_per
-// value, accepted by both --plan-review-per and the line prompt. Returning
+// parseReviewPer is the canonical validator for the review_per
+// value, accepted by both --review-per and the line prompt. Returning
 // the input unchanged on success keeps callers honest that the only thing
 // the value passes through is the allowlist check.
-func parsePlanReviewPer(s string) (string, error) {
+func parseReviewPer(s string) (string, error) {
 	switch s {
-	case planReviewPerTask, planReviewPerPlan:
+	case reviewPerTask, reviewPerPlan:
 		return s, nil
 	default:
-		return "", fmt.Errorf("invalid --plan-review-per: %q (expected %s or %s)",
-			s, planReviewPerTask, planReviewPerPlan)
+		return "", fmt.Errorf("invalid --review-per: %q (expected %s or %s)",
+			s, reviewPerTask, reviewPerPlan)
 	}
 }
 
@@ -752,7 +752,7 @@ func promptPrefixWidth(in io.Reader) (int, error) {
 
 // promptMaxPlanLines reads one line from `in` and parses it as the plan
 // line-count cap. Same default-on-empty semantics as promptPrefixWidth.
-// The cap is what `x-x plan lint` enforces — tight values keep AI agents
+// The cap is what `x-x plans lint` enforces — tight values keep AI agents
 // from sprawling, looser values let well-scoped plans breathe.
 func promptMaxPlanLines(in io.Reader) (int, error) {
 	fmt.Println("Maximum lines per plan")
@@ -762,26 +762,26 @@ func promptMaxPlanLines(in io.Reader) (int, error) {
 	return readPositiveIntLine(in, defaultMaxPlanLines, "max-plan-lines")
 }
 
-// promptPlanReviewPer reads one line from `in` and parses it as the
+// promptReviewPer reads one line from `in` and parses it as the
 // review cadence: "1" → task, "2" → plan. Empty input accepts the
 // default (task), matching the empty-line-defaults convention used by
 // the sibling prompts.
-func promptPlanReviewPer(in io.Reader) (string, error) {
+func promptReviewPer(in io.Reader) (string, error) {
 	fmt.Println("Pause for review after every…")
-	fmt.Printf("  1) %s — review each EARS criterion as the planner finishes it (default)\n", planReviewPerTask)
-	fmt.Printf("  2) %s — review only at plan boundaries (looser loop, larger diffs)\n", planReviewPerPlan)
+	fmt.Printf("  1) %s — review each EARS criterion as the planner finishes it (default)\n", reviewPerTask)
+	fmt.Printf("  2) %s — review only at plan boundaries (looser loop, larger diffs)\n", reviewPerPlan)
 	fmt.Print("Choose [1/2, default 1]: ")
 	line, err := bufReader(in).ReadString('\n')
 	if err != nil && line == "" {
-		return defaultPlanReviewPer, nil
+		return defaultReviewPer, nil
 	}
 	switch strings.TrimSpace(line) {
 	case "", "1":
-		return planReviewPerTask, nil
+		return reviewPerTask, nil
 	case "2":
-		return planReviewPerPlan, nil
+		return reviewPerPlan, nil
 	default:
-		return "", fmt.Errorf("invalid plan-review-per choice: %q (expected 1 or 2)", strings.TrimSpace(line))
+		return "", fmt.Errorf("invalid review-per choice: %q (expected 1 or 2)", strings.TrimSpace(line))
 	}
 }
 
@@ -942,7 +942,7 @@ func copyFile(src, dest string) (retErr error) {
 }
 
 // exitErr is the shared "log + exit 1" used by subcommand entry points
-// (runInit, runSkillRemove) when a precondition fails before per-item
+// (runInit, runSkillsRemove) when a precondition fails before per-item
 // work begins. Pulled into a helper to keep the call sites uniform.
 func exitErr(err error) {
 	fmt.Fprintln(os.Stderr, "error:", err)
@@ -957,17 +957,17 @@ func exitErr(err error) {
 const notProjectBanner = "error: not an x-x project — run `x-x init` to initialize the current directory first."
 
 // projectAlreadyInitBanner is the diagnostic `x-x init` prints when the
-// current directory already passes checkProject. Naming planDir is OK
+// current directory already passes checkProject. Naming plansDir is OK
 // here (unlike notProjectBanner) because the user is being told what to
 // delete to retry — a path is the actionable answer, not a leak.
-const projectAlreadyInitBanner = "error: x-x project already initialized in this directory.\n\nTip: delete `" + planDir + "/_config.lock` and run `x-x skill remove --project` to re-init from scratch."
+const projectAlreadyInitBanner = "error: x-x project already initialized in this directory.\n\nTip: delete `" + plansDir + "/_config.lock` and run `x-x skills remove --project` to re-init from scratch."
 
 // checkProject reports whether the current working directory is an
 // initialized x-x project. The contract is a single on-disk marker:
 //
-//	planDir/planConfigLockFile (the plan-tooling lock pin)
+//	plansDir/plansConfigLockFile (the plan-tooling lock pin)
 //
-// Missing → not an initialized project. Other files under planDir
+// Missing → not an initialized project. Other files under plansDir
 // (the systems registry, plan files) are not required by the gate.
 // Keying solely on the lock file is what makes the documented "delete
 // the lock file to re-init" flow work: the user can opt back into a
@@ -977,14 +977,14 @@ const projectAlreadyInitBanner = "error: x-x project already initialized in this
 // banner requireProject prints. Separated from requireProject so unit
 // tests can exercise the gate without exiting the process.
 func checkProject() error {
-	if _, err := os.Stat(filepath.Join(planDir, planConfigLockFile)); err != nil {
+	if _, err := os.Stat(filepath.Join(plansDir, plansConfigLockFile)); err != nil {
 		return fmt.Errorf("not an x-x project")
 	}
 	return nil
 }
 
 // requireProject is the CLI gate that every project-level subcommand
-// (`plan *`, `skill remove --project`) calls before doing real work.
+// (`plans *`, `skills remove --project`) calls before doing real work.
 // When checkProject fails it prints the shared banner and exits 2 — the
 // same code used for usage errors, since "wrong directory" is a usage
 // mistake from the user's perspective.

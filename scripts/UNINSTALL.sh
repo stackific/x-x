@@ -36,7 +36,7 @@ esac
 bin_path="${INSTALL_DIR}/${BINARY}"
 if [ -x "$bin_path" ]; then
   info "Removing bundled user-scope skills"
-  "$bin_path" skill remove --user || warn "x-x skill remove --user failed; continuing"
+  "$bin_path" skills remove --user || warn "x-x skills remove --user failed; continuing"
 else
   warn "${bin_path} not found; skipping user-scope skill cleanup"
 fi

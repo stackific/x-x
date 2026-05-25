@@ -29,11 +29,11 @@ readonly XX_HOME_DIR=".x-x"                       # xxHomeDir
 readonly XX_CONFIG_FILE=".config.json"            # xxConfigFile
 readonly AGENTS_EMBED_ROOT="agents"               # agentsEmbedRoot
 readonly SKILLS_SUBDIR="skills"                   # skillsSubdir
-readonly PLAN_DIR=".x-plan"                       # planDir
-readonly PLAN_CONFIG_LOCK="_config.lock"          # planConfigLockFile
-readonly PLAN_SYSTEMS_FILE="_data_systems.yaml"   # planSystemsFile
-readonly DEFAULT_PREFIX_WIDTH=4                   # defaultPrefixWidth
-readonly PLAN_LIST_OVERFLOW_THRESHOLD=20          # planListOverflowThreshold
+readonly PLANS_DIR=".x-plans"                      # plansDir
+readonly PLANS_CONFIG_LOCK="_config.lock"          # plansConfigLockFile
+readonly PLANS_SYSTEMS_FILE="_data_systems.yaml"   # plansSystemsFile
+readonly DEFAULT_PREFIX_WIDTH=4                    # defaultPrefixWidth
+readonly PLANS_LIST_OVERFLOW_THRESHOLD=20          # plansListOverflowThreshold
 
 # Bundled skill directory names (skill*Dir in constants.go).
 readonly SKILL_SHARED_DIR="_x-x_shared"           # skillSharedDir
@@ -73,8 +73,8 @@ readonly E2E_VERSION="v0.0.0-e2e"
 # Compositions so call sites read as plain English.
 readonly XX_AGENTS_DIR="${XX_HOME_DIR}/${AGENTS_EMBED_ROOT}"
 readonly XX_AGENTS_SKILLS_DIR="${XX_AGENTS_DIR}/${SKILLS_SUBDIR}"
-readonly PLAN_LOCK_PATH="${PLAN_DIR}/${PLAN_CONFIG_LOCK}"
-readonly PLAN_SYSTEMS_PATH="${PLAN_DIR}/${PLAN_SYSTEMS_FILE}"
+readonly PLANS_LOCK_PATH="${PLANS_DIR}/${PLANS_CONFIG_LOCK}"
+readonly PLANS_SYSTEMS_PATH="${PLANS_DIR}/${PLANS_SYSTEMS_FILE}"
 readonly CLAUDE_SETTINGS_PATH="${CLAUDE_CONFIG_REL}/${CLAUDE_SETTINGS_FILE}"
 readonly CODEX_HOOKS_PATH="${CODEX_CONFIG_REL}/${CODEX_HOOKS_FILE}"
 
@@ -182,9 +182,9 @@ reset_user_home() {
 # empty fresh project looks like — so individual cases can overwrite
 # them with case-specific content (e.g. a custom prefix_width lock).
 seed_project_scaffold() {
-  mkdir -p "$1/${PLAN_DIR}"
-  : > "$1/${PLAN_DIR}/${PLAN_SYSTEMS_FILE}"
-  : > "$1/${PLAN_DIR}/${PLAN_CONFIG_LOCK}"
+  mkdir -p "$1/${PLANS_DIR}"
+  : > "$1/${PLANS_DIR}/${PLANS_SYSTEMS_FILE}"
+  : > "$1/${PLANS_DIR}/${PLANS_CONFIG_LOCK}"
 }
 
 # prefix <width> <n> — render n as a zero-padded prefix of the given width.
@@ -283,10 +283,10 @@ Do a thing.
 EOF
 }
 
-# write_registry <dir> <name>[,<name>...] — seeds .x-plan/_data_systems.yaml
+# write_registry <dir> <name>[,<name>...] — seeds .x-plans/_data_systems.yaml
 # with one entry per comma-separated name, slug derived from the name.
 write_registry() {
-  local p="$1/${PLAN_SYSTEMS_FILE}"
+  local p="$1/${PLANS_SYSTEMS_FILE}"
   {
     printf 'systems:\n'
     local IFS=,
@@ -370,12 +370,12 @@ combined="${RUN_OUT}${RUN_ERR}"
 assert_contains "usage header"        "$combined" "Usage:"
 assert_contains "init listed"         "$combined" "x-x init"
 assert_not_contains "no bootstrap"    "$combined" "x-x bootstrap"
-assert_contains "skill remove user"   "$combined" "x-x skill remove --user"
-assert_contains "skill remove proj"   "$combined" "x-x skill remove --project"
-assert_contains "plan next-prefix"    "$combined" "x-x plan next-prefix"
-assert_contains "plan list"           "$combined" "x-x plan list"
-assert_contains "plan lint"           "$combined" "x-x plan lint"
-assert_contains "plan slugify"        "$combined" "x-x plan slugify"
+assert_contains "skill remove user"   "$combined" "x-x skills remove --user"
+assert_contains "skill remove proj"   "$combined" "x-x skills remove --project"
+assert_contains "plan next-prefix"    "$combined" "x-x plans next-prefix"
+assert_contains "plan list"           "$combined" "x-x plans list"
+assert_contains "plan lint"           "$combined" "x-x plans lint"
+assert_contains "plan slugify"        "$combined" "x-x plans slugify"
 assert_contains "version listed"      "$combined" "x-x --version"
 
 # ---------- bootstrap is no longer a callable subcommand ----------
@@ -403,7 +403,7 @@ run_capture "" init --scope project
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_contains "progress line" "$RUN_OUT" "Setting up x-x in $PROJ"
 assert_contains "completion"    "$RUN_OUT" "Done."
-assert_contains "git-commit tip" "$RUN_OUT" "commit ${PLAN_DIR}/ to git"
+assert_contains "git-commit tip" "$RUN_OUT" "commit ${PLANS_DIR}/ to git"
 for base in "${CLAUDE_SKILLS_REL}" "${CODEX_SKILLS_REL}"; do
   for skill in $OWNED_SKILLS; do
     assert_is_dir "project $base/$skill" "$PROJ/$base/$skill"
@@ -411,12 +411,12 @@ for base in "${CLAUDE_SKILLS_REL}" "${CODEX_SKILLS_REL}"; do
 done
 assert_is_file "project ${CLAUDE_SETTINGS_PATH}" "$PROJ/${CLAUDE_SETTINGS_PATH}"
 assert_is_file "project ${CODEX_HOOKS_PATH}"     "$PROJ/${CODEX_HOOKS_PATH}"
-assert_is_file "${PLAN_LOCK_PATH} written"       "$PROJ/${PLAN_LOCK_PATH}"
-assert_is_file "${PLAN_SYSTEMS_PATH} written"    "$PROJ/${PLAN_SYSTEMS_PATH}"
-assert_contains "${PLAN_LOCK_PATH} has prefix_width" \
-  "$(cat "$PROJ/${PLAN_LOCK_PATH}")" "\"prefix_width\": ${DEFAULT_PREFIX_WIDTH}"
-assert_contains "${PLAN_LOCK_PATH} has plan_review_per" \
-  "$(cat "$PROJ/${PLAN_LOCK_PATH}")" "\"plan_review_per\": \"task\""
+assert_is_file "${PLANS_LOCK_PATH} written"       "$PROJ/${PLANS_LOCK_PATH}"
+assert_is_file "${PLANS_SYSTEMS_PATH} written"    "$PROJ/${PLANS_SYSTEMS_PATH}"
+assert_contains "${PLANS_LOCK_PATH} has prefix_width" \
+  "$(cat "$PROJ/${PLANS_LOCK_PATH}")" "\"prefix_width\": ${DEFAULT_PREFIX_WIDTH}"
+assert_contains "${PLANS_LOCK_PATH} has review_per" \
+  "$(cat "$PROJ/${PLANS_LOCK_PATH}")" "\"review_per\": \"task\""
 assert_absent "${AGENTS_EMBED_ROOT}/${EMBED_README} not materialized" \
   "$HOME/${XX_AGENTS_DIR}/${EMBED_README}"
 
@@ -470,9 +470,9 @@ run_capture "
 " init
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_is_dir  "interactive project skill" "$PROJ_INT/${CLAUDE_SKILLS_REL}/${SKILL_X_X_DIR}"
-assert_is_file "interactive plan lock"     "$PROJ_INT/${PLAN_LOCK_PATH}"
+assert_is_file "interactive plan lock"     "$PROJ_INT/${PLANS_LOCK_PATH}"
 assert_contains "interactive lock keeps default prefix_width" \
-  "$(cat "$PROJ_INT/${PLAN_LOCK_PATH}")" "\"prefix_width\": ${DEFAULT_PREFIX_WIDTH}"
+  "$(cat "$PROJ_INT/${PLANS_LOCK_PATH}")" "\"prefix_width\": ${DEFAULT_PREFIX_WIDTH}"
 
 case_start "x-x init interactive (default agents + user scope)"
 reset_user_home
@@ -513,11 +513,11 @@ run_capture "
 " init
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_contains "interactive lock honors custom prefix_width" \
-  "$(cat "$PROJ_INT3/${PLAN_LOCK_PATH}")" "\"prefix_width\": 6"
+  "$(cat "$PROJ_INT3/${PLANS_LOCK_PATH}")" "\"prefix_width\": 6"
 assert_contains "interactive lock honors custom max_plan_lines" \
-  "$(cat "$PROJ_INT3/${PLAN_LOCK_PATH}")" "\"max_plan_lines\": 42"
-assert_contains "interactive lock honors custom plan_review_per" \
-  "$(cat "$PROJ_INT3/${PLAN_LOCK_PATH}")" "\"plan_review_per\": \"plan\""
+  "$(cat "$PROJ_INT3/${PLANS_LOCK_PATH}")" "\"max_plan_lines\": 42"
+assert_contains "interactive lock honors custom review_per" \
+  "$(cat "$PROJ_INT3/${PLANS_LOCK_PATH}")" "\"review_per\": \"plan\""
 
 case_start "x-x init interactive (invalid agent choice)"
 reset_user_home
@@ -592,50 +592,50 @@ run_capture "" init --scope workspace
 [ "$RUN_RC" != "0" ] && ok "non-zero exit" || fail "non-zero exit"
 assert_contains "diagnostic" "$RUN_ERR" "invalid --scope"
 
-# ---------- init plan-tooling flag twins (--prefix-width / --max-plan-lines / --plan-review-per) ----------
+# ---------- init plan-tooling flag twins (--prefix-width / --max-plan-lines / --review-per) ----------
 #
 # All five prompts have flag twins; passing every flag drives runInit
 # end-to-end without ever touching stdin (true non-interactive). Each
 # case below pins the wire-format of `_config.lock` so any drift between
 # the flag values and what lands on disk fails loud.
 
-case_start "x-x init --prefix-width / --max-plan-lines / --plan-review-per (all flags)"
+case_start "x-x init --prefix-width / --max-plan-lines / --review-per (all flags)"
 reset_user_home
 PROJ_FF="$(fresh_project)"
 cd "$PROJ_FF"
 run_capture "" init --scope project --agents=claude,codex \
-  --prefix-width=6 --max-plan-lines=42 --plan-review-per=plan
+  --prefix-width=6 --max-plan-lines=42 --review-per=plan
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_contains "lock honors --prefix-width" \
-  "$(cat "$PROJ_FF/${PLAN_LOCK_PATH}")" "\"prefix_width\": 6"
+  "$(cat "$PROJ_FF/${PLANS_LOCK_PATH}")" "\"prefix_width\": 6"
 assert_contains "lock honors --max-plan-lines" \
-  "$(cat "$PROJ_FF/${PLAN_LOCK_PATH}")" "\"max_plan_lines\": 42"
-assert_contains "lock honors --plan-review-per" \
-  "$(cat "$PROJ_FF/${PLAN_LOCK_PATH}")" "\"plan_review_per\": \"plan\""
+  "$(cat "$PROJ_FF/${PLANS_LOCK_PATH}")" "\"max_plan_lines\": 42"
+assert_contains "lock honors --review-per" \
+  "$(cat "$PROJ_FF/${PLANS_LOCK_PATH}")" "\"review_per\": \"plan\""
 
-case_start "x-x init --plan-review-per=task (explicit default)"
+case_start "x-x init --review-per=task (explicit default)"
 reset_user_home
 PROJ_FT="$(fresh_project)"
 cd "$PROJ_FT"
 run_capture "" init --scope project --agents=claude --prefix-width=4 \
-  --max-plan-lines=30 --plan-review-per=task
+  --max-plan-lines=30 --review-per=task
 assert_eq "exit 0" "$RUN_RC" "0"
-assert_contains "lock honors --plan-review-per=task" \
-  "$(cat "$PROJ_FT/${PLAN_LOCK_PATH}")" "\"plan_review_per\": \"task\""
+assert_contains "lock honors --review-per=task" \
+  "$(cat "$PROJ_FT/${PLANS_LOCK_PATH}")" "\"review_per\": \"task\""
 
-case_start "x-x init --plan-review-per invalid"
+case_start "x-x init --review-per invalid"
 reset_user_home
 cd "$(fresh_project)"
 run_capture "" init --scope project --agents=claude --prefix-width=4 \
-  --max-plan-lines=30 --plan-review-per=commit
+  --max-plan-lines=30 --review-per=commit
 [ "$RUN_RC" != "0" ] && ok "non-zero exit" || fail "non-zero exit"
-assert_contains "diagnostic" "$RUN_ERR" "invalid --plan-review-per"
+assert_contains "diagnostic" "$RUN_ERR" "invalid --review-per"
 
 case_start "x-x init --prefix-width=-1 rejected"
 reset_user_home
 cd "$(fresh_project)"
 run_capture "" init --scope project --agents=claude --prefix-width=-1 \
-  --max-plan-lines=30 --plan-review-per=task
+  --max-plan-lines=30 --review-per=task
 [ "$RUN_RC" != "0" ] && ok "non-zero exit" || fail "non-zero exit"
 assert_contains "diagnostic" "$RUN_ERR" "--prefix-width must be positive"
 
@@ -643,7 +643,7 @@ case_start "x-x init --max-plan-lines=0 rejected"
 reset_user_home
 cd "$(fresh_project)"
 run_capture "" init --scope project --agents=claude --prefix-width=4 \
-  --max-plan-lines=0 --plan-review-per=task
+  --max-plan-lines=0 --review-per=task
 [ "$RUN_RC" != "0" ] && ok "non-zero exit" || fail "non-zero exit"
 assert_contains "diagnostic" "$RUN_ERR" "--max-plan-lines must be positive"
 
@@ -661,39 +661,39 @@ assert_is_dir "sibling skill installed"    "$PROJ_OW/${CLAUDE_SKILLS_REL}/${SKIL
 
 # ---------- skill (no subcommand) ----------
 
-case_start "x-x skill (no subcommand)"
-run_capture "" skill
+case_start "x-x skills(no subcommand)"
+run_capture "" skills
 assert_eq "exit 2" "$RUN_RC" "2"
-assert_contains "usage" "$RUN_ERR" "Usage: x-x skill <subcommand>"
+assert_contains "usage" "$RUN_ERR" "Usage: x-x skills <subcommand>"
 
-case_start "x-x skill <typo>"
-run_capture "" skill frobnicate
+case_start "x-x skills <typo>"
+run_capture "" skills frobnicate
 assert_eq "exit 2" "$RUN_RC" "2"
-assert_contains "diagnostic" "$RUN_ERR" "unknown skill subcommand: frobnicate"
+assert_contains "diagnostic" "$RUN_ERR" "unknown skills subcommand: frobnicate"
 
 # ---------- skill remove (no flag) ----------
 
-case_start "x-x skill remove (no flag)"
-run_capture "" skill remove
+case_start "x-x skills remove (no flag)"
+run_capture "" skills remove
 assert_eq "exit 2" "$RUN_RC" "2"
-assert_contains "usage" "$RUN_ERR" "Usage: x-x skill remove"
+assert_contains "usage" "$RUN_ERR" "Usage: x-x skills remove"
 
 # ---------- skill remove --user + --project (mutex) ----------
 
-case_start "x-x skill remove --user --project (mutex)"
-run_capture "" skill remove --user --project
+case_start "x-x skills remove --user --project (mutex)"
+run_capture "" skills remove --user --project
 assert_eq "exit 2" "$RUN_RC" "2"
 assert_contains "diagnostic" "$RUN_ERR" "mutually exclusive"
 
 # ---------- skill remove --user (end-to-end) ----------
 
-case_start "x-x skill remove --user"
+case_start "x-x skills remove --user"
 reset_user_home
 cd "$(fresh_project)"
 run_capture "" init --scope user
 mkdir -p "$HOME/${CLAUDE_SKILLS_REL}/my-custom"
 touch "$HOME/${CLAUDE_SKILLS_REL}/my-custom/marker"
-run_capture "" skill remove --user
+run_capture "" skills remove --user
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_contains "summary" "$RUN_OUT" "Removed"
 for skill in $OWNED_SKILLS; do
@@ -703,20 +703,20 @@ assert_is_file "user-authored skill survives" "$HOME/${CLAUDE_SKILLS_REL}/my-cus
 
 # ---------- skill remove --project (end-to-end) ----------
 
-case_start "x-x skill remove --project"
+case_start "x-x skills remove --project"
 reset_user_home
 PROJ_RM="$(fresh_project)"
 cd "$PROJ_RM"
 run_capture "" init --scope project
 mkdir -p "$PROJ_RM/${CLAUDE_SKILLS_REL}/my-custom"
 touch "$PROJ_RM/${CLAUDE_SKILLS_REL}/my-custom/marker"
-run_capture "" skill remove --project
+run_capture "" skills remove --project
 assert_eq "exit 0" "$RUN_RC" "0"
 for skill in $OWNED_SKILLS; do
   assert_absent "project $skill removed" "$PROJ_RM/${CLAUDE_SKILLS_REL}/$skill"
 done
 assert_is_file "user-authored skill survives"      "$PROJ_RM/${CLAUDE_SKILLS_REL}/my-custom/marker"
-assert_is_file "${PLAN_LOCK_PATH} preserved"       "$PROJ_RM/${PLAN_LOCK_PATH}"
+assert_is_file "${PLANS_LOCK_PATH} preserved"       "$PROJ_RM/${PLANS_LOCK_PATH}"
 assert_is_file "${CLAUDE_SETTINGS_PATH} preserved" "$PROJ_RM/${CLAUDE_SETTINGS_PATH}"
 
 # ---------- isolation: init must not touch foreign content ----------
@@ -780,7 +780,7 @@ echo '{"USER": "EDIT"}'                    > "$PROJ_RE/${CODEX_HOOKS_PATH}"
 # Documented re-init flow: delete the lock to unblock the project-gate
 # refusal. The lock will be re-written by init from the wizard/flag
 # choices for this run.
-rm "$PROJ_RE/${PLAN_LOCK_PATH}"
+rm "$PROJ_RE/${PLANS_LOCK_PATH}"
 run_capture "" init --scope project
 assert_eq "exit 0" "$RUN_RC" "0"
 CLAUDE_BODY="$(cat "$PROJ_RE/${CLAUDE_SETTINGS_PATH}")"
@@ -788,9 +788,9 @@ CODEX_BODY="$(cat "$PROJ_RE/${CODEX_HOOKS_PATH}")"
 assert_contains "${CLAUDE_SETTINGS_FILE} keeps user key"   "$CLAUDE_BODY" '"USER": "EDIT"'
 assert_contains "${CLAUDE_SETTINGS_FILE} keeps user model" "$CLAUDE_BODY" '"model": "sonnet"'
 assert_contains "${CLAUDE_SETTINGS_FILE} gains fastMode"   "$CLAUDE_BODY" '"fastMode": true'
-assert_contains "${CLAUDE_SETTINGS_FILE} gains hook"       "$CLAUDE_BODY" 'x-x plan lint'
+assert_contains "${CLAUDE_SETTINGS_FILE} gains hook"       "$CLAUDE_BODY" 'x-x plans lint'
 assert_contains "${CODEX_HOOKS_FILE} keeps user key"       "$CODEX_BODY"  '"USER": "EDIT"'
-assert_contains "${CODEX_HOOKS_FILE} gains hook"           "$CODEX_BODY"  'x-x plan lint'
+assert_contains "${CODEX_HOOKS_FILE} gains hook"           "$CODEX_BODY"  'x-x plans lint'
 
 # ---------- merge is idempotent: a second re-run is a byte-level no-op ----------
 
@@ -803,13 +803,13 @@ echo '{"model": "sonnet"}' > "$PROJ_IDEM_JSON/${CLAUDE_SETTINGS_PATH}"
 echo '{"model": "sonnet"}' > "$PROJ_IDEM_JSON/${CODEX_HOOKS_PATH}"
 # First re-run materializes the merged shape. Lock-delete is the
 # documented gate-bypass; init recreates it from this run's choices.
-rm "$PROJ_IDEM_JSON/${PLAN_LOCK_PATH}"
+rm "$PROJ_IDEM_JSON/${PLANS_LOCK_PATH}"
 run_capture "" init --scope project
 SNAP_CLAUDE_1="$(cat "$PROJ_IDEM_JSON/${CLAUDE_SETTINGS_PATH}")"
 SNAP_CODEX_1="$(cat "$PROJ_IDEM_JSON/${CODEX_HOOKS_PATH}")"
 # Second re-run must be a byte-level no-op — array-union dedup catches
 # every bundled entry already present from the first merge.
-rm "$PROJ_IDEM_JSON/${PLAN_LOCK_PATH}"
+rm "$PROJ_IDEM_JSON/${PLANS_LOCK_PATH}"
 run_capture "" init --scope project
 SNAP_CLAUDE_2="$(cat "$PROJ_IDEM_JSON/${CLAUDE_SETTINGS_PATH}")"
 SNAP_CODEX_2="$(cat "$PROJ_IDEM_JSON/${CODEX_HOOKS_PATH}")"
@@ -829,12 +829,12 @@ PROJ_SCALAR="$(fresh_project)"
 cd "$PROJ_SCALAR"
 run_capture "" init --scope project
 echo '{"fastMode": false}' > "$PROJ_SCALAR/${CLAUDE_SETTINGS_PATH}"
-rm "$PROJ_SCALAR/${PLAN_LOCK_PATH}"
+rm "$PROJ_SCALAR/${PLANS_LOCK_PATH}"
 run_capture "" init --scope project
 SCALAR_BODY="$(cat "$PROJ_SCALAR/${CLAUDE_SETTINGS_PATH}")"
 assert_contains "user fastMode=false preserved" "$SCALAR_BODY" '"fastMode": false'
 assert_not_contains "bundled fastMode=true rejected" "$SCALAR_BODY" '"fastMode": true'
-assert_contains    "bundled hooks still added"       "$SCALAR_BODY" 'x-x plan lint'
+assert_contains    "bundled hooks still added"       "$SCALAR_BODY" 'x-x plans lint'
 
 # ---------- merge: array entries are unioned, not overwritten ----------
 #
@@ -857,13 +857,13 @@ cat > "$PROJ_ARR/${CLAUDE_SETTINGS_PATH}" <<'JSON'
   }
 }
 JSON
-rm "$PROJ_ARR/${PLAN_LOCK_PATH}"
+rm "$PROJ_ARR/${PLANS_LOCK_PATH}"
 run_capture "" init --scope project
 ARR_BODY="$(cat "$PROJ_ARR/${CLAUDE_SETTINGS_PATH}")"
 assert_contains "user matcher Read survives"      "$ARR_BODY" '"matcher": "Read"'
 assert_contains "user command my-tool survives"   "$ARR_BODY" '"command": "my-tool"'
 assert_contains "bundled matcher Write|Edit|MultiEdit lands" "$ARR_BODY" '"matcher": "Write|Edit|MultiEdit"'
-assert_contains "bundled command x-x plan lint lands" "$ARR_BODY" '"command": "x-x plan lint"'
+assert_contains "bundled command x-x plans lint lands" "$ARR_BODY" '"command": "x-x plans lint"'
 
 # ---------- merge: malformed JSON leaves the user file untouched ----------
 #
@@ -878,7 +878,7 @@ PROJ_BAD="$(fresh_project)"
 cd "$PROJ_BAD"
 run_capture "" init --scope project
 echo 'not valid json {' > "$PROJ_BAD/${CLAUDE_SETTINGS_PATH}"
-rm "$PROJ_BAD/${PLAN_LOCK_PATH}"
+rm "$PROJ_BAD/${PLANS_LOCK_PATH}"
 run_capture "" init --scope project
 assert_eq "exit 0 despite parse failure" "$RUN_RC" "0"
 assert_eq "malformed file untouched" "$(cat "$PROJ_BAD/${CLAUDE_SETTINGS_PATH}")" 'not valid json {'
@@ -896,11 +896,11 @@ PROJ_EMPTY="$(fresh_project)"
 cd "$PROJ_EMPTY"
 run_capture "" init --scope project
 : > "$PROJ_EMPTY/${CLAUDE_SETTINGS_PATH}"
-rm "$PROJ_EMPTY/${PLAN_LOCK_PATH}"
+rm "$PROJ_EMPTY/${PLANS_LOCK_PATH}"
 run_capture "" init --scope project
 EMPTY_BODY="$(cat "$PROJ_EMPTY/${CLAUDE_SETTINGS_PATH}")"
 assert_contains "empty file gained fastMode" "$EMPTY_BODY" '"fastMode": true'
-assert_contains "empty file gained hook"     "$EMPTY_BODY" 'x-x plan lint'
+assert_contains "empty file gained hook"     "$EMPTY_BODY" 'x-x plans lint'
 
 # ---------- isolation: init re-run keeps user-authored sibling skills ----------
 
@@ -913,7 +913,7 @@ mkdir -p "$PROJ_SIB/${CLAUDE_SKILLS_REL}/my-custom" \
          "$PROJ_SIB/${CODEX_SKILLS_REL}/their-custom"
 echo "MINE" > "$PROJ_SIB/${CLAUDE_SKILLS_REL}/my-custom/SKILL.md"
 echo "MINE" > "$PROJ_SIB/${CODEX_SKILLS_REL}/their-custom/SKILL.md"
-rm "$PROJ_SIB/${PLAN_LOCK_PATH}"
+rm "$PROJ_SIB/${PLANS_LOCK_PATH}"
 run_capture "" init --scope project
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_is_file "sibling claude skill survives re-run" "$PROJ_SIB/${CLAUDE_SKILLS_REL}/my-custom/SKILL.md"
@@ -937,7 +937,7 @@ echo "USER" > "$PROJ_RMI/${CLAUDE_SKILLS_REL}/STRAY.md"
 echo "USER" > "$PROJ_RMI/${CODEX_CONFIG_REL}/config.toml"
 echo "USER" > "$PROJ_RMI/${CODEX_CONFIG_REL}/sessions/s1.json"
 echo "USER" > "$PROJ_RMI/${CODEX_SKILLS_REL}/their-custom/SKILL.md"
-run_capture "" skill remove --project
+run_capture "" skills remove --project
 assert_eq "exit 0" "$RUN_RC" "0"
 for p in \
   "${CLAUDE_CONFIG_REL}/CLAUDE.md" \
@@ -948,8 +948,8 @@ for p in \
   "${CODEX_CONFIG_REL}/sessions/s1.json" \
   "${CODEX_HOOKS_PATH}" \
   "${CODEX_SKILLS_REL}/their-custom/SKILL.md" \
-  "${PLAN_LOCK_PATH}" \
-  "${PLAN_SYSTEMS_PATH}"; do
+  "${PLANS_LOCK_PATH}" \
+  "${PLANS_SYSTEMS_PATH}"; do
   assert_is_file "skill remove kept $p" "$PROJ_RMI/$p"
 done
 for skill in $OWNED_SKILLS; do
@@ -982,11 +982,11 @@ cat > "$PROJ_UN/${CLAUDE_SETTINGS_PATH}" <<'EOF'
   "fastMode": true,
   "hooks": {
     "PostToolUse": [
-      {"matcher": "Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": "x-x plan lint"}]},
+      {"matcher": "Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": "x-x plans lint"}]},
       {"matcher": "Bash", "hooks": [{"type": "command", "command": "USER-HOOK"}]}
     ],
     "Stop": [
-      {"matcher": "", "hooks": [{"type": "command", "command": "x-x plan lint"}]}
+      {"matcher": "", "hooks": [{"type": "command", "command": "x-x plans lint"}]}
     ]
   }
 }
@@ -995,16 +995,16 @@ cat > "$PROJ_UN/${CODEX_HOOKS_PATH}" <<'EOF'
 {
   "hooks": {
     "PostToolUse": [
-      {"matcher": "apply_patch", "hooks": [{"type": "command", "command": "x-x plan lint"}]}
+      {"matcher": "apply_patch", "hooks": [{"type": "command", "command": "x-x plans lint"}]}
     ],
     "Stop": [
-      {"hooks": [{"type": "command", "command": "x-x plan lint 1>&2"}]},
+      {"hooks": [{"type": "command", "command": "x-x plans lint 1>&2"}]},
       {"hooks": [{"type": "command", "command": "USER-CODEX-HOOK"}]}
     ]
   }
 }
 EOF
-run_capture "" skill remove --project
+run_capture "" skills remove --project
 assert_eq       "exit 0"               "$RUN_RC" "0"
 assert_contains "summary has unmerged" "$RUN_OUT" "unmerged"
 CLAUDE_BODY="$(cat "$PROJ_UN/${CLAUDE_SETTINGS_PATH}")"
@@ -1016,9 +1016,9 @@ assert_contains     "codex user hook kept"             "$CODEX_BODY"  'USER-CODE
 # Bundled records are gone: their distinguishing matchers / commands
 # no longer appear in either file.
 assert_not_contains "claude Write|Edit matcher gone"   "$CLAUDE_BODY" 'Write|Edit|MultiEdit'
-assert_not_contains "claude bundled command gone"      "$CLAUDE_BODY" 'x-x plan lint'
+assert_not_contains "claude bundled command gone"      "$CLAUDE_BODY" 'x-x plans lint'
 assert_not_contains "codex apply_patch matcher gone"   "$CODEX_BODY"  'apply_patch'
-assert_not_contains "codex Stop bundled command gone"  "$CODEX_BODY"  'x-x plan lint 1>&2'
+assert_not_contains "codex Stop bundled command gone"  "$CODEX_BODY"  'x-x plans lint 1>&2'
 
 # ---------- skill remove leaves a user-tweaked variant alone ----------
 #
@@ -1036,16 +1036,16 @@ cat > "$PROJ_UNT/${CLAUDE_SETTINGS_PATH}" <<'EOF'
 {
   "hooks": {
     "PostToolUse": [
-      {"matcher": "Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": "x-x plan lint --verbose"}]}
+      {"matcher": "Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": "x-x plans lint --verbose"}]}
     ]
   }
 }
 EOF
-run_capture "" skill remove --project
+run_capture "" skills remove --project
 assert_eq "exit 0" "$RUN_RC" "0"
 TWEAKED_BODY="$(cat "$PROJ_UNT/${CLAUDE_SETTINGS_PATH}")"
 assert_contains "tweaked matcher kept" "$TWEAKED_BODY" 'Write|Edit|MultiEdit'
-assert_contains "tweaked command kept" "$TWEAKED_BODY" 'x-x plan lint --verbose'
+assert_contains "tweaked command kept" "$TWEAKED_BODY" 'x-x plans lint --verbose'
 
 # ---------- isolation: lazy first-run write keeps foreign content ----------
 #
@@ -1145,9 +1145,9 @@ cd "$PROJ_USER_MERGE"
 run_capture "" init --scope user
 echo '{"USER": "EDIT"}' > "$HOME/${CLAUDE_SETTINGS_PATH}"
 echo '{"USER": "EDIT"}' > "$HOME/${CODEX_HOOKS_PATH}"
-# Even under --scope user, init writes .x-plan/ into cwd — the project
+# Even under --scope user, init writes .x-plans/ into cwd — the project
 # gate is keyed on the cwd-local lock regardless of skill scope.
-rm "$PROJ_USER_MERGE/${PLAN_LOCK_PATH}"
+rm "$PROJ_USER_MERGE/${PLANS_LOCK_PATH}"
 run_capture "" init --scope user
 assert_eq "exit 0" "$RUN_RC" "0"
 USER_CLAUDE_BODY="$(cat "$HOME/${CLAUDE_SETTINGS_PATH}")"
@@ -1156,9 +1156,9 @@ USER_CODEX_BODY="$(cat "$HOME/${CODEX_HOOKS_PATH}")"
 # under $HOME (user-scope install). User key survives + bundle keys land.
 assert_contains "user ${CLAUDE_SETTINGS_FILE} keeps user key" "$USER_CLAUDE_BODY" '"USER": "EDIT"'
 assert_contains "user ${CLAUDE_SETTINGS_FILE} gains fastMode" "$USER_CLAUDE_BODY" '"fastMode": true'
-assert_contains "user ${CLAUDE_SETTINGS_FILE} gains hook"     "$USER_CLAUDE_BODY" 'x-x plan lint'
+assert_contains "user ${CLAUDE_SETTINGS_FILE} gains hook"     "$USER_CLAUDE_BODY" 'x-x plans lint'
 assert_contains "user ${CODEX_HOOKS_FILE} keeps user key"     "$USER_CODEX_BODY"  '"USER": "EDIT"'
-assert_contains "user ${CODEX_HOOKS_FILE} gains hook"         "$USER_CODEX_BODY"  'x-x plan lint'
+assert_contains "user ${CODEX_HOOKS_FILE} gains hook"         "$USER_CODEX_BODY"  'x-x plans lint'
 
 # ---------- isolation: init --scope user re-run keeps sibling skills ----------
 
@@ -1169,7 +1169,7 @@ cd "$PROJ_USER_SIB"
 run_capture "" init --scope user
 mkdir -p "$HOME/${CLAUDE_SKILLS_REL}/my-custom"
 echo "MINE" > "$HOME/${CLAUDE_SKILLS_REL}/my-custom/SKILL.md"
-rm "$PROJ_USER_SIB/${PLAN_LOCK_PATH}"
+rm "$PROJ_USER_SIB/${PLANS_LOCK_PATH}"
 run_capture "" init --scope user
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_is_file    "user-scope sibling survives re-run" "$HOME/${CLAUDE_SKILLS_REL}/my-custom/SKILL.md"
@@ -1183,14 +1183,14 @@ reset_user_home
 # x-x, then wipe the install dirs so skill remove has nothing to do.
 run_capture "" >/dev/null
 rm -rf "$HOME/${CLAUDE_CONFIG_REL}" "$HOME/${CODEX_SKILLS_PARENT}" "$HOME/${CODEX_CONFIG_REL}"
-run_capture "" skill remove --user
+run_capture "" skills remove --user
 assert_eq "exit 0 on empty state" "$RUN_RC" "0"
 assert_contains "summary line" "$RUN_OUT" "Removed 0"
 
 case_start "skill remove --project outside an x-x project"
 reset_user_home
 cd "$(fresh_project)"
-run_capture "" skill remove --project
+run_capture "" skills remove --project
 assert_eq "exit 2 outside project" "$RUN_RC" "2"
 assert_contains "diagnostic" "$RUN_ERR" "not an x-x project"
 assert_contains "hint"       "$RUN_ERR" "x-x init"
@@ -1200,7 +1200,7 @@ reset_user_home
 PROJ_RM_EMPTY="$(fresh_project)"
 seed_project_scaffold "$PROJ_RM_EMPTY"
 cd "$PROJ_RM_EMPTY"
-run_capture "" skill remove --project
+run_capture "" skills remove --project
 assert_eq "exit 0 on empty state" "$RUN_RC" "0"
 assert_contains "summary line" "$RUN_OUT" "Removed 0"
 
@@ -1222,24 +1222,24 @@ PROJ_IDEM="$(fresh_project)"
 cd "$PROJ_IDEM"
 run_capture "" init --scope project
 assert_eq "first init exit 0" "$RUN_RC" "0"
-assert_exists "lock written" "$PROJ_IDEM/${PLAN_LOCK_PATH}"
+assert_exists "lock written" "$PROJ_IDEM/${PLANS_LOCK_PATH}"
 # Seed the systems registry with content so we can later verify init
 # never overwrites it on the post-lock-deletion re-run.
-echo "systems:" > "$PROJ_IDEM/${PLAN_SYSTEMS_PATH}"
-echo "  - name: payments" >> "$PROJ_IDEM/${PLAN_SYSTEMS_PATH}"
-systems_before="$(cat "$PROJ_IDEM/${PLAN_SYSTEMS_PATH}")"
+echo "systems:" > "$PROJ_IDEM/${PLANS_SYSTEMS_PATH}"
+echo "  - name: payments" >> "$PROJ_IDEM/${PLANS_SYSTEMS_PATH}"
+systems_before="$(cat "$PROJ_IDEM/${PLANS_SYSTEMS_PATH}")"
 run_capture "" init --scope project
 assert_eq "second init refused (exit 2)" "$RUN_RC" "2"
 assert_contains "diagnostic" "$RUN_ERR" "already initialized"
-assert_contains "hint mentions ${PLAN_CONFIG_LOCK}" "$RUN_ERR" "${PLAN_CONFIG_LOCK}"
+assert_contains "hint mentions ${PLANS_CONFIG_LOCK}" "$RUN_ERR" "${PLANS_CONFIG_LOCK}"
 
-case_start "init re-runs after lock file deletion, preserving ${PLAN_SYSTEMS_FILE}"
-rm "$PROJ_IDEM/${PLAN_LOCK_PATH}"
+case_start "init re-runs after lock file deletion, preserving ${PLANS_SYSTEMS_FILE}"
+rm "$PROJ_IDEM/${PLANS_LOCK_PATH}"
 run_capture "" init --scope project
 assert_eq "exit 0 after lock removed" "$RUN_RC" "0"
-assert_exists "lock recreated" "$PROJ_IDEM/${PLAN_LOCK_PATH}"
-systems_after="$(cat "$PROJ_IDEM/${PLAN_SYSTEMS_PATH}")"
-assert_eq "${PLAN_SYSTEMS_FILE} untouched across re-init" "$systems_before" "$systems_after"
+assert_exists "lock recreated" "$PROJ_IDEM/${PLANS_LOCK_PATH}"
+systems_after="$(cat "$PROJ_IDEM/${PLANS_SYSTEMS_PATH}")"
+assert_eq "${PLANS_SYSTEMS_FILE} untouched across re-init" "$systems_before" "$systems_after"
 
 # ---------- CLI flag forms ----------
 
@@ -1398,7 +1398,7 @@ done
 
 case_start "project + user scopes coexist; project copies are not symlinks"
 # Run user-scope init from a throwaway cwd (user-scope init still seeds
-# `.x-plan/` in whatever directory it was launched from, but we don't
+# `.x-plans/` in whatever directory it was launched from, but we don't
 # care about that dir). Then move to a fresh project dir for the
 # project-scope init. All four install roots must end up populated, and
 # the project-scope copies must be regular files (not symlinks back into
@@ -1459,99 +1459,99 @@ assert_eq "user copy ≡ embed sha256 after refresh" "$user_sha" "$bundle_sha"
 
 # ---------- plan next-prefix ----------
 
-case_start "x-x plan (no subcommand)"
-run_capture "" plan
+case_start "x-x plans(no subcommand)"
+run_capture "" plans
 assert_eq "exit 2" "$RUN_RC" "2"
-assert_contains "usage" "$RUN_ERR" "Usage: x-x plan <subcommand>"
+assert_contains "usage" "$RUN_ERR" "Usage: x-x plans <subcommand>"
 
-case_start "x-x plan <typo>"
-run_capture "" plan frobnicate
+case_start "x-x plans <typo>"
+run_capture "" plans frobnicate
 assert_eq "exit 2" "$RUN_RC" "2"
-assert_contains "diagnostic" "$RUN_ERR" "unknown plan subcommand: frobnicate"
+assert_contains "diagnostic" "$RUN_ERR" "unknown plans subcommand: frobnicate"
 
-case_start "x-x plan next-prefix outside an x-x project"
+case_start "x-x plans next-prefix outside an x-x project"
 PROJ_NP="$(fresh_project)"
 cd "$PROJ_NP"
-run_capture "" plan next-prefix
+run_capture "" plans next-prefix
 assert_eq "exit 2 outside project" "$RUN_RC" "2"
 assert_contains "diagnostic" "$RUN_ERR" "not an x-x project"
 assert_contains "hint"       "$RUN_ERR" "x-x init"
 
-case_start "x-x plan next-prefix in fresh ${PLAN_DIR} (empty)"
+case_start "x-x plans next-prefix in fresh ${PLANS_DIR} (empty)"
 PROJ_NP_EMPTY="$(fresh_project)"
 seed_project_scaffold "$PROJ_NP_EMPTY"
 cd "$PROJ_NP_EMPTY"
-run_capture "" plan next-prefix
+run_capture "" plans next-prefix
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_eq "first prefix" "$RUN_OUT" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)"
 
-case_start "x-x plan next-prefix with default width"
+case_start "x-x plans next-prefix with default width"
 PROJ_NP2="$(fresh_project)"
 seed_project_scaffold "$PROJ_NP2"
-touch "$PROJ_NP2/${PLAN_DIR}/$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md" \
-      "$PROJ_NP2/${PLAN_DIR}/$(prefix "$DEFAULT_PREFIX_WIDTH" 3)-bar.md"
+touch "$PROJ_NP2/${PLANS_DIR}/$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md" \
+      "$PROJ_NP2/${PLANS_DIR}/$(prefix "$DEFAULT_PREFIX_WIDTH" 3)-bar.md"
 cd "$PROJ_NP2"
-run_capture "" plan next-prefix
+run_capture "" plans next-prefix
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_eq "max+1 default width" "$RUN_OUT" "$(prefix "$DEFAULT_PREFIX_WIDTH" 4)"
 
-case_start "x-x plan next-prefix honors ${PLAN_CONFIG_LOCK} prefix_width"
+case_start "x-x plans next-prefix honors ${PLANS_CONFIG_LOCK} prefix_width"
 PROJ_NP3="$(fresh_project)"
 seed_project_scaffold "$PROJ_NP3"
 custom_width=7
-echo "{\"prefix_width\":${custom_width}}" > "$PROJ_NP3/${PLAN_LOCK_PATH}"
-touch "$PROJ_NP3/${PLAN_DIR}/$(prefix "$custom_width" 41)-foo.md"
+echo "{\"prefix_width\":${custom_width}}" > "$PROJ_NP3/${PLANS_LOCK_PATH}"
+touch "$PROJ_NP3/${PLANS_DIR}/$(prefix "$custom_width" 41)-foo.md"
 cd "$PROJ_NP3"
-run_capture "" plan next-prefix
+run_capture "" plans next-prefix
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_eq "custom width applied" "$RUN_OUT" "$(prefix "$custom_width" 42)"
 
-case_start "x-x plan next-prefix rejects positional arg"
+case_start "x-x plans next-prefix rejects positional arg"
 cd "$(fresh_project)"
-run_capture "" plan next-prefix some/dir
+run_capture "" plans next-prefix some/dir
 assert_eq "exit 2" "$RUN_RC" "2"
 assert_contains "diagnostic" "$RUN_ERR" "takes no arguments"
 
-case_start "x-x plan next-prefix ignores non-matching filenames"
+case_start "x-x plans next-prefix ignores non-matching filenames"
 PROJ_NP4="$(fresh_project)"
 seed_project_scaffold "$PROJ_NP4"
-touch "$PROJ_NP4/${PLAN_DIR}/notes.md" \
-      "$PROJ_NP4/${PLAN_DIR}/README" \
-      "$PROJ_NP4/${PLAN_DIR}/abc-foo.md" \
-      "$PROJ_NP4/${PLAN_DIR}/$(prefix "$DEFAULT_PREFIX_WIDTH" 7)-real.md"
+touch "$PROJ_NP4/${PLANS_DIR}/notes.md" \
+      "$PROJ_NP4/${PLANS_DIR}/README" \
+      "$PROJ_NP4/${PLANS_DIR}/abc-foo.md" \
+      "$PROJ_NP4/${PLANS_DIR}/$(prefix "$DEFAULT_PREFIX_WIDTH" 7)-real.md"
 cd "$PROJ_NP4"
-run_capture "" plan next-prefix
+run_capture "" plans next-prefix
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_eq "non-matching ignored" "$RUN_OUT" "$(prefix "$DEFAULT_PREFIX_WIDTH" 8)"
 
-case_start "x-x plan next-prefix with only lock file (no plan files)"
+case_start "x-x plans next-prefix with only lock file (no plan files)"
 PROJ_NP5="$(fresh_project)"
 seed_project_scaffold "$PROJ_NP5"
-echo "{\"prefix_width\":${DEFAULT_PREFIX_WIDTH}}" > "$PROJ_NP5/${PLAN_LOCK_PATH}"
+echo "{\"prefix_width\":${DEFAULT_PREFIX_WIDTH}}" > "$PROJ_NP5/${PLANS_LOCK_PATH}"
 cd "$PROJ_NP5"
-run_capture "" plan next-prefix
+run_capture "" plans next-prefix
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_eq "lock-only → first prefix" "$RUN_OUT" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)"
 
-case_start "x-x plan next-prefix falls back to default width on malformed lock"
+case_start "x-x plans next-prefix falls back to default width on malformed lock"
 PROJ_NP6="$(fresh_project)"
 seed_project_scaffold "$PROJ_NP6"
-echo '{not json' > "$PROJ_NP6/${PLAN_LOCK_PATH}"
+echo '{not json' > "$PROJ_NP6/${PLANS_LOCK_PATH}"
 cd "$PROJ_NP6"
-run_capture "" plan next-prefix
+run_capture "" plans next-prefix
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_eq "default width on bad lock" "$RUN_OUT" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)"
 
-case_start "x-x plan next-prefix falls back to default width on zero prefix_width"
+case_start "x-x plans next-prefix falls back to default width on zero prefix_width"
 PROJ_NP7="$(fresh_project)"
 seed_project_scaffold "$PROJ_NP7"
-echo '{"prefix_width":0}' > "$PROJ_NP7/${PLAN_LOCK_PATH}"
+echo '{"prefix_width":0}' > "$PROJ_NP7/${PLANS_LOCK_PATH}"
 cd "$PROJ_NP7"
-run_capture "" plan next-prefix
+run_capture "" plans next-prefix
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_eq "default width on zero" "$RUN_OUT" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)"
 
-case_start "x-x plan next-prefix rolls past width digits"
+case_start "x-x plans next-prefix rolls past width digits"
 PROJ_NP8="$(fresh_project)"
 seed_project_scaffold "$PROJ_NP8"
 # Seed with a prefix that exactly fills DEFAULT_PREFIX_WIDTH (all 9s), so
@@ -1559,9 +1559,9 @@ seed_project_scaffold "$PROJ_NP8"
 # bump the seed when the constant changes.
 seed_overflow="$(printf '%0*d' "$DEFAULT_PREFIX_WIDTH" 0 | tr '0' '9')"
 overflow_next="$((10 ** DEFAULT_PREFIX_WIDTH))"
-touch "$PROJ_NP8/${PLAN_DIR}/${seed_overflow}-last.md"
+touch "$PROJ_NP8/${PLANS_DIR}/${seed_overflow}-last.md"
 cd "$PROJ_NP8"
-run_capture "" plan next-prefix
+run_capture "" plans next-prefix
 assert_eq "exit 0" "$RUN_RC" "0"
 # fmt.Printf("%0*d", width, n) does not truncate when n already has
 # more digits than width — so 9999+1 prints as "10000" at width 4.
@@ -1569,30 +1569,30 @@ assert_eq "overflow keeps counting" "$RUN_OUT" "$overflow_next"
 
 # ---------- plan list ----------
 
-case_start "x-x plan list (empty ${PLAN_DIR})"
+case_start "x-x plans list (empty ${PLANS_DIR})"
 PROJ_PL1="$(fresh_project)"
 seed_project_scaffold "$PROJ_PL1"
 cd "$PROJ_PL1"
-run_capture "" plan list
+run_capture "" plans list
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_eq "no rows on empty" "$RUN_OUT" ""
 
-case_start "x-x plan list outside an x-x project"
+case_start "x-x plans list outside an x-x project"
 PROJ_PL2="$(fresh_project)"
 cd "$PROJ_PL2"
-run_capture "" plan list
+run_capture "" plans list
 assert_eq "exit 2 outside project" "$RUN_RC" "2"
 assert_contains "diagnostic" "$RUN_ERR" "not an x-x project"
 assert_contains "hint"       "$RUN_ERR" "x-x init"
 
-case_start "x-x plan list emits tab-separated rows sorted by prefix descending (default)"
+case_start "x-x plans list emits tab-separated rows sorted by prefix descending (default)"
 PROJ_PL3="$(fresh_project)"
 seed_project_scaffold "$PROJ_PL3"
-write_plan "$PROJ_PL3/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-bravo.md"   "deprecated" "billing"
-write_plan "$PROJ_PL3/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-alpha.md"   "valid"      "auth, billing"
-write_plan "$PROJ_PL3/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 3)-charlie.md" "superseded" "auth"
+write_plan "$PROJ_PL3/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-bravo.md"   "deprecated" "billing"
+write_plan "$PROJ_PL3/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-alpha.md"   "valid"      "auth, billing"
+write_plan "$PROJ_PL3/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 3)-charlie.md" "superseded" "auth"
 cd "$PROJ_PL3"
-run_capture "" plan list
+run_capture "" plans list
 assert_eq "exit 0" "$RUN_RC" "0"
 expected="$(printf '%s-charlie\tsuperseded\tauth\n%s-bravo\tdeprecated\tbilling\n%s-alpha\tvalid\tauth,billing' \
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 3)" \
@@ -1600,9 +1600,9 @@ expected="$(printf '%s-charlie\tsuperseded\tauth\n%s-bravo\tdeprecated\tbilling\
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)")"
 assert_eq "desc tab-separated rows" "$RUN_OUT" "$expected"
 
-case_start "x-x plan list --order=asc reverses to prefix-ascending"
+case_start "x-x plans list --order=asc reverses to prefix-ascending"
 cd "$PROJ_PL3"
-run_capture "" plan list --order=asc
+run_capture "" plans list --order=asc
 assert_eq "exit 0" "$RUN_RC" "0"
 expected="$(printf '%s-alpha\tvalid\tauth,billing\n%s-bravo\tdeprecated\tbilling\n%s-charlie\tsuperseded\tauth' \
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)" \
@@ -1610,9 +1610,9 @@ expected="$(printf '%s-alpha\tvalid\tauth,billing\n%s-bravo\tdeprecated\tbilling
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 3)")"
 assert_eq "asc tab-separated rows" "$RUN_OUT" "$expected"
 
-case_start "x-x plan list --order=desc (explicit default)"
+case_start "x-x plans list --order=desc (explicit default)"
 cd "$PROJ_PL3"
-run_capture "" plan list --order=desc
+run_capture "" plans list --order=desc
 assert_eq "exit 0" "$RUN_RC" "0"
 expected="$(printf '%s-charlie\tsuperseded\tauth\n%s-bravo\tdeprecated\tbilling\n%s-alpha\tvalid\tauth,billing' \
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 3)" \
@@ -1620,75 +1620,75 @@ expected="$(printf '%s-charlie\tsuperseded\tauth\n%s-bravo\tdeprecated\tbilling\
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)")"
 assert_eq "explicit desc tab-separated rows" "$RUN_OUT" "$expected"
 
-case_start "x-x plan list --order=bogus rejected"
+case_start "x-x plans list --order=bogus rejected"
 cd "$PROJ_PL3"
-run_capture "" plan list --order=bogus
+run_capture "" plans list --order=bogus
 assert_eq "exit 2"           "$RUN_RC" "2"
 assert_contains "diagnostic" "$RUN_ERR" "--order must be"
 
-case_start "x-x plan list --status filters"
+case_start "x-x plans list --status filters"
 cd "$PROJ_PL3"
-run_capture "" plan list --status valid
+run_capture "" plans list --status valid
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_eq "status filter keeps only valid" "$RUN_OUT" \
   "$(printf '%s-alpha\tvalid\tauth,billing' "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)")"
 
-case_start "x-x plan list --status comma list (desc order)"
+case_start "x-x plans list --status comma list (desc order)"
 cd "$PROJ_PL3"
-run_capture "" plan list --status valid,superseded
+run_capture "" plans list --status valid,superseded
 assert_eq "exit 0" "$RUN_RC" "0"
 expected="$(printf '%s-charlie\tsuperseded\tauth\n%s-alpha\tvalid\tauth,billing' \
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 3)" \
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)")"
 assert_eq "comma status filter (desc)" "$RUN_OUT" "$expected"
 
-case_start "x-x plan list --system OR semantics (desc order)"
+case_start "x-x plans list --system OR semantics (desc order)"
 cd "$PROJ_PL3"
-run_capture "" plan list --system billing
+run_capture "" plans list --system billing
 assert_eq "exit 0" "$RUN_RC" "0"
 expected="$(printf '%s-bravo\tdeprecated\tbilling\n%s-alpha\tvalid\tauth,billing' \
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)" \
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)")"
 assert_eq "system filter matches any (desc)" "$RUN_OUT" "$expected"
 
-case_start "x-x plan list combined --status and --system"
+case_start "x-x plans list combined --status and --system"
 cd "$PROJ_PL3"
-run_capture "" plan list --status valid --system auth
+run_capture "" plans list --status valid --system auth
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_eq "status+system intersection" "$RUN_OUT" \
   "$(printf '%s-alpha\tvalid\tauth,billing' "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)")"
 
-case_start "x-x plan list warns on malformed frontmatter but keeps siblings"
+case_start "x-x plans list warns on malformed frontmatter but keeps siblings"
 PROJ_PL4="$(fresh_project)"
 seed_project_scaffold "$PROJ_PL4"
 broken_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-broken.md"
 ok_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-ok.md"
-echo "not a plan" > "$PROJ_PL4/${PLAN_DIR}/$broken_name"
-write_plan "$PROJ_PL4/${PLAN_DIR}" "$ok_name" "valid" "auth"
+echo "not a plan" > "$PROJ_PL4/${PLANS_DIR}/$broken_name"
+write_plan "$PROJ_PL4/${PLANS_DIR}" "$ok_name" "valid" "auth"
 cd "$PROJ_PL4"
-run_capture "" plan list
+run_capture "" plans list
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_eq "broken skipped, ok kept" "$RUN_OUT" \
   "$(printf '%s\tvalid\tauth' "${ok_name%.md}")"
 assert_contains "warning to stderr" "$RUN_ERR" "$broken_name"
 
-case_start "x-x plan list ignores non-matching filenames"
+case_start "x-x plans list ignores non-matching filenames"
 PROJ_PL5="$(fresh_project)"
 seed_project_scaffold "$PROJ_PL5"
 keep_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-keep.md"
-write_plan "$PROJ_PL5/${PLAN_DIR}" "$keep_name" "valid" "auth"
-echo "x" > "$PROJ_PL5/${PLAN_DIR}/README.md"
-echo "x" > "$PROJ_PL5/${PLAN_DIR}/123-short.md"
-echo "x" > "$PROJ_PL5/${PLAN_DIR}/$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-no-ext"
+write_plan "$PROJ_PL5/${PLANS_DIR}" "$keep_name" "valid" "auth"
+echo "x" > "$PROJ_PL5/${PLANS_DIR}/README.md"
+echo "x" > "$PROJ_PL5/${PLANS_DIR}/123-short.md"
+echo "x" > "$PROJ_PL5/${PLANS_DIR}/$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-no-ext"
 cd "$PROJ_PL5"
-run_capture "" plan list
+run_capture "" plans list
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_eq "only keep matched" "$RUN_OUT" "$(printf '%s\tvalid\tauth' "${keep_name%.md}")"
 [ -z "$RUN_ERR" ] && ok "no spurious warnings" || fail "no spurious warnings" "got: $RUN_ERR"
 
-case_start "x-x plan list rejects positional args"
+case_start "x-x plans list rejects positional args"
 cd "$(fresh_project)"
-run_capture "" plan list foo
+run_capture "" plans list foo
 assert_eq "exit 2" "$RUN_RC" "2"
 assert_contains "diagnostic" "$RUN_ERR" "takes no positional"
 
@@ -1701,65 +1701,65 @@ assert_contains "diagnostic" "$RUN_ERR" "takes no positional"
 # simply matches zero rows). These cases pin every observable corner
 # of the id contract beyond the basic OR semantics covered above.
 
-case_start "x-x plan list --system <kebab-id> matches multi-word system id"
+case_start "x-x plans list --system <kebab-id> matches multi-word system id"
 PROJ_PSI1="$(fresh_project)"
 seed_project_scaffold "$PROJ_PSI1"
-write_plan "$PROJ_PSI1/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-alpha.md" "valid" "checkout-service"
-write_plan "$PROJ_PSI1/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-bravo.md" "valid" "payment-audit-log"
+write_plan "$PROJ_PSI1/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-alpha.md" "valid" "checkout-service"
+write_plan "$PROJ_PSI1/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-bravo.md" "valid" "payment-audit-log"
 cd "$PROJ_PSI1"
-run_capture "" plan list --system checkout-service
+run_capture "" plans list --system checkout-service
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_eq "only checkout-service plan returned" "$RUN_OUT" \
   "$(printf '%s-alpha\tvalid\tcheckout-service' "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)")"
 
-case_start "x-x plan list --system <unknown-id> returns zero rows silently"
+case_start "x-x plans list --system <unknown-id> returns zero rows silently"
 PROJ_PSI2="$(fresh_project)"
 seed_project_scaffold "$PROJ_PSI2"
-write_plan "$PROJ_PSI2/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-alpha.md" "valid" "checkout-service"
+write_plan "$PROJ_PSI2/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-alpha.md" "valid" "checkout-service"
 cd "$PROJ_PSI2"
-run_capture "" plan list --system never-declared
+run_capture "" plans list --system never-declared
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_eq "no rows for unknown id" "$RUN_OUT" ""
 [ -z "$RUN_ERR" ] && ok "no stderr noise for unknown id" || fail "no stderr noise for unknown id" "got: $RUN_ERR"
 
-case_start "x-x plan list --system <id> doesn't match display name even when shaped similarly"
+case_start "x-x plans list --system <id> doesn't match display name even when shaped similarly"
 # Plan frontmatter id is `checkout-service`; passing the display name
 # `Checkout Service` (with space + capitals) must not match. Pins that
 # the filter is a literal id string-compare, not a slugify-and-compare.
 PROJ_PSI_DN="$(fresh_project)"
 seed_project_scaffold "$PROJ_PSI_DN"
-write_plan "$PROJ_PSI_DN/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-alpha.md" "valid" "checkout-service"
+write_plan "$PROJ_PSI_DN/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-alpha.md" "valid" "checkout-service"
 cd "$PROJ_PSI_DN"
-run_capture "" plan list --system "Checkout Service"
+run_capture "" plans list --system "Checkout Service"
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_eq "display name doesn't match kebab id" "$RUN_OUT" ""
 
-case_start "x-x plan list --system <id1>,<id2> OR semantics via comma list"
+case_start "x-x plans list --system <id1>,<id2> OR semantics via comma list"
 PROJ_PSI3="$(fresh_project)"
 seed_project_scaffold "$PROJ_PSI3"
-write_plan "$PROJ_PSI3/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-a.md" "valid" "checkout-service"
-write_plan "$PROJ_PSI3/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-b.md" "valid" "payment-audit-log"
-write_plan "$PROJ_PSI3/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 3)-c.md" "valid" "other-system"
+write_plan "$PROJ_PSI3/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-a.md" "valid" "checkout-service"
+write_plan "$PROJ_PSI3/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-b.md" "valid" "payment-audit-log"
+write_plan "$PROJ_PSI3/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 3)-c.md" "valid" "other-system"
 cd "$PROJ_PSI3"
-run_capture "" plan list --system checkout-service,payment-audit-log --order=asc
+run_capture "" plans list --system checkout-service,payment-audit-log --order=asc
 assert_eq "exit 0" "$RUN_RC" "0"
 expected="$(printf '%s-a\tvalid\tcheckout-service\n%s-b\tvalid\tpayment-audit-log' \
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)" \
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)")"
 assert_eq "comma-list OR semantics" "$RUN_OUT" "$expected"
 
-case_start "x-x plan list --system <id1> --system <id2> repeated flag = comma list"
+case_start "x-x plans list --system <id1> --system <id2> repeated flag = comma list"
 cd "$PROJ_PSI3"
-run_capture "" plan list --system checkout-service --system payment-audit-log --order=asc
+run_capture "" plans list --system checkout-service --system payment-audit-log --order=asc
 assert_eq "exit 0" "$RUN_RC" "0"
 expected="$(printf '%s-a\tvalid\tcheckout-service\n%s-b\tvalid\tpayment-audit-log' \
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)" \
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)")"
 assert_eq "repeated-flag OR matches comma form" "$RUN_OUT" "$expected"
 
-case_start "x-x plan list --system mixed forms (one comma + one repeat) still OR"
+case_start "x-x plans list --system mixed forms (one comma + one repeat) still OR"
 cd "$PROJ_PSI3"
-run_capture "" plan list --system checkout-service,other-system --system payment-audit-log --order=asc
+run_capture "" plans list --system checkout-service,other-system --system payment-audit-log --order=asc
 assert_eq "exit 0" "$RUN_RC" "0"
 expected="$(printf '%s-a\tvalid\tcheckout-service\n%s-b\tvalid\tpayment-audit-log\n%s-c\tvalid\tother-system' \
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)" \
@@ -1767,40 +1767,40 @@ expected="$(printf '%s-a\tvalid\tcheckout-service\n%s-b\tvalid\tpayment-audit-lo
   "$(prefix "$DEFAULT_PREFIX_WIDTH" 3)")"
 assert_eq "mixed comma+repeat OR" "$RUN_OUT" "$expected"
 
-case_start "x-x plan list --system <id> matches any element of multi-id systems array"
+case_start "x-x plans list --system <id> matches any element of multi-id systems array"
 PROJ_PSI4="$(fresh_project)"
 seed_project_scaffold "$PROJ_PSI4"
-write_plan "$PROJ_PSI4/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-a.md" "valid" "checkout-service, payment-audit-log"
-write_plan "$PROJ_PSI4/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-b.md" "valid" "other-system"
+write_plan "$PROJ_PSI4/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-a.md" "valid" "checkout-service, payment-audit-log"
+write_plan "$PROJ_PSI4/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-b.md" "valid" "other-system"
 cd "$PROJ_PSI4"
-run_capture "" plan list --system payment-audit-log
+run_capture "" plans list --system payment-audit-log
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_eq "single-id flag matches multi-id row" "$RUN_OUT" \
   "$(printf '%s-a\tvalid\tcheckout-service,payment-audit-log' "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)")"
 
-case_start "x-x plan list combined --status valid --system <id> intersects both"
+case_start "x-x plans list combined --status valid --system <id> intersects both"
 PROJ_PSI5="$(fresh_project)"
 seed_project_scaffold "$PROJ_PSI5"
-write_plan "$PROJ_PSI5/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-a.md" "valid"      "checkout-service"
-write_plan "$PROJ_PSI5/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-b.md" "superseded" "checkout-service"
-write_plan "$PROJ_PSI5/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 3)-c.md" "valid"      "other-system"
+write_plan "$PROJ_PSI5/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-a.md" "valid"      "checkout-service"
+write_plan "$PROJ_PSI5/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-b.md" "superseded" "checkout-service"
+write_plan "$PROJ_PSI5/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 3)-c.md" "valid"      "other-system"
 cd "$PROJ_PSI5"
-run_capture "" plan list --status valid --system checkout-service
+run_capture "" plans list --status valid --system checkout-service
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_eq "status+id intersection (single match)" "$RUN_OUT" \
   "$(printf '%s-a\tvalid\tcheckout-service' "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)")"
 
-case_start "x-x plan list --system <id> + --overflow-keywords narrows after id filter"
+case_start "x-x plans list --system <id> + --overflow-keywords narrows after id filter"
 PROJ_PSI6="$(fresh_project)"
 seed_project_scaffold "$PROJ_PSI6"
 # Seed enough payment-system plans to cross threshold so overflow engages
 # AFTER the --system filter has been applied. Body keyword `retry` then
 # narrows further to the one plan whose body mentions retry.
-over=$((PLAN_LIST_OVERFLOW_THRESHOLD + 5))
+over=$((PLANS_LIST_OVERFLOW_THRESHOLD + 5))
 for ((i=1; i<=over; i++)); do
   pad="$(printf '%03d' "$i")"
   name="$(prefix "$DEFAULT_PREFIX_WIDTH" "$i")-plan${pad}.md"
-  cat > "$PROJ_PSI6/${PLAN_DIR}/$name" <<EOF
+  cat > "$PROJ_PSI6/${PLANS_DIR}/$name" <<EOF
 ---
 status: valid
 systems: [payment-service]
@@ -1808,7 +1808,7 @@ systems: [payment-service]
 ${i} generic body
 EOF
 done
-cat > "$PROJ_PSI6/${PLAN_DIR}/$(prefix "$DEFAULT_PREFIX_WIDTH" 7)-plan007.md" <<EOF
+cat > "$PROJ_PSI6/${PLANS_DIR}/$(prefix "$DEFAULT_PREFIX_WIDTH" 7)-plan007.md" <<EOF
 ---
 status: valid
 systems: [payment-service]
@@ -1817,7 +1817,7 @@ this one is about exponential retry backoff
 EOF
 # An unrelated plan on a different system; same keyword in body — must be
 # gated out by --system before the overflow narrow sees it.
-cat > "$PROJ_PSI6/${PLAN_DIR}/$(prefix "$DEFAULT_PREFIX_WIDTH" 99)-unrelated.md" <<EOF
+cat > "$PROJ_PSI6/${PLANS_DIR}/$(prefix "$DEFAULT_PREFIX_WIDTH" 99)-unrelated.md" <<EOF
 ---
 status: valid
 systems: [unrelated-system]
@@ -1825,22 +1825,22 @@ systems: [unrelated-system]
 also mentions retry but on a different system
 EOF
 cd "$PROJ_PSI6"
-run_capture "" plan list --system payment-service --overflow-keywords retry
+run_capture "" plans list --system payment-service --overflow-keywords retry
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_contains "plan007 in match"      "$RUN_OUT" "plan007"
 assert_not_contains "unrelated gated out before narrow" "$RUN_OUT" "unrelated"
 n="$(printf '%s\n' "$RUN_OUT" | grep -c '^.')"
 assert_eq "exactly one match (id ∩ keyword)" "$n" "1"
 
-case_start "x-x plan list --system <id> below threshold makes --overflow-keywords a no-op"
+case_start "x-x plans list --system <id> below threshold makes --overflow-keywords a no-op"
 PROJ_PSI7="$(fresh_project)"
 seed_project_scaffold "$PROJ_PSI7"
-write_plan "$PROJ_PSI7/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-a.md" "valid" "checkout-service"
-write_plan "$PROJ_PSI7/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-b.md" "valid" "checkout-service"
+write_plan "$PROJ_PSI7/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-a.md" "valid" "checkout-service"
+write_plan "$PROJ_PSI7/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-b.md" "valid" "checkout-service"
 cd "$PROJ_PSI7"
 # Two plans pass --system; the count (2) is well under the threshold, so
 # --overflow-keywords engages no matter what we pass.
-run_capture "" plan list --system checkout-service --overflow-keywords zzz-no-match
+run_capture "" plans list --system checkout-service --overflow-keywords zzz-no-match
 assert_eq "exit 0" "$RUN_RC" "0"
 n="$(printf '%s\n' "$RUN_OUT" | grep -c '^.')"
 assert_eq "both rows pass through (threshold not exceeded)" "$n" "2"
@@ -1860,30 +1860,30 @@ assert_eq "both rows pass through (threshold not exceeded)" "$n" "2"
 #
 # These cases pin every observable corner. Threshold is defined in
 # constants.go as planListOverflowThreshold; the e2e mirror is
-# ${PLAN_LIST_OVERFLOW_THRESHOLD}.
+# ${PLANS_LIST_OVERFLOW_THRESHOLD}.
 
-case_start "x-x plan list with exactly threshold rows ignores --overflow-keywords"
+case_start "x-x plans list with exactly threshold rows ignores --overflow-keywords"
 PROJ_OK1="$(fresh_project)"
 seed_project_scaffold "$PROJ_OK1"
-seed_many_plans "$PROJ_OK1/${PLAN_DIR}" "${PLAN_LIST_OVERFLOW_THRESHOLD}" "payment retry"
+seed_many_plans "$PROJ_OK1/${PLANS_DIR}" "${PLANS_LIST_OVERFLOW_THRESHOLD}" "payment retry"
 cd "$PROJ_OK1"
-run_capture "" plan list --overflow-keywords zzz-no-match
+run_capture "" plans list --overflow-keywords zzz-no-match
 assert_eq "exit 0" "$RUN_RC" "0"
 ok_count="$(printf '%s\n' "$RUN_OUT" | grep -c '^.')"
-assert_eq "all ${PLAN_LIST_OVERFLOW_THRESHOLD} rows returned (no narrow at threshold)" \
-  "$ok_count" "${PLAN_LIST_OVERFLOW_THRESHOLD}"
+assert_eq "all ${PLANS_LIST_OVERFLOW_THRESHOLD} rows returned (no narrow at threshold)" \
+  "$ok_count" "${PLANS_LIST_OVERFLOW_THRESHOLD}"
 
-case_start "x-x plan list with threshold+1 rows + matching keyword narrows to matches"
+case_start "x-x plans list with threshold+1 rows + matching keyword narrows to matches"
 PROJ_OK2="$(fresh_project)"
 seed_project_scaffold "$PROJ_OK2"
-over=$((PLAN_LIST_OVERFLOW_THRESHOLD + 1))
-seed_many_plans "$PROJ_OK2/${PLAN_DIR}" "$over" "generic body"
+over=$((PLANS_LIST_OVERFLOW_THRESHOLD + 1))
+seed_many_plans "$PROJ_OK2/${PLANS_DIR}" "$over" "generic body"
 # Overwrite three specific plans' bodies to contain the keyword.
-write_plan_body "$PROJ_OK2/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 5)-plan005.md"  "the Payment Service handles charges"
-write_plan_body "$PROJ_OK2/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 10)-plan010.md" "PAYMENT pipeline upgrade"
-write_plan_body "$PROJ_OK2/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 15)-plan015.md" "deprecated payment flow"
+write_plan_body "$PROJ_OK2/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 5)-plan005.md"  "the Payment Service handles charges"
+write_plan_body "$PROJ_OK2/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 10)-plan010.md" "PAYMENT pipeline upgrade"
+write_plan_body "$PROJ_OK2/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 15)-plan015.md" "deprecated payment flow"
 cd "$PROJ_OK2"
-run_capture "" plan list --overflow-keywords payment
+run_capture "" plans list --overflow-keywords payment
 assert_eq "exit 0" "$RUN_RC" "0"
 match_count="$(printf '%s\n' "$RUN_OUT" | grep -c '^.')"
 assert_eq "3 matches returned" "$match_count" "3"
@@ -1891,41 +1891,41 @@ assert_contains "plan005 in matches"  "$RUN_OUT" "plan005"
 assert_contains "plan010 in matches"  "$RUN_OUT" "plan010"
 assert_contains "plan015 in matches"  "$RUN_OUT" "plan015"
 
-case_start "x-x plan list overflow + no-match falls back to top-threshold rows"
+case_start "x-x plans list overflow + no-match falls back to top-threshold rows"
 PROJ_OK3="$(fresh_project)"
 seed_project_scaffold "$PROJ_OK3"
-over=$((PLAN_LIST_OVERFLOW_THRESHOLD + 5))
-seed_many_plans "$PROJ_OK3/${PLAN_DIR}" "$over" "non-matching body"
+over=$((PLANS_LIST_OVERFLOW_THRESHOLD + 5))
+seed_many_plans "$PROJ_OK3/${PLANS_DIR}" "$over" "non-matching body"
 cd "$PROJ_OK3"
-run_capture "" plan list --overflow-keywords zzz-no-match
+run_capture "" plans list --overflow-keywords zzz-no-match
 assert_eq "exit 0" "$RUN_RC" "0"
 fb_count="$(printf '%s\n' "$RUN_OUT" | grep -c '^.')"
-assert_eq "fallback returns exactly threshold rows" "$fb_count" "${PLAN_LIST_OVERFLOW_THRESHOLD}"
+assert_eq "fallback returns exactly threshold rows" "$fb_count" "${PLANS_LIST_OVERFLOW_THRESHOLD}"
 # Default sort is desc → fallback keeps the highest prefixes (newest).
 assert_contains "newest plan in fallback"  "$RUN_OUT" "$(prefix "$DEFAULT_PREFIX_WIDTH" "$over")-plan"
 assert_not_contains "oldest plan dropped"  "$RUN_OUT" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-plan001"
 
-case_start "x-x plan list overflow without --overflow-keywords returns all rows (no truncation)"
+case_start "x-x plans list overflow without --overflow-keywords returns all rows (no truncation)"
 PROJ_OK4="$(fresh_project)"
 seed_project_scaffold "$PROJ_OK4"
-over=$((PLAN_LIST_OVERFLOW_THRESHOLD + 3))
-seed_many_plans "$PROJ_OK4/${PLAN_DIR}" "$over" "anything"
+over=$((PLANS_LIST_OVERFLOW_THRESHOLD + 3))
+seed_many_plans "$PROJ_OK4/${PLANS_DIR}" "$over" "anything"
 cd "$PROJ_OK4"
-run_capture "" plan list
+run_capture "" plans list
 assert_eq "exit 0" "$RUN_RC" "0"
 all_count="$(printf '%s\n' "$RUN_OUT" | grep -c '^.')"
 assert_eq "all rows returned (caller opted out of narrowing)" "$all_count" "$over"
 
-case_start "x-x plan list overflow + multi-keyword OR semantics"
+case_start "x-x plans list overflow + multi-keyword OR semantics"
 PROJ_OK5="$(fresh_project)"
 seed_project_scaffold "$PROJ_OK5"
-over=$((PLAN_LIST_OVERFLOW_THRESHOLD + 1))
-seed_many_plans "$PROJ_OK5/${PLAN_DIR}" "$over" "irrelevant"
-write_plan_body "$PROJ_OK5/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 3)-plan003.md" "talks about checkout"
-write_plan_body "$PROJ_OK5/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 7)-plan007.md" "discusses inventory"
-write_plan_body "$PROJ_OK5/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 9)-plan009.md" "covers shipping logistics"
+over=$((PLANS_LIST_OVERFLOW_THRESHOLD + 1))
+seed_many_plans "$PROJ_OK5/${PLANS_DIR}" "$over" "irrelevant"
+write_plan_body "$PROJ_OK5/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 3)-plan003.md" "talks about checkout"
+write_plan_body "$PROJ_OK5/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 7)-plan007.md" "discusses inventory"
+write_plan_body "$PROJ_OK5/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 9)-plan009.md" "covers shipping logistics"
 cd "$PROJ_OK5"
-run_capture "" plan list --overflow-keywords checkout,inventory
+run_capture "" plans list --overflow-keywords checkout,inventory
 assert_eq "exit 0" "$RUN_RC" "0"
 n="$(printf '%s\n' "$RUN_OUT" | grep -c '^.')"
 assert_eq "OR matches both terms" "$n" "2"
@@ -1933,19 +1933,19 @@ assert_contains "plan003 (checkout)"  "$RUN_OUT" "plan003"
 assert_contains "plan007 (inventory)" "$RUN_OUT" "plan007"
 assert_not_contains "plan009 not matched" "$RUN_OUT" "plan009"
 
-case_start "x-x plan list overflow + substring match is literal (regex chars not special)"
+case_start "x-x plans list overflow + substring match is literal (regex chars not special)"
 PROJ_OK6="$(fresh_project)"
 seed_project_scaffold "$PROJ_OK6"
-over=$((PLAN_LIST_OVERFLOW_THRESHOLD + 1))
-seed_many_plans "$PROJ_OK6/${PLAN_DIR}" "$over" "generic"
-write_plan_body "$PROJ_OK6/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 4)-plan004.md" "auth-v1 service"
-write_plan_body "$PROJ_OK6/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 8)-plan008.md" "auth-v2 service"
-write_plan_body "$PROJ_OK6/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 12)-plan012.md" "auth0 integration"
+over=$((PLANS_LIST_OVERFLOW_THRESHOLD + 1))
+seed_many_plans "$PROJ_OK6/${PLANS_DIR}" "$over" "generic"
+write_plan_body "$PROJ_OK6/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 4)-plan004.md" "auth-v1 service"
+write_plan_body "$PROJ_OK6/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 8)-plan008.md" "auth-v2 service"
+write_plan_body "$PROJ_OK6/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 12)-plan012.md" "auth0 integration"
 cd "$PROJ_OK6"
 # Plain substring 'auth-v' matches plan004 + plan008 (both contain that
 # hyphen) but NOT plan012 (no hyphen). Same behavior with literal regex
 # special chars: '.' is a dot, not "any char".
-run_capture "" plan list --overflow-keywords 'auth-v'
+run_capture "" plans list --overflow-keywords 'auth-v'
 assert_eq "exit 0" "$RUN_RC" "0"
 n="$(printf '%s\n' "$RUN_OUT" | grep -c '^.')"
 assert_eq "substring matches exactly the two -v rows" "$n" "2"
@@ -1954,160 +1954,160 @@ assert_contains "plan008"  "$RUN_OUT" "plan008"
 assert_not_contains "plan012 not matched" "$RUN_OUT" "plan012"
 # Confirm regex special chars are literal: a dot in the body must not be
 # matched by anything other than a literal dot in the keyword.
-write_plan_body "$PROJ_OK6/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 17)-plan017.md" "v1.2.3 release"
-run_capture "" plan list --overflow-keywords 'v1.2'
+write_plan_body "$PROJ_OK6/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 17)-plan017.md" "v1.2.3 release"
+run_capture "" plans list --overflow-keywords 'v1.2'
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_contains "v1.2 (literal dot) hits plan017" "$RUN_OUT" "plan017"
 
-case_start "x-x plan list overflow + frontmatter terms do NOT match (body-only)"
+case_start "x-x plans list overflow + frontmatter terms do NOT match (body-only)"
 PROJ_OK7="$(fresh_project)"
 seed_project_scaffold "$PROJ_OK7"
-over=$((PLAN_LIST_OVERFLOW_THRESHOLD + 1))
-seed_many_plans "$PROJ_OK7/${PLAN_DIR}" "$over" "body content"
+over=$((PLANS_LIST_OVERFLOW_THRESHOLD + 1))
+seed_many_plans "$PROJ_OK7/${PLANS_DIR}" "$over" "body content"
 cd "$PROJ_OK7"
 # "auth" is in every plan's frontmatter `systems:` (the kebab id) but
 # never in body. Keyword search is body-only → no matches → top-threshold
 # fallback. The capitalized `Auth` keyword would not match either; the
 # real point is that frontmatter scalars (whatever their case) never feed
 # the body-only narrow.
-run_capture "" plan list --overflow-keywords Auth
+run_capture "" plans list --overflow-keywords Auth
 assert_eq "exit 0" "$RUN_RC" "0"
 n="$(printf '%s\n' "$RUN_OUT" | grep -c '^.')"
-assert_eq "frontmatter doesn't match → fallback to top-threshold" "$n" "${PLAN_LIST_OVERFLOW_THRESHOLD}"
+assert_eq "frontmatter doesn't match → fallback to top-threshold" "$n" "${PLANS_LIST_OVERFLOW_THRESHOLD}"
 
-case_start "x-x plan list overflow + --status filter narrows below threshold first"
+case_start "x-x plans list overflow + --status filter narrows below threshold first"
 PROJ_OK8="$(fresh_project)"
 seed_project_scaffold "$PROJ_OK8"
 # Seed 25 plans, mark 3 as "deprecated" — --status filter will reduce
 # the post-status set to 3, far below threshold, so overflow-keywords
 # never engages.
-seed_many_plans "$PROJ_OK8/${PLAN_DIR}" 25 "body"
+seed_many_plans "$PROJ_OK8/${PLANS_DIR}" 25 "body"
 # Flip three plans to deprecated.
 for n in 5 10 15; do
   pad="$(printf '%03d' "$n")"
   name="$(prefix "$DEFAULT_PREFIX_WIDTH" "$n")-plan${pad}.md"
-  sed -i.bak -e 's/^status: valid$/status: deprecated/' "$PROJ_OK8/${PLAN_DIR}/$name"
-  rm -f "$PROJ_OK8/${PLAN_DIR}/$name.bak"
+  sed -i.bak -e 's/^status: valid$/status: deprecated/' "$PROJ_OK8/${PLANS_DIR}/$name"
+  rm -f "$PROJ_OK8/${PLANS_DIR}/$name.bak"
 done
 cd "$PROJ_OK8"
-run_capture "" plan list --status deprecated --overflow-keywords zzz-no-match
+run_capture "" plans list --status deprecated --overflow-keywords zzz-no-match
 assert_eq "exit 0" "$RUN_RC" "0"
 n="$(printf '%s\n' "$RUN_OUT" | grep -c '^.')"
 assert_eq "3 deprecated rows pass through ungrep" "$n" "3"
 
-case_start "x-x plan list --order=asc preserved through overflow narrow"
+case_start "x-x plans list --order=asc preserved through overflow narrow"
 PROJ_OK9="$(fresh_project)"
 seed_project_scaffold "$PROJ_OK9"
-over=$((PLAN_LIST_OVERFLOW_THRESHOLD + 1))
-seed_many_plans "$PROJ_OK9/${PLAN_DIR}" "$over" "irrelevant"
+over=$((PLANS_LIST_OVERFLOW_THRESHOLD + 1))
+seed_many_plans "$PROJ_OK9/${PLANS_DIR}" "$over" "irrelevant"
 # Seed two matches, far apart in the sort.
-write_plan_body "$PROJ_OK9/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-plan002.md"   "payment thing"
-write_plan_body "$PROJ_OK9/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 18)-plan018.md"  "payment thing"
+write_plan_body "$PROJ_OK9/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 2)-plan002.md"   "payment thing"
+write_plan_body "$PROJ_OK9/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 18)-plan018.md"  "payment thing"
 cd "$PROJ_OK9"
-run_capture "" plan list --order=asc --overflow-keywords payment
+run_capture "" plans list --order=asc --overflow-keywords payment
 assert_eq "exit 0" "$RUN_RC" "0"
 first="$(printf '%s\n' "$RUN_OUT" | head -n1 | awk -F'\t' '{print $1}')"
 last="$(printf '%s\n' "$RUN_OUT" | tail -n1 | awk -F'\t' '{print $1}')"
 assert_contains "asc: plan002 first"  "$first" "plan002"
 assert_contains "asc: plan018 last"   "$last" "plan018"
 
-case_start "x-x plan list overflow + fallback respects --order=asc"
+case_start "x-x plans list overflow + fallback respects --order=asc"
 PROJ_OK10="$(fresh_project)"
 seed_project_scaffold "$PROJ_OK10"
-over=$((PLAN_LIST_OVERFLOW_THRESHOLD + 3))
-seed_many_plans "$PROJ_OK10/${PLAN_DIR}" "$over" "irrelevant"
+over=$((PLANS_LIST_OVERFLOW_THRESHOLD + 3))
+seed_many_plans "$PROJ_OK10/${PLANS_DIR}" "$over" "irrelevant"
 cd "$PROJ_OK10"
-run_capture "" plan list --order=asc --overflow-keywords zzz-no-match
+run_capture "" plans list --order=asc --overflow-keywords zzz-no-match
 assert_eq "exit 0" "$RUN_RC" "0"
 # asc fallback returns rows[0..threshold) of asc-sorted list = oldest 20.
 first="$(printf '%s\n' "$RUN_OUT" | head -n1 | awk -F'\t' '{print $1}')"
 assert_contains "asc fallback starts at plan001"  "$first" "plan001"
 assert_not_contains "asc fallback drops newest"   "$RUN_OUT" "$(prefix "$DEFAULT_PREFIX_WIDTH" "$over")-plan"
 
-case_start "x-x plan list overflow + match count above threshold returned in full"
+case_start "x-x plans list overflow + match count above threshold returned in full"
 PROJ_OK12="$(fresh_project)"
 seed_project_scaffold "$PROJ_OK12"
 # 25 plans, ALL match the keyword. The narrow returns 25 (matches are
 # not re-truncated — the threshold gates entry to the narrow, not the
 # output size).
-seed_many_plans "$PROJ_OK12/${PLAN_DIR}" 25 "matches every plan"
+seed_many_plans "$PROJ_OK12/${PLANS_DIR}" 25 "matches every plan"
 cd "$PROJ_OK12"
-run_capture "" plan list --overflow-keywords matches
+run_capture "" plans list --overflow-keywords matches
 assert_eq "exit 0" "$RUN_RC" "0"
 n="$(printf '%s\n' "$RUN_OUT" | grep -c '^.')"
 assert_eq "all-match returns all 25" "$n" "25"
 
 # ---------- plan lint ----------
 
-case_start "x-x plan lint outside an x-x project"
+case_start "x-x plans lint outside an x-x project"
 PROJ_LN0="$(fresh_project)"
 cd "$PROJ_LN0"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 2 outside project" "$RUN_RC" "2"
 assert_contains "diagnostic" "$RUN_ERR" "not an x-x project"
 assert_contains "hint"       "$RUN_ERR" "x-x init"
 
-case_start "x-x plan lint happy path"
+case_start "x-x plans lint happy path"
 PROJ_LN1="$(fresh_project)"
 seed_project_scaffold "$PROJ_LN1"
-write_registry "$PROJ_LN1/${PLAN_DIR}" "Auth Service"
+write_registry "$PROJ_LN1/${PLANS_DIR}" "Auth Service"
 plan1_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md"
-write_full_plan "$PROJ_LN1/${PLAN_DIR}" "$plan1_name" "valid" "auth-service" "Auth Service"
+write_full_plan "$PROJ_LN1/${PLANS_DIR}" "$plan1_name" "valid" "auth-service" "Auth Service"
 cd "$PROJ_LN1"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 0"               "$RUN_RC" "0"
 assert_contains "ok line"        "$RUN_OUT" "$plan1_name: ok"
 assert_contains "summary 1 ok"   "$RUN_ERR" "1 ok, 0 failed"
 
-case_start "x-x plan lint flags bad filename"
+case_start "x-x plans lint flags bad filename"
 PROJ_LN2="$(fresh_project)"
 seed_project_scaffold "$PROJ_LN2"
-write_registry "$PROJ_LN2/${PLAN_DIR}" "Auth Service"
-write_full_plan "$PROJ_LN2/${PLAN_DIR}" "BAD-NAME.md" "valid" "auth-service" "Auth Service"
+write_registry "$PROJ_LN2/${PLANS_DIR}" "Auth Service"
+write_full_plan "$PROJ_LN2/${PLANS_DIR}" "BAD-NAME.md" "valid" "auth-service" "Auth Service"
 cd "$PROJ_LN2"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"               "$RUN_RC" "1"
 assert_contains "filename finding" "$RUN_OUT" "does not match <prefix>-<slug>.md"
 
-case_start "x-x plan lint flags missing frontmatter"
+case_start "x-x plans lint flags missing frontmatter"
 PROJ_LN3="$(fresh_project)"
 seed_project_scaffold "$PROJ_LN3"
-write_registry "$PROJ_LN3/${PLAN_DIR}" "Auth Service"
+write_registry "$PROJ_LN3/${PLANS_DIR}" "Auth Service"
 broken_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-broken.md"
-echo "just body, no frontmatter" > "$PROJ_LN3/${PLAN_DIR}/$broken_name"
+echo "just body, no frontmatter" > "$PROJ_LN3/${PLANS_DIR}/$broken_name"
 cd "$PROJ_LN3"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"                  "$RUN_RC" "1"
 assert_contains "frontmatter finding" "$RUN_OUT" "missing YAML frontmatter"
 
-case_start "x-x plan lint flags bad status"
+case_start "x-x plans lint flags bad status"
 PROJ_LN4="$(fresh_project)"
 seed_project_scaffold "$PROJ_LN4"
-write_registry "$PROJ_LN4/${PLAN_DIR}" "Auth Service"
-write_full_plan "$PROJ_LN4/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md" \
+write_registry "$PROJ_LN4/${PLANS_DIR}" "Auth Service"
+write_full_plan "$PROJ_LN4/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md" \
   "bogus" "auth-service" "Auth Service"
 cd "$PROJ_LN4"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"           "$RUN_RC" "1"
 assert_contains "bad status" "$RUN_OUT" "status \"bogus\" is not one of"
 
-case_start "x-x plan lint flags system not in registry"
+case_start "x-x plans lint flags system not in registry"
 PROJ_LN5="$(fresh_project)"
 seed_project_scaffold "$PROJ_LN5"
-write_registry "$PROJ_LN5/${PLAN_DIR}" "Auth Service"
-write_full_plan "$PROJ_LN5/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md" \
+write_registry "$PROJ_LN5/${PLANS_DIR}" "Auth Service"
+write_full_plan "$PROJ_LN5/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md" \
   "valid" "ghost-service" "Ghost Service"
 cd "$PROJ_LN5"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"                "$RUN_RC" "1"
 assert_contains "system finding"  "$RUN_OUT" "declared system \"ghost-service\" is not in"
 
-case_start "x-x plan lint flags dangling supersedes"
+case_start "x-x plans lint flags dangling supersedes"
 PROJ_LN6="$(fresh_project)"
 seed_project_scaffold "$PROJ_LN6"
-write_registry "$PROJ_LN6/${PLAN_DIR}" "Auth Service"
+write_registry "$PROJ_LN6/${PLANS_DIR}" "Auth Service"
 super_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md"
-cat > "$PROJ_LN6/${PLAN_DIR}/$super_name" <<EOF
+cat > "$PROJ_LN6/${PLANS_DIR}/$super_name" <<EOF
 ---
 title: foo
 status: valid
@@ -2126,35 +2126,35 @@ g
 - [ ] The Auth Service shall do.
 EOF
 cd "$PROJ_LN6"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"                  "$RUN_RC" "1"
 assert_contains "supersedes finding" "$RUN_OUT" "supersedes \"00099-nope\""
 
-case_start "x-x plan lint flags EARS-systems mismatch"
+case_start "x-x plans lint flags EARS-systems mismatch"
 PROJ_LN7="$(fresh_project)"
 seed_project_scaffold "$PROJ_LN7"
-write_registry "$PROJ_LN7/${PLAN_DIR}" "Auth Service,Billing Service"
+write_registry "$PROJ_LN7/${PLANS_DIR}" "Auth Service,Billing Service"
 # Declares Auth but task names Billing — both diff directions fire.
-write_full_plan "$PROJ_LN7/${PLAN_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md" \
+write_full_plan "$PROJ_LN7/${PLANS_DIR}" "$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md" \
   "valid" "auth-service" "Billing Service"
 cd "$PROJ_LN7"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"                       "$RUN_RC" "1"
 assert_contains "EARS-not-in-systems"    "$RUN_OUT" "EARS tasks name systems not in \`systems:\`"
 assert_contains "systems-not-in-tasks"   "$RUN_OUT" "\`systems:\` declares systems not used in any EARS task"
 
-case_start "x-x plan lint rejects positional arg"
+case_start "x-x plans lint rejects positional arg"
 cd "$(fresh_project)"
-run_capture "" plan lint somearg
+run_capture "" plans lint somearg
 assert_eq "exit 2"           "$RUN_RC" "2"
 assert_contains "diagnostic" "$RUN_ERR" "takes no arguments"
 
-case_start "x-x plan lint flags missing title"
+case_start "x-x plans lint flags missing title"
 PROJ_LN_TT="$(fresh_project)"
 seed_project_scaffold "$PROJ_LN_TT"
-write_registry "$PROJ_LN_TT/${PLAN_DIR}" "Auth Service"
+write_registry "$PROJ_LN_TT/${PLANS_DIR}" "Auth Service"
 no_title_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md"
-cat > "$PROJ_LN_TT/${PLAN_DIR}/$no_title_name" <<EOF
+cat > "$PROJ_LN_TT/${PLANS_DIR}/$no_title_name" <<EOF
 ---
 status: valid
 systems: [auth-service]
@@ -2171,16 +2171,16 @@ g
 - [ ] The Auth Service shall do.
 EOF
 cd "$PROJ_LN_TT"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"               "$RUN_RC" "1"
 assert_contains "title finding"  "$RUN_OUT" "missing required \`title:\`"
 
-case_start "x-x plan lint flags missing created"
+case_start "x-x plans lint flags missing created"
 PROJ_LN_CR="$(fresh_project)"
 seed_project_scaffold "$PROJ_LN_CR"
-write_registry "$PROJ_LN_CR/${PLAN_DIR}" "Auth Service"
+write_registry "$PROJ_LN_CR/${PLANS_DIR}" "Auth Service"
 no_created_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md"
-cat > "$PROJ_LN_CR/${PLAN_DIR}/$no_created_name" <<EOF
+cat > "$PROJ_LN_CR/${PLANS_DIR}/$no_created_name" <<EOF
 ---
 title: foo
 status: valid
@@ -2197,16 +2197,16 @@ g
 - [ ] The Auth Service shall do.
 EOF
 cd "$PROJ_LN_CR"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"                 "$RUN_RC" "1"
 assert_contains "created finding"  "$RUN_OUT" "missing required \`created:\`"
 
-case_start "x-x plan lint flags malformed created"
+case_start "x-x plans lint flags malformed created"
 PROJ_LN_CD="$(fresh_project)"
 seed_project_scaffold "$PROJ_LN_CD"
-write_registry "$PROJ_LN_CD/${PLAN_DIR}" "Auth Service"
+write_registry "$PROJ_LN_CD/${PLANS_DIR}" "Auth Service"
 bad_created_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md"
-cat > "$PROJ_LN_CD/${PLAN_DIR}/$bad_created_name" <<EOF
+cat > "$PROJ_LN_CD/${PLANS_DIR}/$bad_created_name" <<EOF
 ---
 title: foo
 status: valid
@@ -2224,16 +2224,16 @@ g
 - [ ] The Auth Service shall do.
 EOF
 cd "$PROJ_LN_CD"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"                  "$RUN_RC" "1"
 assert_contains "shape finding"     "$RUN_OUT" "is not an ISO 8601 UTC timestamp"
 
-case_start "x-x plan lint flags date-only created (regression for YYYY-MM-DD)"
+case_start "x-x plans lint flags date-only created (regression for YYYY-MM-DD)"
 PROJ_LN_DO="$(fresh_project)"
 seed_project_scaffold "$PROJ_LN_DO"
-write_registry "$PROJ_LN_DO/${PLAN_DIR}" "Auth Service"
+write_registry "$PROJ_LN_DO/${PLANS_DIR}" "Auth Service"
 date_only_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md"
-cat > "$PROJ_LN_DO/${PLAN_DIR}/$date_only_name" <<EOF
+cat > "$PROJ_LN_DO/${PLANS_DIR}/$date_only_name" <<EOF
 ---
 title: foo
 status: valid
@@ -2251,16 +2251,16 @@ g
 - [ ] The Auth Service shall do.
 EOF
 cd "$PROJ_LN_DO"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"                       "$RUN_RC" "1"
 assert_contains "date-only rejected"     "$RUN_OUT" "\"2026-05-23\" is not an ISO 8601 UTC timestamp"
 
-case_start "x-x plan lint flags title-not-first"
+case_start "x-x plans lint flags title-not-first"
 PROJ_LN_TO="$(fresh_project)"
 seed_project_scaffold "$PROJ_LN_TO"
-write_registry "$PROJ_LN_TO/${PLAN_DIR}" "Auth Service"
+write_registry "$PROJ_LN_TO/${PLANS_DIR}" "Auth Service"
 order_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md"
-cat > "$PROJ_LN_TO/${PLAN_DIR}/$order_name" <<EOF
+cat > "$PROJ_LN_TO/${PLANS_DIR}/$order_name" <<EOF
 ---
 status: valid
 title: foo
@@ -2278,21 +2278,21 @@ g
 - [ ] The Auth Service shall do.
 EOF
 cd "$PROJ_LN_TO"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"               "$RUN_RC" "1"
 assert_contains "order finding"  "$RUN_OUT" "must be the first frontmatter field"
 
-case_start "x-x plan lint flags filename ≠ slugify(title)"
+case_start "x-x plans lint flags filename ≠ slugify(title)"
 PROJ_LN_FT="$(fresh_project)"
 seed_project_scaffold "$PROJ_LN_FT"
-write_registry "$PROJ_LN_FT/${PLAN_DIR}" "Auth Service"
+write_registry "$PROJ_LN_FT/${PLANS_DIR}" "Auth Service"
 mismatch_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md"
-write_full_plan "$PROJ_LN_FT/${PLAN_DIR}" "$mismatch_name" "valid" "auth-service" "Auth Service"
+write_full_plan "$PROJ_LN_FT/${PLANS_DIR}" "$mismatch_name" "valid" "auth-service" "Auth Service"
 # Overwrite title with one that slugifies to "something-else".
-sed -i.bak -e 's/^title: foo/title: Something Else/' "$PROJ_LN_FT/${PLAN_DIR}/$mismatch_name"
-rm -f "$PROJ_LN_FT/${PLAN_DIR}/$mismatch_name.bak"
+sed -i.bak -e 's/^title: foo/title: Something Else/' "$PROJ_LN_FT/${PLANS_DIR}/$mismatch_name"
+rm -f "$PROJ_LN_FT/${PLANS_DIR}/$mismatch_name.bak"
 cd "$PROJ_LN_FT"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"                  "$RUN_RC" "1"
 assert_contains "filename↔title"    "$RUN_OUT" "does not match slugify(title)"
 
@@ -2316,11 +2316,11 @@ assert_contains "filename↔title"    "$RUN_OUT" "does not match slugify(title)"
 case_start "lint passes: id frontmatter + display-name EARS subject resolves cleanly"
 PROJ_ID_HP="$(fresh_project)"
 seed_project_scaffold "$PROJ_ID_HP"
-write_registry "$PROJ_ID_HP/${PLAN_DIR}" "Auth Service"
+write_registry "$PROJ_ID_HP/${PLANS_DIR}" "Auth Service"
 hp_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md"
-write_full_plan "$PROJ_ID_HP/${PLAN_DIR}" "$hp_name" "valid" "auth-service" "Auth Service"
+write_full_plan "$PROJ_ID_HP/${PLANS_DIR}" "$hp_name" "valid" "auth-service" "Auth Service"
 cd "$PROJ_ID_HP"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 0"        "$RUN_RC" "0"
 assert_contains "ok line" "$RUN_OUT" "$hp_name: ok"
 
@@ -2330,9 +2330,9 @@ case_start "lint flags frontmatter that uses a display name where an id belongs"
 # it as "declared system not in registry".
 PROJ_ID_BAD="$(fresh_project)"
 seed_project_scaffold "$PROJ_ID_BAD"
-write_registry "$PROJ_ID_BAD/${PLAN_DIR}" "Auth Service"
+write_registry "$PROJ_ID_BAD/${PLANS_DIR}" "Auth Service"
 bad_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md"
-cat > "$PROJ_ID_BAD/${PLAN_DIR}/$bad_name" <<EOF
+cat > "$PROJ_ID_BAD/${PLANS_DIR}/$bad_name" <<EOF
 ---
 title: foo
 status: valid
@@ -2350,7 +2350,7 @@ g
 - [ ] The Auth Service shall do.
 EOF
 cd "$PROJ_ID_BAD"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"                    "$RUN_RC" "1"
 assert_contains "id-not-in-registry"  "$RUN_OUT" "declared system \"Auth Service\" is not in"
 
@@ -2360,9 +2360,9 @@ case_start "lint flags EARS subject whose display name isn't in registry"
 # the new name→id resolution surfaces "EARS subject is not in <registry>".
 PROJ_ID_ES="$(fresh_project)"
 seed_project_scaffold "$PROJ_ID_ES"
-write_registry "$PROJ_ID_ES/${PLAN_DIR}" "Auth Service"
+write_registry "$PROJ_ID_ES/${PLANS_DIR}" "Auth Service"
 es_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md"
-cat > "$PROJ_ID_ES/${PLAN_DIR}/$es_name" <<EOF
+cat > "$PROJ_ID_ES/${PLANS_DIR}/$es_name" <<EOF
 ---
 title: foo
 status: valid
@@ -2380,7 +2380,7 @@ g
 - [ ] The Phantom Service shall haunt.
 EOF
 cd "$PROJ_ID_ES"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"                       "$RUN_RC" "1"
 assert_contains "unknown-subject"        "$RUN_OUT" "EARS subject \"Phantom Service\" is not in"
 
@@ -2390,9 +2390,9 @@ case_start "lint passes on multi-system plan with all subjects resolved cleanly"
 # set on both sides; no findings should fire.
 PROJ_ID_MS="$(fresh_project)"
 seed_project_scaffold "$PROJ_ID_MS"
-write_registry "$PROJ_ID_MS/${PLAN_DIR}" "Auth Service,Billing Service"
+write_registry "$PROJ_ID_MS/${PLANS_DIR}" "Auth Service,Billing Service"
 ms_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md"
-cat > "$PROJ_ID_MS/${PLAN_DIR}/$ms_name" <<EOF
+cat > "$PROJ_ID_MS/${PLANS_DIR}/$ms_name" <<EOF
 ---
 title: foo
 status: valid
@@ -2411,7 +2411,7 @@ g
 - [ ] The Billing Service shall invoice.
 EOF
 cd "$PROJ_ID_MS"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 0"        "$RUN_RC" "0"
 assert_contains "ok line" "$RUN_OUT" "$ms_name: ok"
 
@@ -2420,7 +2420,7 @@ case_start "lint flags partial registry entry (id only): plan can't reference it
 # id from frontmatter therefore surfaces an "id not in registry" finding.
 PROJ_ID_PI="$(fresh_project)"
 seed_project_scaffold "$PROJ_ID_PI"
-cat > "$PROJ_ID_PI/${PLAN_DIR}/${PLAN_SYSTEMS_FILE}" <<EOF
+cat > "$PROJ_ID_PI/${PLANS_DIR}/${PLANS_SYSTEMS_FILE}" <<EOF
 systems:
   - id: auth-service
     name: Auth Service
@@ -2429,7 +2429,7 @@ systems:
     brief: missing name field
 EOF
 pi_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md"
-cat > "$PROJ_ID_PI/${PLAN_DIR}/$pi_name" <<EOF
+cat > "$PROJ_ID_PI/${PLANS_DIR}/$pi_name" <<EOF
 ---
 title: foo
 status: valid
@@ -2447,7 +2447,7 @@ g
 - [ ] The Auth Service shall do.
 EOF
 cd "$PROJ_ID_PI"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"                       "$RUN_RC" "1"
 assert_contains "partial entry dropped"  "$RUN_OUT" "declared system \"partial-thing\" is not in"
 
@@ -2456,7 +2456,7 @@ case_start "lint flags partial registry entry (name only): EARS subject can't re
 # is dropped, so body subject "Lone Name" has no id to resolve to.
 PROJ_ID_PN="$(fresh_project)"
 seed_project_scaffold "$PROJ_ID_PN"
-cat > "$PROJ_ID_PN/${PLAN_DIR}/${PLAN_SYSTEMS_FILE}" <<EOF
+cat > "$PROJ_ID_PN/${PLANS_DIR}/${PLANS_SYSTEMS_FILE}" <<EOF
 systems:
   - id: auth-service
     name: Auth Service
@@ -2465,7 +2465,7 @@ systems:
     brief: missing id field
 EOF
 pn_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md"
-cat > "$PROJ_ID_PN/${PLAN_DIR}/$pn_name" <<EOF
+cat > "$PROJ_ID_PN/${PLANS_DIR}/$pn_name" <<EOF
 ---
 title: foo
 status: valid
@@ -2483,7 +2483,7 @@ g
 - [ ] The Lone Name shall do.
 EOF
 cd "$PROJ_ID_PN"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"                        "$RUN_RC" "1"
 assert_contains "name-only entry dropped" "$RUN_OUT" "EARS subject \"Lone Name\" is not in"
 
@@ -2494,9 +2494,9 @@ case_start "lint flags display-name-in-systems AND subject-id-not-resolved toget
 # "auth-service" which isn't in the declared set ["Auth Service"].
 PROJ_ID_BOTH="$(fresh_project)"
 seed_project_scaffold "$PROJ_ID_BOTH"
-write_registry "$PROJ_ID_BOTH/${PLAN_DIR}" "Auth Service"
+write_registry "$PROJ_ID_BOTH/${PLANS_DIR}" "Auth Service"
 both_name="$(prefix "$DEFAULT_PREFIX_WIDTH" 1)-foo.md"
-cat > "$PROJ_ID_BOTH/${PLAN_DIR}/$both_name" <<EOF
+cat > "$PROJ_ID_BOTH/${PLANS_DIR}/$both_name" <<EOF
 ---
 title: foo
 status: valid
@@ -2514,7 +2514,7 @@ g
 - [ ] The Auth Service shall do.
 EOF
 cd "$PROJ_ID_BOTH"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"                              "$RUN_RC" "1"
 assert_contains "frontmatter id rejected"       "$RUN_OUT" "declared system \"Auth Service\" is not in"
 assert_contains "EARS subject not declared"     "$RUN_OUT" "EARS tasks name systems not in \`systems:\`"
@@ -2522,7 +2522,7 @@ assert_contains "frontmatter id orphaned"       "$RUN_OUT" "\`systems:\` declare
 
 # ---------- relation back-links: supersedes/superseded_by + extends/extended_by ----------
 #
-# `x-x plan lint` enforces, for each forward/back pair:
+# `x-x plans lint` enforces, for each forward/back pair:
 #   1) every slug in the array resolves to a sibling plan
 #   2) a plan cannot reference itself in any of these arrays
 #   3) the forward link and back link are symmetric across plans
@@ -2569,21 +2569,21 @@ dangling="$(prefix "$DEFAULT_PREFIX_WIDTH" 99)-nope"
 case_start "lint passes: supersedes/superseded_by symmetric pair"
 PROJ_REL_SH="$(fresh_project)"
 seed_project_scaffold "$PROJ_REL_SH"
-write_registry "$PROJ_REL_SH/${PLAN_DIR}" "Auth Service"
-write_relation_plan "$PROJ_REL_SH/${PLAN_DIR}" "${rel_b}.md" "valid"      "supersedes: [${rel_a}]"
-write_relation_plan "$PROJ_REL_SH/${PLAN_DIR}" "${rel_a}.md" "superseded" "superseded_by: [${rel_b}]"
+write_registry "$PROJ_REL_SH/${PLANS_DIR}" "Auth Service"
+write_relation_plan "$PROJ_REL_SH/${PLANS_DIR}" "${rel_b}.md" "valid"      "supersedes: [${rel_a}]"
+write_relation_plan "$PROJ_REL_SH/${PLANS_DIR}" "${rel_a}.md" "superseded" "superseded_by: [${rel_b}]"
 cd "$PROJ_REL_SH"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "lint exit 0 on symmetric supersedes pair" "$RUN_RC" "0"
 
 case_start "lint passes: extends/extended_by symmetric pair"
 PROJ_REL_EH="$(fresh_project)"
 seed_project_scaffold "$PROJ_REL_EH"
-write_registry "$PROJ_REL_EH/${PLAN_DIR}" "Auth Service"
-write_relation_plan "$PROJ_REL_EH/${PLAN_DIR}" "${rel_b}.md" "valid" "extends: [${rel_a}]"
-write_relation_plan "$PROJ_REL_EH/${PLAN_DIR}" "${rel_a}.md" "valid" "extended_by: [${rel_b}]"
+write_registry "$PROJ_REL_EH/${PLANS_DIR}" "Auth Service"
+write_relation_plan "$PROJ_REL_EH/${PLANS_DIR}" "${rel_b}.md" "valid" "extends: [${rel_a}]"
+write_relation_plan "$PROJ_REL_EH/${PLANS_DIR}" "${rel_a}.md" "valid" "extended_by: [${rel_b}]"
 cd "$PROJ_REL_EH"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "lint exit 0 on symmetric extends pair" "$RUN_RC" "0"
 
 case_start "lint passes: both pairs present and symmetric on the same predecessor"
@@ -2593,127 +2593,127 @@ case_start "lint passes: both pairs present and symmetric on the same predecesso
 # multi-step migration).
 PROJ_REL_MIX="$(fresh_project)"
 seed_project_scaffold "$PROJ_REL_MIX"
-write_registry "$PROJ_REL_MIX/${PLAN_DIR}" "Auth Service"
-write_relation_plan "$PROJ_REL_MIX/${PLAN_DIR}" "${rel_b}.md" "valid"      "supersedes: [${rel_a}]"
-write_relation_plan "$PROJ_REL_MIX/${PLAN_DIR}" "${rel_c}.md" "valid"      "extends: [${rel_a}]"
-write_relation_plan "$PROJ_REL_MIX/${PLAN_DIR}" "${rel_a}.md" "superseded" "$(printf 'superseded_by: [%s]\nextended_by: [%s]' "$rel_b" "$rel_c")"
+write_registry "$PROJ_REL_MIX/${PLANS_DIR}" "Auth Service"
+write_relation_plan "$PROJ_REL_MIX/${PLANS_DIR}" "${rel_b}.md" "valid"      "supersedes: [${rel_a}]"
+write_relation_plan "$PROJ_REL_MIX/${PLANS_DIR}" "${rel_c}.md" "valid"      "extends: [${rel_a}]"
+write_relation_plan "$PROJ_REL_MIX/${PLANS_DIR}" "${rel_a}.md" "superseded" "$(printf 'superseded_by: [%s]\nextended_by: [%s]' "$rel_b" "$rel_c")"
 cd "$PROJ_REL_MIX"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "lint exit 0 with mixed-relation predecessor" "$RUN_RC" "0"
 
 case_start "lint flags dangling supersedes slug"
 PROJ_REL_DSF="$(fresh_project)"
 seed_project_scaffold "$PROJ_REL_DSF"
-write_registry "$PROJ_REL_DSF/${PLAN_DIR}" "Auth Service"
-write_relation_plan "$PROJ_REL_DSF/${PLAN_DIR}" "${rel_a}.md" "valid" "supersedes: [${dangling}]"
+write_registry "$PROJ_REL_DSF/${PLANS_DIR}" "Auth Service"
+write_relation_plan "$PROJ_REL_DSF/${PLANS_DIR}" "${rel_a}.md" "valid" "supersedes: [${dangling}]"
 cd "$PROJ_REL_DSF"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"                          "$RUN_RC" "1"
 assert_contains "dangling supersedes"       "$RUN_OUT" "supersedes \"${dangling}\""
 
 case_start "lint flags dangling superseded_by slug"
 PROJ_REL_DSB="$(fresh_project)"
 seed_project_scaffold "$PROJ_REL_DSB"
-write_registry "$PROJ_REL_DSB/${PLAN_DIR}" "Auth Service"
-write_relation_plan "$PROJ_REL_DSB/${PLAN_DIR}" "${rel_a}.md" "superseded" "superseded_by: [${dangling}]"
+write_registry "$PROJ_REL_DSB/${PLANS_DIR}" "Auth Service"
+write_relation_plan "$PROJ_REL_DSB/${PLANS_DIR}" "${rel_a}.md" "superseded" "superseded_by: [${dangling}]"
 cd "$PROJ_REL_DSB"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"                              "$RUN_RC" "1"
 assert_contains "dangling superseded_by"        "$RUN_OUT" "superseded_by \"${dangling}\""
 
 case_start "lint flags dangling extends slug"
 PROJ_REL_DEF="$(fresh_project)"
 seed_project_scaffold "$PROJ_REL_DEF"
-write_registry "$PROJ_REL_DEF/${PLAN_DIR}" "Auth Service"
-write_relation_plan "$PROJ_REL_DEF/${PLAN_DIR}" "${rel_a}.md" "valid" "extends: [${dangling}]"
+write_registry "$PROJ_REL_DEF/${PLANS_DIR}" "Auth Service"
+write_relation_plan "$PROJ_REL_DEF/${PLANS_DIR}" "${rel_a}.md" "valid" "extends: [${dangling}]"
 cd "$PROJ_REL_DEF"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"                        "$RUN_RC" "1"
 assert_contains "dangling extends"        "$RUN_OUT" "extends \"${dangling}\""
 
 case_start "lint flags dangling extended_by slug"
 PROJ_REL_DEB="$(fresh_project)"
 seed_project_scaffold "$PROJ_REL_DEB"
-write_registry "$PROJ_REL_DEB/${PLAN_DIR}" "Auth Service"
-write_relation_plan "$PROJ_REL_DEB/${PLAN_DIR}" "${rel_a}.md" "valid" "extended_by: [${dangling}]"
+write_registry "$PROJ_REL_DEB/${PLANS_DIR}" "Auth Service"
+write_relation_plan "$PROJ_REL_DEB/${PLANS_DIR}" "${rel_a}.md" "valid" "extended_by: [${dangling}]"
 cd "$PROJ_REL_DEB"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"                            "$RUN_RC" "1"
 assert_contains "dangling extended_by"        "$RUN_OUT" "extended_by \"${dangling}\""
 
 case_start "lint flags self-supersedes"
 PROJ_REL_SS="$(fresh_project)"
 seed_project_scaffold "$PROJ_REL_SS"
-write_registry "$PROJ_REL_SS/${PLAN_DIR}" "Auth Service"
-write_relation_plan "$PROJ_REL_SS/${PLAN_DIR}" "${rel_a}.md" "valid" "supersedes: [${rel_a}]"
+write_registry "$PROJ_REL_SS/${PLANS_DIR}" "Auth Service"
+write_relation_plan "$PROJ_REL_SS/${PLANS_DIR}" "${rel_a}.md" "valid" "supersedes: [${rel_a}]"
 cd "$PROJ_REL_SS"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"                       "$RUN_RC" "1"
 assert_contains "self-supersedes"        "$RUN_OUT" "supersedes cannot reference the plan itself"
 
 case_start "lint flags self-extends"
 PROJ_REL_SE="$(fresh_project)"
 seed_project_scaffold "$PROJ_REL_SE"
-write_registry "$PROJ_REL_SE/${PLAN_DIR}" "Auth Service"
-write_relation_plan "$PROJ_REL_SE/${PLAN_DIR}" "${rel_a}.md" "valid" "extends: [${rel_a}]"
+write_registry "$PROJ_REL_SE/${PLANS_DIR}" "Auth Service"
+write_relation_plan "$PROJ_REL_SE/${PLANS_DIR}" "${rel_a}.md" "valid" "extends: [${rel_a}]"
 cd "$PROJ_REL_SE"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"                    "$RUN_RC" "1"
 assert_contains "self-extends"        "$RUN_OUT" "extends cannot reference the plan itself"
 
 case_start "lint flags asymmetric supersedes (forward present, back missing)"
 PROJ_REL_AS1="$(fresh_project)"
 seed_project_scaffold "$PROJ_REL_AS1"
-write_registry "$PROJ_REL_AS1/${PLAN_DIR}" "Auth Service"
-write_relation_plan "$PROJ_REL_AS1/${PLAN_DIR}" "${rel_b}.md" "valid" "supersedes: [${rel_a}]"
-write_relation_plan "$PROJ_REL_AS1/${PLAN_DIR}" "${rel_a}.md" "superseded" ""
+write_registry "$PROJ_REL_AS1/${PLANS_DIR}" "Auth Service"
+write_relation_plan "$PROJ_REL_AS1/${PLANS_DIR}" "${rel_b}.md" "valid" "supersedes: [${rel_a}]"
+write_relation_plan "$PROJ_REL_AS1/${PLANS_DIR}" "${rel_a}.md" "superseded" ""
 cd "$PROJ_REL_AS1"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"                                     "$RUN_RC" "1"
 assert_contains "missing superseded_by back-link"      "$RUN_OUT" "does not list this plan in its \`superseded_by:\` array"
 
 case_start "lint flags asymmetric supersedes (back present, forward missing)"
 PROJ_REL_AS2="$(fresh_project)"
 seed_project_scaffold "$PROJ_REL_AS2"
-write_registry "$PROJ_REL_AS2/${PLAN_DIR}" "Auth Service"
-write_relation_plan "$PROJ_REL_AS2/${PLAN_DIR}" "${rel_a}.md" "superseded" "superseded_by: [${rel_b}]"
-write_relation_plan "$PROJ_REL_AS2/${PLAN_DIR}" "${rel_b}.md" "valid" ""
+write_registry "$PROJ_REL_AS2/${PLANS_DIR}" "Auth Service"
+write_relation_plan "$PROJ_REL_AS2/${PLANS_DIR}" "${rel_a}.md" "superseded" "superseded_by: [${rel_b}]"
+write_relation_plan "$PROJ_REL_AS2/${PLANS_DIR}" "${rel_b}.md" "valid" ""
 cd "$PROJ_REL_AS2"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"                                "$RUN_RC" "1"
 assert_contains "missing supersedes back-link"    "$RUN_OUT" "does not list this plan in its \`supersedes:\` array"
 
 case_start "lint flags asymmetric extends (forward present, back missing)"
 PROJ_REL_AE1="$(fresh_project)"
 seed_project_scaffold "$PROJ_REL_AE1"
-write_registry "$PROJ_REL_AE1/${PLAN_DIR}" "Auth Service"
-write_relation_plan "$PROJ_REL_AE1/${PLAN_DIR}" "${rel_b}.md" "valid" "extends: [${rel_a}]"
-write_relation_plan "$PROJ_REL_AE1/${PLAN_DIR}" "${rel_a}.md" "valid" ""
+write_registry "$PROJ_REL_AE1/${PLANS_DIR}" "Auth Service"
+write_relation_plan "$PROJ_REL_AE1/${PLANS_DIR}" "${rel_b}.md" "valid" "extends: [${rel_a}]"
+write_relation_plan "$PROJ_REL_AE1/${PLANS_DIR}" "${rel_a}.md" "valid" ""
 cd "$PROJ_REL_AE1"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"                                  "$RUN_RC" "1"
 assert_contains "missing extended_by back-link"     "$RUN_OUT" "does not list this plan in its \`extended_by:\` array"
 
 case_start "lint flags asymmetric extends (back present, forward missing)"
 PROJ_REL_AE2="$(fresh_project)"
 seed_project_scaffold "$PROJ_REL_AE2"
-write_registry "$PROJ_REL_AE2/${PLAN_DIR}" "Auth Service"
-write_relation_plan "$PROJ_REL_AE2/${PLAN_DIR}" "${rel_a}.md" "valid" "extended_by: [${rel_b}]"
-write_relation_plan "$PROJ_REL_AE2/${PLAN_DIR}" "${rel_b}.md" "valid" ""
+write_registry "$PROJ_REL_AE2/${PLANS_DIR}" "Auth Service"
+write_relation_plan "$PROJ_REL_AE2/${PLANS_DIR}" "${rel_a}.md" "valid" "extended_by: [${rel_b}]"
+write_relation_plan "$PROJ_REL_AE2/${PLANS_DIR}" "${rel_b}.md" "valid" ""
 cd "$PROJ_REL_AE2"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"                              "$RUN_RC" "1"
 assert_contains "missing extends back-link"     "$RUN_OUT" "does not list this plan in its \`extends:\` array"
 
 case_start "lint passes: multi-element extends with all back-links present"
 PROJ_REL_MA="$(fresh_project)"
 seed_project_scaffold "$PROJ_REL_MA"
-write_registry "$PROJ_REL_MA/${PLAN_DIR}" "Auth Service"
-write_relation_plan "$PROJ_REL_MA/${PLAN_DIR}" "${rel_c}.md" "valid" "extends: [${rel_a}, ${rel_b}]"
-write_relation_plan "$PROJ_REL_MA/${PLAN_DIR}" "${rel_a}.md" "valid" "extended_by: [${rel_c}]"
-write_relation_plan "$PROJ_REL_MA/${PLAN_DIR}" "${rel_b}.md" "valid" "extended_by: [${rel_c}]"
+write_registry "$PROJ_REL_MA/${PLANS_DIR}" "Auth Service"
+write_relation_plan "$PROJ_REL_MA/${PLANS_DIR}" "${rel_c}.md" "valid" "extends: [${rel_a}, ${rel_b}]"
+write_relation_plan "$PROJ_REL_MA/${PLANS_DIR}" "${rel_a}.md" "valid" "extended_by: [${rel_c}]"
+write_relation_plan "$PROJ_REL_MA/${PLANS_DIR}" "${rel_b}.md" "valid" "extended_by: [${rel_c}]"
 cd "$PROJ_REL_MA"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "lint exit 0 multi-element symmetric" "$RUN_RC" "0"
 
 case_start "lint flags only the asymmetric pair in a multi-element extends"
@@ -2721,81 +2721,81 @@ case_start "lint flags only the asymmetric pair in a multi-element extends"
 # B half without false-flagging A.
 PROJ_REL_PA="$(fresh_project)"
 seed_project_scaffold "$PROJ_REL_PA"
-write_registry "$PROJ_REL_PA/${PLAN_DIR}" "Auth Service"
-write_relation_plan "$PROJ_REL_PA/${PLAN_DIR}" "${rel_c}.md" "valid" "extends: [${rel_a}, ${rel_b}]"
-write_relation_plan "$PROJ_REL_PA/${PLAN_DIR}" "${rel_a}.md" "valid" "extended_by: [${rel_c}]"
-write_relation_plan "$PROJ_REL_PA/${PLAN_DIR}" "${rel_b}.md" "valid" ""
+write_registry "$PROJ_REL_PA/${PLANS_DIR}" "Auth Service"
+write_relation_plan "$PROJ_REL_PA/${PLANS_DIR}" "${rel_c}.md" "valid" "extends: [${rel_a}, ${rel_b}]"
+write_relation_plan "$PROJ_REL_PA/${PLANS_DIR}" "${rel_a}.md" "valid" "extended_by: [${rel_c}]"
+write_relation_plan "$PROJ_REL_PA/${PLANS_DIR}" "${rel_b}.md" "valid" ""
 cd "$PROJ_REL_PA"
-run_capture "" plan lint
+run_capture "" plans lint
 assert_eq "exit 1"                                  "$RUN_RC" "1"
 assert_contains "asymmetric half flagged"           "$RUN_OUT" "extends \"${rel_b}\" but \"${rel_b}\" does not list this plan in its \`extended_by:\` array"
 assert_not_contains "symmetric half not flagged"    "$RUN_OUT" "extends \"${rel_a}\" but \"${rel_a}\" does not list"
 
 # ---------- plan slugify ----------
 
-case_start "x-x plan slugify basic title"
-run_capture "" plan slugify "Hello World"
+case_start "x-x plans slugify basic title"
+run_capture "" plans slugify "Hello World"
 assert_eq "exit 0"            "$RUN_RC" "0"
 assert_eq "slug printed"      "$RUN_OUT" "hello-world"
 
-case_start "x-x plan slugify collapses runs of non-alnum"
-run_capture "" plan slugify "  Foo // Bar  "
+case_start "x-x plans slugify collapses runs of non-alnum"
+run_capture "" plans slugify "  Foo // Bar  "
 assert_eq "exit 0"          "$RUN_RC" "0"
 assert_eq "collapsed slug"  "$RUN_OUT" "foo-bar"
 
-case_start "x-x plan slugify lowercases ASCII"
-run_capture "" plan slugify "ALL CAPS"
+case_start "x-x plans slugify lowercases ASCII"
+run_capture "" plans slugify "ALL CAPS"
 assert_eq "exit 0"        "$RUN_RC" "0"
 assert_eq "lowered slug"  "$RUN_OUT" "all-caps"
 
-case_start "x-x plan slugify rejects missing arg"
-run_capture "" plan slugify
+case_start "x-x plans slugify rejects missing arg"
+run_capture "" plans slugify
 assert_eq "exit 2"           "$RUN_RC" "2"
 assert_contains "diagnostic" "$RUN_ERR" "exactly one positional"
 
-case_start "x-x plan slugify rejects multiple args"
-run_capture "" plan slugify "foo" "bar"
+case_start "x-x plans slugify rejects multiple args"
+run_capture "" plans slugify "foo" "bar"
 assert_eq "exit 2"           "$RUN_RC" "2"
 assert_contains "diagnostic" "$RUN_ERR" "exactly one positional"
 
-case_start "x-x plan slugify rejects unsluggable title"
-run_capture "" plan slugify "!!!"
+case_start "x-x plans slugify rejects unsluggable title"
+run_capture "" plans slugify "!!!"
 assert_eq "exit 2"           "$RUN_RC" "2"
 assert_contains "diagnostic" "$RUN_ERR" "no slug-able characters"
 
-case_start "x-x plan slugify accepts pure numerics"
-run_capture "" plan slugify "123"
+case_start "x-x plans slugify accepts pure numerics"
+run_capture "" plans slugify "123"
 assert_eq "exit 0"           "$RUN_RC" "0"
 assert_eq "numeric slug"     "$RUN_OUT" "123"
 
-case_start "x-x plan slugify accepts leading-dash titles after --"
+case_start "x-x plans slugify accepts leading-dash titles after --"
 # Bare `-foo` would be caught by flag.Parse as "bad flag syntax"; the
 # standard `--` end-of-flags separator delivers it as a positional.
-run_capture "" plan slugify -- "-foo bar"
+run_capture "" plans slugify -- "-foo bar"
 assert_eq "exit 0"           "$RUN_RC" "0"
 assert_eq "leading-dash slug" "$RUN_OUT" "foo-bar"
 
-case_start "x-x plan slugify drops non-ASCII; wholly-non-ASCII is unsluggable"
-run_capture "" plan slugify "Plan プラン"
+case_start "x-x plans slugify drops non-ASCII; wholly-non-ASCII is unsluggable"
+run_capture "" plans slugify "Plan プラン"
 assert_eq "exit 0"           "$RUN_RC" "0"
 assert_eq "mixed slug"       "$RUN_OUT" "plan"
-run_capture "" plan slugify "プラン"
+run_capture "" plans slugify "プラン"
 assert_eq "exit 2"           "$RUN_RC" "2"
 assert_contains "diagnostic" "$RUN_ERR" "no slug-able characters"
 
-case_start "x-x plan slugify collapses tabs and newlines"
+case_start "x-x plans slugify collapses tabs and newlines"
 # printf is run inside the same shell that invokes the binary, so escape
 # sequences expand before the arg leaves the shell.
-run_capture "" plan slugify "$(printf 'Foo\tBar\nBaz')"
+run_capture "" plans slugify "$(printf 'Foo\tBar\nBaz')"
 assert_eq "exit 0"           "$RUN_RC" "0"
 assert_eq "ws-collapsed slug" "$RUN_OUT" "foo-bar-baz"
 
-case_start "x-x plan slugify works outside an x-x project"
-# Pure transform; no project gate. Run from a directory with no .x-plan/
+case_start "x-x plans slugify works outside an x-x project"
+# Pure transform; no project gate. Run from a directory with no .x-plans/
 # to pin that contract.
 PROJ_SG="$(fresh_project)"
 cd "$PROJ_SG"
-run_capture "" plan slugify "Outside Project"
+run_capture "" plans slugify "Outside Project"
 assert_eq "exit 0"        "$RUN_RC" "0"
 assert_eq "slug printed"  "$RUN_OUT" "outside-project"
 
@@ -2808,25 +2808,25 @@ assert_contains "init usage header"  "$combined" "Usage: x-x init"
 assert_contains "agents flag listed" "$combined" "--agents"
 assert_contains "scope flag listed"  "$combined" "--scope"
 
-case_start "x-x skill remove -h prints remove usage"
-run_capture "" skill remove -h
+case_start "x-x skills remove -h prints remove usage"
+run_capture "" skills remove -h
 combined="${RUN_OUT}${RUN_ERR}"
-assert_contains "remove usage header" "$combined" "Usage: x-x skill remove"
+assert_contains "remove usage header" "$combined" "Usage: x-x skills remove"
 
-case_start "x-x plan next-prefix -h prints next-prefix usage"
-run_capture "" plan next-prefix -h
+case_start "x-x plans next-prefix -h prints next-prefix usage"
+run_capture "" plans next-prefix -h
 combined="${RUN_OUT}${RUN_ERR}"
-assert_contains "next-prefix usage header" "$combined" "Usage: x-x plan next-prefix"
+assert_contains "next-prefix usage header" "$combined" "Usage: x-x plans next-prefix"
 
-case_start "x-x plan lint -h prints lint usage"
-run_capture "" plan lint -h
+case_start "x-x plans lint -h prints lint usage"
+run_capture "" plans lint -h
 combined="${RUN_OUT}${RUN_ERR}"
-assert_contains "lint usage header" "$combined" "Usage: x-x plan lint"
+assert_contains "lint usage header" "$combined" "Usage: x-x plans lint"
 
-case_start "x-x plan slugify -h prints slugify usage"
-run_capture "" plan slugify -h
+case_start "x-x plans slugify -h prints slugify usage"
+run_capture "" plans slugify -h
 combined="${RUN_OUT}${RUN_ERR}"
-assert_contains "slugify usage header" "$combined" "Usage: x-x plan slugify"
+assert_contains "slugify usage header" "$combined" "Usage: x-x plans slugify"
 
 # ---------- partial-state installs ----------
 
