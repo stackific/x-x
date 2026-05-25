@@ -35,7 +35,7 @@ See [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) for the contribution wo
 
 ## What does `x-x` mean? 
 
-😵 But, honestly it is just quicker to invoke as a skill, i.e., _slash, x, dash_.
+😵 But, honestly it is just shorter and quicker to remember and invoke as a skill, i.e., _slash, x, dash_.
 
 ## License
 
