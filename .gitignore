@@ -1,6 +1,16 @@
 .DS_Store
-bin
+/bin/
+
+# /x-x and /x-x.exe — accidental `go build` output at the module root.
+# Go names a main package's binary after its directory, so a bare
+# `go build`, `go build .`, or `go build ./...` here drops a multi-MB
+# executable on top of the working tree. AGENTS.md:7 forbids that:
+# use `go vet ./...` or `go build -o /dev/null ./...` for compile
+# checks, and `task build` for release artifacts (writes to /bin/).
+# The `!/x-x/` re-include guards the agents/skills/x-x sibling path
+# in case a future layout puts an `x-x/` directory at the root.
 /x-x
+/x-x.exe
 !/x-x/
 
 # If you prefer the allow list template instead of the deny list, see community template:

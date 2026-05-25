@@ -30,18 +30,24 @@ func TestE2EShellConstantsMatchGo(t *testing.T) {
 
 	// Mapping: shell variable name → expected Go-side value.
 	want := map[string]string{
-		"XX_HOME_DIR":          xxHomeDir,
-		"XX_CONFIG_FILE":       xxConfigFile,
-		"AGENTS_EMBED_ROOT":    agentsEmbedRoot,
-		"SKILLS_SUBDIR":        skillsSubdir,
-		"PLAN_DIR":             planDir,
-		"PLAN_CONFIG_LOCK":     planConfigLockFile,
-		"PLAN_SYSTEMS_FILE":    planSystemsFile,
-		"DEFAULT_PREFIX_WIDTH": strconv.Itoa(defaultPrefixWidth),
+		"XX_HOME_DIR":                   xxHomeDir,
+		"XX_CONFIG_FILE":                xxConfigFile,
+		"AGENTS_EMBED_ROOT":             agentsEmbedRoot,
+		"SKILLS_SUBDIR":                 skillsSubdir,
+		"PLANS_DIR":                     plansDir,
+		"PLANS_CONFIG_LOCK":             plansConfigLockFile,
+		"PLANS_SYSTEMS_FILE":            plansSystemsFile,
+		"DEFAULT_PREFIX_WIDTH":          strconv.Itoa(defaultPrefixWidth),
+		"PLANS_LIST_OVERFLOW_THRESHOLD": strconv.Itoa(plansListOverflowThreshold),
 
-		"SKILL_SHARED_DIR": skillSharedDir,
-		"SKILL_X_PLAN_DIR": skillXPlanDir,
-		"SKILL_X_X_DIR":    skillXXDir,
+		"SKILL_SHARED_DIR":    skillSharedDir,
+		"SKILL_X_PLAN_DIR":    skillXPlanDir,
+		"SKILL_X_X_DIR":       skillXXDir,
+		"SKILL_MANIFEST_FILE": skillManifestFile,
+
+		"SHARED_DOC_PLAN_FIRST": sharedDocPlanFirst,
+		"SHARED_DOC_SYSTEMS":    sharedDocSystems,
+		"SHARED_DOC_EARS":       sharedDocEars,
 
 		"CLAUDE_SKILLS_REL": agentTargets[0].skillsRel,
 		"CLAUDE_CONFIG_REL": agentTargets[0].configRel,
@@ -82,7 +88,7 @@ func TestE2EShellConstantsMatchGo(t *testing.T) {
 // Inline comments after the value are stripped. Quoted values have their
 // surrounding double-quotes removed. `${VAR}` references inside the value
 // are resolved against earlier entries — so composed values like
-// `${PLAN_DIR}/${PLAN_CONFIG_LOCK}` resolve to their final form, and
+// `${PLANS_DIR}/${PLANS_CONFIG_LOCK}` resolve to their final form, and
 // space-joined collections like OWNED_SKILLS are validated end-to-end.
 func parseShellReadonly(path string) (map[string]string, error) {
 	f, err := os.Open(path) // #nosec G304 -- test-controlled path.

@@ -33,10 +33,10 @@ $dest = Join-Path $installDir "$binary.exe"
 if (Test-Path -LiteralPath $dest) {
   Info "Removing x-x-managed user-scope skills"
   try {
-    & $dest skill remove --user
-    if ($LASTEXITCODE -ne 0) { Warn "x-x skill remove --user exited $LASTEXITCODE; continuing" }
+    & $dest skills remove --user
+    if ($LASTEXITCODE -ne 0) { Warn "x-x skills remove --user exited $LASTEXITCODE; continuing" }
   } catch {
-    Warn "x-x skill remove --user failed: $_; continuing"
+    Warn "x-x skills remove --user failed: $_; continuing"
   }
 } else {
   Warn "$dest not found; skipping user-scope skill cleanup"

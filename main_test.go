@@ -77,11 +77,11 @@ func TestPrintAbout_IncludesUsage(t *testing.T) {
 	for _, want := range []string{
 		"Usage:",
 		"x-x init",
-		"x-x skill remove --user",
-		"x-x skill remove --project",
-		"x-x plan next-prefix",
-		"x-x plan list",
-		"x-x plan lint",
+		"x-x skills remove --user",
+		"x-x skills remove --project",
+		"x-x plans next-prefix",
+		"x-x plans list",
+		"x-x plans lint",
 		"x-x --version",
 	} {
 		if !strings.Contains(out, want) {

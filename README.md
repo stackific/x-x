@@ -11,6 +11,18 @@ curl -fsSL https://stackific.com/x-x/INSTALL.sh | sh
 # For Windows
 Set-ExecutionPolicy Bypass -Scope Process -Force # If only needed
 iex (irm https://stackific.com/x-x/INSTALL.ps1)
+
+## Follow the on-screen instructions
+
+# Initialize a x-x project
+cd <your-project-folder>
+x-x init
+
+# Launch your AI coding agent and invoke the `/x-plan` skill
+/x-plan <specify-your-need>
+
+# Execute the next plan in line
+/x-x
 ```
 
 ## Documentation
@@ -32,6 +44,10 @@ Common tasks (via [Task](https://taskfile.dev)):
 | `task prepush`  | Run every pre-push hook against all files.      |
 
 See [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) for the contribution workflow (DCO sign-off and signed commits are required).
+
+## What does `x-x` mean? 
+
+😵 But, honestly it is just shorter and quicker to remember and invoke as a skill, i.e., _slash, x, dash_.
 
 ## License
 

@@ -1,1 +1,1 @@
-Read AGENTS.md instead.
+STOP until you read AGENTS.md fully.
