@@ -2,9 +2,9 @@ name: manual / codex cli <- llm judge (user scope)
 
 # Manually-triggered experiment from the agent-eval lineage. User-scope
 # variant of manual-codex-judge.yml — same agent (Codex CLI), same
-# routing (OpenRouter BYOK to DeepSeek), same scenarios, but
-# X_X_INSTALL_SCOPE=user so `x-x init` installs skills into the user
-# tree (~/.codex/ + cross-agent skill discovery) instead of the per-
+# routing (local LiteLLM proxy bridging Responses → DeepSeek chat-
+# completions), same scenarios, but X_X_INSTALL_SCOPE=user so
+# `x-x init` installs skills into the user tree instead of the per-
 # workspace tree. Exercises the user-scope branch of `x-x init` against
 # the Codex backend.
 
@@ -26,9 +26,7 @@ jobs:
       X_X_INSTALL_SCOPE: user
 
       X_X_AGENT: codex
-
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 
     steps:
       - uses: actions/checkout@v6
@@ -52,18 +50,55 @@ jobs:
           npm install -g @openai/codex@latest
           codex --version
 
-      - name: configure codex for openrouter
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: install litellm proxy
+        run: pip install 'litellm[proxy]'
+
+      - name: start litellm proxy (background)
+        run: |
+          mkdir -p /tmp/litellm
+          cat > /tmp/litellm/config.yaml <<'EOF'
+          model_list:
+            - model_name: deepseek-v4-pro
+              litellm_params:
+                model: deepseek/deepseek-v4-pro
+                api_key: os.environ/DEEPSEEK_API_KEY
+            - model_name: deepseek-v4-flash
+              litellm_params:
+                model: deepseek/deepseek-v4-flash
+                api_key: os.environ/DEEPSEEK_API_KEY
+          EOF
+          echo "--- /tmp/litellm/config.yaml ---"
+          cat /tmp/litellm/config.yaml
+          nohup litellm --config /tmp/litellm/config.yaml --port 4000 \
+            > /tmp/litellm/proxy.log 2>&1 &
+          echo "litellm pid=$!"
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:4000/health/liveliness > /dev/null 2>&1 \
+               || curl -sf http://localhost:4000/health > /dev/null 2>&1; then
+              echo "litellm proxy ready after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          curl -sS http://localhost:4000/health/liveliness 2>&1 \
+            || curl -sS http://localhost:4000/health 2>&1 \
+            || (echo "--- proxy.log ---"; cat /tmp/litellm/proxy.log; exit 1)
+
+      - name: configure codex for local proxy
         run: |
           mkdir -p ~/.codex
           cat > ~/.codex/config.toml <<'EOF'
-          [model_providers.openrouter]
-          name = "OpenRouter"
-          base_url = "https://openrouter.ai/api/v1"
-          env_key = "OPENROUTER_API_KEY"
+          model = "deepseek-v4-pro"
+          model_provider = "deepseek-local"
 
-          [profiles.eval]
-          model = "deepseek/deepseek-chat"
-          model_provider = "openrouter"
+          [model_providers.deepseek-local]
+          name = "DeepSeek via local LiteLLM"
+          base_url = "http://localhost:4000/v1"
+          env_key = "DEEPSEEK_API_KEY"
           EOF
           echo "--- ~/.codex/config.toml ---"
           cat ~/.codex/config.toml
@@ -84,6 +119,12 @@ jobs:
             tests/test_codex_todo.py \
             tests/test_codex_plan_extends.py \
             tests/test_codex_reminders_supersedes_todo.py
+
+      - name: dump litellm proxy log on failure
+        if: failure()
+        run: |
+          echo "--- /tmp/litellm/proxy.log ---"
+          cat /tmp/litellm/proxy.log || true
 
       - name: upload pytest tmp on failure
         if: failure()

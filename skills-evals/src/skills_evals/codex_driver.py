@@ -32,14 +32,15 @@ between minor codex-cli releases):
   the whole transcript on stdin.
 
 DeepSeek routing: Codex's custom providers speak the OpenAI Responses
-protocol, while DeepSeek's native API is Chat Completions. A direct
-DeepSeek base_url does NOT work. The two stable bridges (per
-`docs/internal/adding-agent-eval-backend.md`) are a local protocol
-gateway (CCX) or OpenRouter BYOK. The shipped workflow uses OpenRouter:
-`OPENROUTER_API_KEY` is required at process start; the `~/.codex/config.toml`
-written by the workflow points `model_provider = "openrouter"` at the
-OpenRouter base URL. The driver only echoes the env state — it does not
-write config files.
+protocol (wire_api is responses-only per the OpenAI Codex config
+reference), while DeepSeek's native API is Chat Completions. A direct
+DeepSeek base_url does NOT work. The shipped workflow runs a local
+LiteLLM proxy on localhost:4000 as a Responses → Chat Completions
+bridge — codex talks to localhost, LiteLLM forwards to DeepSeek using
+the same DEEPSEEK_API_KEY that powers the judges. No additional
+provider keys are involved. The `~/.codex/config.toml` pointing codex
+at the local proxy is written by the workflow (or by the dev locally);
+the driver only echoes env state and does not write config files.
 
 Logging policy: every state transition, every event, every external call
 gets a line on stderr via `_logging.log`. CI logs are the only diagnostic
@@ -75,7 +76,6 @@ ECHOED_ENV_KEYS = (
   "CODEX_PROFILE",
 )
 SECRET_ENV_KEYS = (
-  "OPENROUTER_API_KEY",
   "DEEPSEEK_API_KEY",
   "OPENAI_API_KEY",
 )

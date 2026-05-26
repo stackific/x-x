@@ -55,13 +55,14 @@ CLAUDE_ENV_DEFAULTS = {
 
 # Codex CLI custom providers speak OpenAI Responses protocol; DeepSeek
 # native speaks Chat Completions, so direct routing is incompatible. We
-# bridge through OpenRouter BYOK: OPENROUTER_API_KEY authenticates Codex
-# at OpenRouter, OpenRouter forwards to DeepSeek using the user's bound
-# provider key. The `~/.codex/config.toml` defining the openrouter
-# provider + profile is written by the workflow (or by the dev locally)
-# — the conftest does not own that file. We only verify the API key is
-# present and log what we see.
-CODEX_REQUIRED_ENV_KEYS = ("OPENROUTER_API_KEY",)
+# bridge through a LOCAL LiteLLM proxy running on localhost:4000 (see
+# .github/workflows/manual-codex-judge.yml). The proxy translates
+# Responses → Chat Completions and forwards to DeepSeek using the same
+# DEEPSEEK_API_KEY that powers the judges. No additional provider keys
+# are introduced. The `~/.codex/config.toml` pointing at the local proxy
+# is written by the workflow (or by the dev locally) — the conftest
+# does not own that file. We only verify the local proxy is reachable.
+CODEX_LOCAL_PROXY_URL = "http://localhost:4000"
 
 
 def pytest_collection_modifyitems(items: list[Item]) -> None:
@@ -134,26 +135,36 @@ def _load_dotenv_and_route_agent() -> None:
     log("conftest", f"claude on PATH: {shutil.which('claude')}")
 
   elif agent == "codex":
-    missing = [k for k in CODEX_REQUIRED_ENV_KEYS if not os.environ.get(k)]
-    if missing:
-      log("conftest", f"required codex env vars MISSING: {missing} — aborting")
-      pytest.fail(
-        f"X_X_AGENT=codex requires env vars: {missing}. The Codex CLI "
-        f"is bridged to DeepSeek via OpenRouter BYOK; provision the key "
-        f"at https://openrouter.ai/keys and bind your DeepSeek key in "
-        f"OpenRouter's BYOK settings. See "
-        f"docs/internal/adding-agent-eval-backend.md.",
-        pytrace=False,
-      )
-    for k in CODEX_REQUIRED_ENV_KEYS:
-      v = os.environ[k]
-      log("conftest", f"env {k}: set (length={len(v)}, ...{v[-4:]})")
     log("conftest", f"codex on PATH: {shutil.which('codex')}")
     codex_config = Path.home() / ".codex" / "config.toml"
     log(
       "conftest",
       f"~/.codex/config.toml: {'present' if codex_config.is_file() else 'MISSING'}",
     )
+    # The codex driver expects a local LiteLLM proxy on localhost:4000
+    # bridging Responses → DeepSeek chat-completions. The workflow
+    # starts it before pytest; local devs need to do the same. Probe
+    # the health endpoint and log the result — don't fail here, because
+    # the smoke test will surface a real wire failure with better
+    # diagnostics.
+    import urllib.error
+    import urllib.request
+    for path in ("/health/liveliness", "/health"):
+      try:
+        with urllib.request.urlopen(
+          f"{CODEX_LOCAL_PROXY_URL}{path}", timeout=2,
+        ) as resp:
+          log(
+            "conftest",
+            f"local proxy {CODEX_LOCAL_PROXY_URL}{path}: "
+            f"HTTP {resp.status}",
+          )
+          break
+      except (urllib.error.URLError, OSError) as e:
+        log(
+          "conftest",
+          f"local proxy {CODEX_LOCAL_PROXY_URL}{path}: unreachable ({e})",
+        )
 
   log("conftest", f"x-x on PATH: {shutil.which('x-x')}")
 
