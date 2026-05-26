@@ -1,0 +1,111 @@
+name: manual / opencode <- llm judge
+
+# Manually-triggered experiment from the agent-eval lineage. The loop:
+#
+#   1. Install OpenCode on the runner; install x-x to PATH.
+#   2. Sync the uv-managed skills-evals project (deepeval, openai, pytest,
+#      python-dotenv).
+#   3. Run `uv run pytest`. The tests:
+#        a. Spawn `opencode run --format json --model deepseek/...` per
+#           turn (single-shot subprocesses; resume with --continue).
+#        b. Drive the x-plan / x-x skill prompts via the inlined-SKILL.md
+#           workaround in skills_evals.opencode_driver.compose_skill_prompt.
+#           This sidesteps anomalyco/opencode#7345 — `opencode run` does
+#           not currently resolve slash commands, so a literal `/x-plan ...`
+#           string would be passed to the LLM and hallucinated as a
+#           missing command. The driver reads the SKILL.md off disk and
+#           concatenates it with the task.
+#        c. Score the plan and the produced artifacts with two DeepEval
+#           `GEval` metrics backed by DeepSeek.
+#   4. Upload the pytest tmp directory (transcripts + workspace) on
+#      failure so the run can be inspected offline.
+#
+# See docs/internal/manually-triggered-workflows.md for the conventions
+# this file follows.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    # One scenario (TODO app) takes 5–15 min: planner + executor + two
+    # judge LLM calls. 60-minute cap leaves headroom for DeepSeek
+    # latency without rewarding a stuck agent.
+    timeout-minutes: 60
+
+    env:
+      # X_X_AGENT_KEY tells the skills-evals conftest which backend's
+      # tests to collect, which binary to require on PATH, and which
+      # `--agents <key>` value to pass to `x-x init`. Default is
+      # "claude"; this workflow runs the OpenCode set.
+      X_X_AGENT_KEY: opencode
+
+      # OpenCode reads provider credentials via Models.dev. For the
+      # `deepseek` provider, DEEPSEEK_API_KEY is the routing key — no
+      # additional re-naming needed (unlike Claude Code, where the
+      # DeepSeek key has to mirror into ANTHROPIC_AUTH_TOKEN). The
+      # judge LLM uses the same key directly.
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # `go install .` lands a release-flavored x-x in $(go env GOPATH)/bin.
+      # The setup-go action puts that directory on PATH.
+      - name: install x-x to PATH
+        run: |
+          go install .
+          x-x --version
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      # OpenCode's `--format json` wire format is sparsely documented;
+      # the driver is permissive about event shapes. Pin to @latest
+      # until we have a known-good version; bump intentionally if the
+      # smoke test starts failing on a fresh release.
+      - name: install opencode
+        run: |
+          npm install -g opencode-ai@latest
+          opencode --version
+
+      # setup-uv no longer publishes moving major tags (@v8), so pin to
+      # a specific version. Bump intentionally after checking release notes.
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - name: install skills-evals deps
+        working-directory: skills-evals
+        run: uv sync --frozen || uv sync
+
+      # `test_opencode_stream_json_smoke.py` runs first (smoke-first
+      # ordering in conftest.pytest_collection_modifyitems) — a
+      # wire-format / env / version failure fails it without burning a
+      # full planner+executor cycle on the real scenario.
+      - name: run pytest
+        working-directory: skills-evals
+        run: uv run pytest
+
+      # Pytest writes transcripts and per-test workspaces under tmp_path
+      # (`/tmp/pytest-of-runner/...`). Uploading on failure gives us the
+      # JSONL stream that records every event the agent emitted, plus
+      # the workspace state at failure.
+      - name: upload pytest tmp on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: pytest-tmp-${{ github.run_id }}
+          path: /tmp/pytest-of-runner/
+          if-no-files-found: warn
+          retention-days: 14
