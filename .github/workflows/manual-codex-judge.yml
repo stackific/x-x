@@ -82,34 +82,60 @@ jobs:
           npm install -g @openai/codex@latest
           codex --version
 
-      - uses: actions/setup-python@v6
+      # setup-uv no longer publishes moving major tags (@v8), so pin to a
+      # specific version. Bump intentionally after checking release notes.
+      # Moved above the litellm step so `uv tool` is the install path —
+      # the rest of skills-evals is uv-managed, no reason for the proxy
+      # to be the lone pip+system-python user.
+      - uses: astral-sh/setup-uv@v8.1.0
         with:
-          python-version: '3.12'
+          enable-cache: true
 
       # LiteLLM proxy is the local bridge: codex (Responses API client)
       # → http://localhost:4000/v1/responses (LiteLLM) → DeepSeek
-      # (Chat Completions). Pin litellm to keep the proxy semantics
-      # stable; bump intentionally after re-running the smoke test.
+      # (Chat Completions). `uv tool install` lands it in an isolated
+      # venv with its own python; no global pip pollution.
       - name: install litellm proxy
-        run: pip install 'litellm[proxy]'
+        run: uv tool install 'litellm[proxy]'
 
       - name: start litellm proxy (background)
         run: |
           mkdir -p /tmp/litellm
           cat > /tmp/litellm/config.yaml <<'EOF'
+          # reasoning_effort=none disables DeepSeek v4 thinking mode.
+          # Without it, DeepSeek emits `reasoning_content` on the first
+          # turn and 400s on every subsequent turn with
+          # "The reasoning_content in the thinking mode must be passed
+          # back to the API" — codex strips non-OpenAI fields between
+          # turns so it cannot echo reasoning_content back. Disabling
+          # thinking sidesteps the protocol mismatch.
           model_list:
             - model_name: deepseek-v4-pro
               litellm_params:
                 model: deepseek/deepseek-v4-pro
                 api_key: os.environ/DEEPSEEK_API_KEY
+                reasoning_effort: none
             - model_name: deepseek-v4-flash
               litellm_params:
                 model: deepseek/deepseek-v4-flash
                 api_key: os.environ/DEEPSEEK_API_KEY
+                reasoning_effort: none
+          # Drop tool entries whose type != "function" before forwarding
+          # to DeepSeek. Codex's namespace tools (apply_patch, MCP groups)
+          # are not accepted by DeepSeek's chat-completions parser.
+          # See skills-evals/litellm_proxy_hooks.py for context.
+          litellm_settings:
+            callbacks: ["litellm_proxy_hooks.proxy_handler_instance"]
           EOF
           echo "--- /tmp/litellm/config.yaml ---"
           cat /tmp/litellm/config.yaml
-          nohup litellm --config /tmp/litellm/config.yaml --port 4000 \
+          # LiteLLM resolves callback modules relative to the config file's
+          # directory (litellm.proxy.types_utils.get_instance_fn does
+          # `<config_dir>/<module>.py`), so PYTHONPATH does NOT help. Copy
+          # the hook next to the config so the import resolves.
+          cp $GITHUB_WORKSPACE/skills-evals/litellm_proxy_hooks.py /tmp/litellm/
+          nohup uv tool run --from 'litellm[proxy]' litellm \
+              --config /tmp/litellm/config.yaml --port 4000 \
             > /tmp/litellm/proxy.log 2>&1 &
           echo "litellm pid=$!"
           # Poll /health until ready (LiteLLM cold start is ~5-10s).
@@ -121,7 +147,8 @@ jobs:
             fi
             sleep 1
           done
-          # Fail loudly if the proxy never came up.
+          # Fail loudly if the proxy never came up (a hook import error
+          # would also surface here — check proxy.log).
           curl -sS http://localhost:4000/health/liveliness 2>&1 \
             || curl -sS http://localhost:4000/health 2>&1 \
             || (echo "--- proxy.log ---"; cat /tmp/litellm/proxy.log; exit 1)
@@ -146,12 +173,6 @@ jobs:
           EOF
           echo "--- ~/.codex/config.toml ---"
           cat ~/.codex/config.toml
-
-      # setup-uv no longer publishes moving major tags (@v8), so pin to a
-      # specific version. Bump intentionally after checking release notes.
-      - uses: astral-sh/setup-uv@v8.1.0
-        with:
-          enable-cache: true
 
       - name: install skills-evals deps
         working-directory: skills-evals
