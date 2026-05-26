@@ -153,15 +153,22 @@ var agentTargets = []agentTarget{
 	{"opencode", "OpenCode", ".opencode/commands", "", "", ""},
 	// GitHub Copilot CLI reads skills from `.agents/skills/`, `.claude/skills/`,
 	// or `.github/skills/` at project scope, and `~/.copilot/skills/` or
-	// `~/.agents/skills/` at user scope. We pick `.agents/skills` for project
-	// (cross-agent open spec, already populated by codex when both are picked
-	// — install is idempotent) and `~/.copilot/skills` for user (the Copilot-
-	// native path, distinct from codex's `~/.agents/skills`). Skills-only for
-	// now — no settings.json / hooks file shipped yet; that's a follow-up
-	// once the manual eval workflow tells us which Copilot CLI lifecycle
-	// hooks make sense to register. Official path docs:
-	// docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills.
-	{"copilot", "GitHub Copilot CLI", ".agents/skills", ".copilot/skills", "", ""},
+	// `~/.agents/skills/` at user scope (per Copilot CLI's May 2026 docs at
+	// docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills).
+	// We use `.agents/skills` at BOTH scopes — the cross-agent open spec
+	// path. Reasons:
+	//   1. agents/skills/x-plan/SKILL.md and agents/skills/x-x/SKILL.md
+	//      define `<skills_root>` as exactly `.claude/skills/` (Claude) or
+	//      `.agents/skills/` (other agents). The agent's path-resolution
+	//      logic globs that exact list — `.copilot/skills` is not in it.
+	//   2. `~/.agents/skills` is on Copilot CLI's official user-scope list
+	//      alongside `~/.copilot/skills`. Both work for skill discovery.
+	//   3. Reusing `.agents/skills` co-locates with Codex (install is
+	//      idempotent), keeping the registry uniform across "other agents".
+	// Skills-only for now — no settings.json / hooks file shipped yet;
+	// that's a follow-up once the manual eval workflow tells us which
+	// Copilot CLI lifecycle hooks make sense to register.
+	{"copilot", "GitHub Copilot CLI", ".agents/skills", "", "", ""},
 }
 
 // skillsSubdir is the directory inside ~/.x-x/agents/ that holds the

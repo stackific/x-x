@@ -27,7 +27,7 @@ Installs every bundled skill into the locations each agent looks for, then seeds
 1. **Which agents?** Multi-select over every registered agent (Claude Code, Codex CLI, OpenCode, GitHub Copilot CLI today). Blank line / no toggle accepts the default (all agents).
 2. **Which scope?** Decides where the bundled SKILLS land. Either way, `.x-plans/` is seeded in the current working directory — that's how the project marker check (`./.x-plans/_config.lock`) recognizes the directory as an x-x project.
    - **This project only** — skills under the current working directory (`.claude/skills/`, `.agents/skills/` shared by Codex and Copilot, `.opencode/commands/`).
-   - **All my projects (user scope)** — skills under `$HOME` (`~/.claude/skills/`, `~/.agents/skills/` for Codex, `~/.copilot/skills/` for Copilot CLI, `~/.opencode/commands/`).
+   - **All my projects (user scope)** — skills under `$HOME` (`~/.claude/skills/`, `~/.agents/skills/` for Codex and Copilot CLI, `~/.opencode/commands/`).
 3. **Prefix width for plan files** — zero-padded width for plan filenames (e.g. width `4` → `0001-foo.md`). Default: `4`.
 4. **Maximum lines per plan** — cap enforced by `x-x plans lint`. Keeps AI agents on a short leash: forces them to split sprawling work into smaller, reviewable plans. Default: `30`.
 5. **Pause for review after every…** — `task` reviews each EARS criterion as the planner finishes it (tight loop, more interruptions); `plan` reviews only at plan boundaries (looser loop, larger diffs). Default: `task`.
@@ -42,7 +42,7 @@ Every prompt has a non-interactive flag twin — pass any subset to skip the mat
 
 Values 3–5 land in `.x-plans/_config.lock` and become the lock-file pins for the project — re-running `x-x init` later does NOT refresh them (Cargo.lock / package-lock.json semantics). Never manually edit `.x-plans/_config.lock`.
 
-Codex CLI reads from `.agents/skills` at every level (cwd, repo root, and `$HOME`), per the cross-agent SKILL.md open standard. GitHub Copilot CLI also reads `.agents/skills` at project scope (so the project-scope install populates one directory that both Codex and Copilot CLI pick up), but its user-scope path is `~/.copilot/skills/` — the Copilot-native location documented at [docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills). On Windows, `~` resolves to `%USERPROFILE%`, so `~/.claude/skills/` is `%USERPROFILE%\.claude\skills\`, `~/.agents/skills/` is `%USERPROFILE%\.agents\skills\`, `~/.copilot/skills/` is `%USERPROFILE%\.copilot\skills\`, and so on. Inside WSL2, paths resolve against the WSL home (`/home/<user>/...`) — install x-x with `INSTALL.sh` from inside WSL to land in the WSL filesystem.
+Codex CLI reads from `.agents/skills` at every level (cwd, repo root, and `$HOME`), per the cross-agent SKILL.md open standard. GitHub Copilot CLI also reads `.agents/skills` at both project and user scope — `~/.agents/skills/` is on Copilot CLI's [official user-scope list](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills) alongside `~/.copilot/skills/`, and we land in the cross-agent path so the bundled `SKILL.md` content (which documents only `.claude/skills` and `.agents/skills`) discovers shared docs correctly. On Windows, `~` resolves to `%USERPROFILE%`, so `~/.claude/skills/` is `%USERPROFILE%\.claude\skills\`, `~/.agents/skills/` is `%USERPROFILE%\.agents\skills\`, and so on. Inside WSL2, paths resolve against the WSL home (`/home/<user>/...`) — install x-x with `INSTALL.sh` from inside WSL to land in the WSL filesystem.
 
 On macOS and Linux at user scope, skill directories are installed as symlinks into `~/.x-x/agents/skills/`, so refreshes to the bundled tree propagate to every project at once. On Windows (and at project scope everywhere), skills are copied. Re-running `x-x init` always overwrites the bundled skill directories with the current release — they are repo-shipped content, not user state.
 
@@ -59,7 +59,7 @@ The following are never touched:
 - Folders whose name is not on the bundled-skill allowlist (your own skills sitting alongside ours).
 - Anything in the agent config files outside of their `"hooks"` subtree — top-level keys like `"fastMode"` and any user-authored content. Empty arrays or event-key maps left behind by the un-merge are kept as-is; we subtract records, not containers.
 - The `.x-plans/` scaffold in cwd. Once `init` writes it (at any scope), it's yours.
-- Parent directories (`.claude/`, `.codex/`, `.copilot/`). Only the `skills/` subdirectory under each may be removed, and only when it is empty after cleanup.
+- Parent directories (`.claude/`, `.codex/`). Only the `skills/` subdirectory under each may be removed, and only when it is empty after cleanup.
 
 ### `x-x skills remove --project`
 

@@ -45,10 +45,13 @@ readonly OWNED_SKILLS="${SKILL_X_PLAN_DIR} ${SKILL_X_X_DIR}"
 
 # agentTargets in constants.go — index 0 = Claude Code, 1 = Codex CLI,
 # 2 = OpenCode, 3 = GitHub Copilot CLI (copilot added in this branch;
-# constants.go registration follows in a sibling commit). Copilot is the
-# first agent with a per-scope skill path: project scope reuses Codex's
-# `.agents/skills` (cross-agent open spec, install is idempotent so both
-# rows can co-exist), user scope uses the Copilot-native `~/.copilot/skills`.
+# constants.go registration follows in a sibling commit). Copilot reuses
+# Codex's `.agents/skills` for both scopes (cross-agent open spec, install
+# is idempotent so the two rows co-exist on disk without conflict). The
+# agentTarget.userSkillsRel field exists for future agents whose project-
+# vs user-scope paths diverge; Copilot doesn't need it because the bundled
+# x-x skill content already documents `.agents/skills` as the canonical
+# "other agents" path.
 readonly CLAUDE_SKILLS_REL=".claude/skills"            # agentTargets[0].skillsRel
 readonly CLAUDE_CONFIG_REL=".claude"                   # agentTargets[0].configRel
 readonly CODEX_SKILLS_REL=".agents/skills"             # agentTargets[1].skillsRel
@@ -57,7 +60,6 @@ readonly OPENCODE_SKILLS_REL=".opencode/commands"      # agentTargets[2].skillsR
 # OpenCode currently ships no per-agent config (configSrc / configRel are
 # empty), so no OPENCODE_CONFIG_REL mirror is needed.
 readonly COPILOT_SKILLS_REL=".agents/skills"           # agentTargets[3].skillsRel
-readonly COPILOT_USER_SKILLS_REL=".copilot/skills"     # agentTargets[3].userSkillsRel
 # Parent of CODEX_SKILLS_REL — used by isolation cases that seed sibling
 # files alongside the Codex skills dir. Derived (not a Go constant) to
 # avoid drift if agentTargets[1].skillsRel ever moves.
@@ -65,10 +67,6 @@ readonly CODEX_SKILLS_PARENT="${CODEX_SKILLS_REL%/*}"
 # Parent of OPENCODE_SKILLS_REL — used by reset_user_home to wipe the
 # whole .opencode/ tree between cases. Derived for the same drift reason.
 readonly OPENCODE_SKILLS_PARENT="${OPENCODE_SKILLS_REL%/*}"
-# Parent of COPILOT_USER_SKILLS_REL — used by reset_user_home so the next
-# case starts with `~/.copilot/` wiped. Derived the same way as the codex
-# parent constant above.
-readonly COPILOT_USER_SKILLS_PARENT="${COPILOT_USER_SKILLS_REL%/*}"
 
 # Bundle-provided config filenames (agents/<configSrc>/* in the embed). Not
 # named in constants.go (the embed tree is the source) but pinned here
@@ -183,7 +181,6 @@ reset_user_home() {
          "$HOME/${CODEX_CONFIG_REL}" \
          "$HOME/${CODEX_SKILLS_PARENT}" \
          "$HOME/${OPENCODE_SKILLS_PARENT}" \
-         "$HOME/${COPILOT_USER_SKILLS_PARENT}" \
          "$HOME/${XX_HOME_DIR}"
 }
 
@@ -630,18 +627,19 @@ assert_eq "exit 0" "$RUN_RC" "0"
 assert_is_dir "copilot project skills installed" "$PROJ_CP/${COPILOT_SKILLS_REL}/${SKILL_X_X_DIR}"
 assert_absent "claude NOT installed" "$PROJ_CP/${CLAUDE_SKILLS_REL}"
 
-case_start "x-x init --agents=copilot --scope=user lands at ~/.copilot/skills"
+case_start "x-x init --agents=copilot --scope=user lands at ~/.agents/skills"
+PROJ_CP_USER="$(fresh_project)"
+cd "$PROJ_CP_USER"
 reset_user_home
-cd "$(fresh_project)"
 run_capture "" init --agents=copilot --scope=user
 assert_eq "exit 0" "$RUN_RC" "0"
-# User-scope copilot has its own path (.copilot/skills), distinct from
-# the project-scope `.agents/skills`. Codex's user dir (~/.agents/skills)
-# MUST NOT be created when only copilot is selected.
+# Copilot reuses the Codex `.agents/skills` path at both scopes (cross-
+# agent open spec). Skills land under SANDBOX_HOME, project cwd is left
+# alone (user scope must not pollute the user's terminal pwd).
 assert_is_dir "copilot user-scope skills landed" \
-  "${SANDBOX_HOME}/${COPILOT_USER_SKILLS_REL}/${SKILL_X_X_DIR}"
-assert_absent "codex user-scope dir NOT created" \
-  "${SANDBOX_HOME}/${CODEX_SKILLS_REL}"
+  "${SANDBOX_HOME}/${COPILOT_SKILLS_REL}/${SKILL_X_X_DIR}"
+assert_absent "no install under project cwd" \
+  "$PROJ_CP_USER/${COPILOT_SKILLS_REL}"
 
 case_start "x-x init --agents=invalid rejects unknown agent"
 reset_user_home
@@ -1266,7 +1264,7 @@ reset_user_home
 # Trigger the lazy first-run write of ~/${XX_HOME_DIR}/agents/ via bare
 # x-x, then wipe the install dirs so skill remove has nothing to do.
 run_capture "" >/dev/null
-rm -rf "$HOME/${CLAUDE_CONFIG_REL}" "$HOME/${CODEX_SKILLS_PARENT}" "$HOME/${CODEX_CONFIG_REL}" "$HOME/${OPENCODE_SKILLS_PARENT}" "$HOME/${COPILOT_USER_SKILLS_PARENT}"
+rm -rf "$HOME/${CLAUDE_CONFIG_REL}" "$HOME/${CODEX_SKILLS_PARENT}" "$HOME/${CODEX_CONFIG_REL}" "$HOME/${OPENCODE_SKILLS_PARENT}"
 run_capture "" skills remove --user
 assert_eq "exit 0 on empty state" "$RUN_RC" "0"
 assert_contains "summary line" "$RUN_OUT" "Removed 0"
