@@ -1,0 +1,121 @@
+name: manual / kilo code <- llm judge
+
+# Manually-triggered experiment from the agent-eval lineage. Same shape as
+# manual-claude-judge.yml; differences are all in the agent install step,
+# the env block, and the pytest filter:
+#
+#   1. Install Kilo Code CLI (`@kilocode/cli`) on the runner; install x-x
+#      to PATH.
+#   2. Sync the uv-managed skills-evals project (deepeval, openai, pytest,
+#      python-dotenv).
+#   3. Run `uv run pytest tests/test_kilo_*.py`. The tests:
+#        a. Spawn `kilo run --auto --format json` against DeepSeek's
+#           openai-compatible endpoint (per-workspace `kilo.json` routes
+#           to api.deepseek.com/v1 with `{env:DEEPSEEK_API_KEY}`).
+#        b. Drive `/x-plan` and `/x-x` with an auto-yes loop
+#           (skills-evals/src/skills_evals/kilo_driver.py) — one
+#           `kilo run --session <id>` per turn because Kilo's CLI is
+#           one-shot per invocation (multi-turn via session resume, not a
+#           held-open stdin like Claude's stream-json).
+#        c. Score the plan and the produced artifacts with the same two
+#           DeepEval `GEval` metrics the Claude workflow uses, both
+#           backed by DeepSeek.
+#   4. Upload the pytest tmp directory (transcripts + workspace) on
+#      failure so the run can be inspected offline.
+#
+# See docs/internal/adding-agent-eval-backend.md for the recipe this
+# workflow follows; docs/internal/manually-triggered-workflows.md for
+# the broader conventions (60min cap, no Docker sbx, secret naming).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    # One scenario (TODO app) takes 5–15 min: planner + executor + two
+    # judge LLM calls. 60-minute cap leaves headroom for DeepSeek latency
+    # without rewarding a stuck agent.
+    timeout-minutes: 60
+
+    env:
+      # Tell the conftest which agent it's bootstrapping the workspace for.
+      # The fixture writes a per-workspace kilo.json and routes `x-x init`
+      # with `--agents kilo`.
+      X_X_AGENT_UNDER_TEST: kilo
+
+      # DeepSeek API key powers both the judge LLM (direct DeepSeek call)
+      # and the kilo agent (DeepSeek via openai-compatible). The kilo
+      # workspace config substitutes {env:DEEPSEEK_API_KEY} at agent
+      # startup; the conftest also mirrors this into KILO_API_KEY as a
+      # belt-and-suspenders for any code path that bypasses the config.
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+
+      # Kilo overrides documented at
+      # https://kilo.ai/docs/code-with-ai/platforms/cli — these match
+      # KILO_ENV_DEFAULTS in skills-evals/tests/conftest.py.
+      KILO_PROVIDER: openai-compatible
+      KILOCODE_MODEL: openai-compatible/deepseek-v4-pro
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # `go install .` lands a release-flavored x-x in $(go env GOPATH)/bin.
+      # The setup-go action puts that directory on PATH.
+      - name: install x-x to PATH
+        run: |
+          go install .
+          x-x --version
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      # Kilo's `--format json` event schema is documented only as
+      # "machine-readable event stream"; pinning `@latest` for now and
+      # pinning to a specific version once test_kilo_stream_smoke has
+      # validated a known-good release. Bump intentionally and re-run
+      # the smoke first.
+      - name: install kilo code
+        run: |
+          npm install -g @kilocode/cli@latest
+          kilo --version
+
+      # setup-uv no longer publishes moving major tags (@v8), so pin to a
+      # specific version. Bump intentionally after checking release notes.
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - name: install skills-evals deps
+        working-directory: skills-evals
+        run: uv sync --frozen || uv sync
+
+      # `test_kilo_stream_smoke.py` runs first (the smoke-first reorder in
+      # conftest puts it ahead of scenarios). A wire-format / routing /
+      # env regression fails fast there instead of being masked by a
+      # full planner+executor cycle on a real scenario.
+      - name: run pytest
+        working-directory: skills-evals
+        run: uv run pytest tests/test_kilo_stream_smoke.py tests/test_kilo_todo.py tests/test_kilo_plan_extends.py tests/test_kilo_reminders_supersedes_todo.py
+
+      # Pytest writes transcripts and per-test workspaces under tmp_path
+      # (`/tmp/pytest-of-runner/...`). Uploading on failure gives us the
+      # JSONL stream that records every event the agent emitted, plus the
+      # workspace state at failure.
+      - name: upload pytest tmp on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: pytest-tmp-${{ github.run_id }}
+          path: /tmp/pytest-of-runner/
+          if-no-files-found: warn
+          retention-days: 14
