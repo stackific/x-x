@@ -37,7 +37,7 @@ Any planning or execution skill must read the following before doing anything el
 
 If any of these required files is missing, STOP and report which file(s) are missing. Do not proceed.
 
-The constitution file: whichever of `CLAUDE.md`, `AGENTS.md`, or `GEMINI.md` exists at the repo root. This sets project-wide rules and overrides defaults.
+The constitution file: whichever of `CLAUDE.md`, `AGENTS.md`, or `GEMINI.md` exists at the repo root. This sets project-wide rules and overrides defaults. Strongly suggest the user to have one of these if they are missing as a helpful tip.
 
 ## Plan file contract
 
