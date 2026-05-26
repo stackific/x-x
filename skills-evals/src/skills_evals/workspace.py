@@ -10,7 +10,10 @@ they're collapsed in the tree summary and skipped in the per-file dump.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from pathlib import Path
+
+import yaml
 
 # Installed by `x-x init` before the planner/executor runs. The judge sees
 # them in the tree summary but the per-file dump skips them so the prompt
@@ -87,3 +90,58 @@ def _dump_file(p: Path, workspace: Path) -> str:
   if len(content) > MAX_FILE_BYTES:
     content = content[:MAX_FILE_BYTES] + "\n... [truncated]"
   return f"--- {p.relative_to(workspace)} ---\n{content}\n"
+
+
+@dataclass
+class ParsedPlan:
+  """A plan file with its YAML frontmatter parsed.
+
+  Tests assert on relationship fields (`status`, `supersedes`,
+  `superseded_by`, `extends`, `extended_by`) directly — deterministic
+  Python parsing is the right tool, not LLM judgment.
+  """
+
+  path: Path
+  slug: str  # filename stem, e.g. "0001-build-todo-app"
+  frontmatter: dict = field(default_factory=dict)
+  body: str = ""
+
+
+def load_all_plans(workspace: Path) -> list[ParsedPlan]:
+  """Parse every <prefix>-<slug>.md under .x-plans/, sorted by filename.
+
+  Underscore-prefixed registry files (_data_systems.yaml, _config.lock)
+  are skipped — they're scaffold, not plans. A file that doesn't open
+  with a `---` frontmatter block is skipped; the caller can assert
+  `len(plans) == N` to catch a malformed result.
+  """
+  plans_dir = workspace / ".x-plans"
+  if not plans_dir.is_dir():
+    return []
+  out: list[ParsedPlan] = []
+  for p in sorted(plans_dir.glob("*.md")):
+    if p.name.startswith("_"):
+      continue
+    parsed = _parse_plan(p)
+    if parsed is not None:
+      out.append(parsed)
+  return out
+
+
+def _parse_plan(p: Path) -> ParsedPlan | None:
+  text = p.read_text(encoding="utf-8", errors="replace")
+  if not text.startswith("---\n"):
+    return None
+  end_marker = "\n---\n"
+  end = text.find(end_marker, 4)
+  if end == -1:
+    return None
+  fm_text = text[4:end]
+  body = text[end + len(end_marker):]
+  try:
+    fm = yaml.safe_load(fm_text) or {}
+  except yaml.YAMLError:
+    fm = {}
+  if not isinstance(fm, dict):
+    fm = {}
+  return ParsedPlan(path=p, slug=p.stem, frontmatter=fm, body=body)

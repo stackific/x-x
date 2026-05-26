@@ -30,13 +30,14 @@ The exact structure depends on the skill, but every plan must include:
 
 Any planning or execution skill must read the following before doing anything else:
 
-- The constitution file: whichever of `CLAUDE.md`, `AGENTS.md`, or `GEMINI.md` exists at the repo root. This sets project-wide rules and overrides defaults.
 - `<cwd>/.x-plans/_data_systems.yaml` — registry of named systems (id, name, brief).
 - `../_x-x_shared/_systems.md` — systems-registry consultation and source-of-truth rules.
 
 `../_x-x_shared/_ears.md` is **lazy-loaded** — only read it when actually about to draft `## Tasks` criteria. Skills that don't author tasks (e.g., `/x-x` execution) skip it entirely.
 
 If any of these required files is missing, STOP and report which file(s) are missing. Do not proceed.
+
+The constitution file: whichever of `CLAUDE.md`, `AGENTS.md`, or `GEMINI.md` exists at the repo root. This sets project-wide rules and overrides defaults. Strongly suggest the user to have one of these if they are missing as a helpful tip.
 
 ## Plan file contract
 

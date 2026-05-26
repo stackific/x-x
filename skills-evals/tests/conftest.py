@@ -2,13 +2,13 @@
 # Copyright 2026 Stackific Inc.
 """Shared pytest fixtures for the skills evals.
 
-Two responsibilities:
-
 1. Load `.env` (from skills-evals/ or any parent) so DEEPSEEK_API_KEY
    reaches both the judge LLM (DeepSeek directly) and the Claude Code
    backend (DeepSeek via Anthropic-compatible env vars).
 2. Provide a fresh, isolated `workspace` directory per test — `x-x init`
    runs in it before any skill is invoked.
+
+Everything logs verbosely. Silence is a bug.
 """
 
 from __future__ import annotations
@@ -16,14 +16,15 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 from _pytest.nodes import Item
 from dotenv import find_dotenv, load_dotenv
 
-# Claude Code routing for DeepSeek's Anthropic-compatible endpoint. See
-# docs/internal/manually-triggered-workflows.md.
+from skills_evals._logging import log
+
 CLAUDE_ENV_DEFAULTS = {
   "ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic",
   "ANTHROPIC_MODEL": "deepseek-v4-pro[1m]",
@@ -43,27 +44,55 @@ def pytest_collection_modifyitems(items: list[Item]) -> None:
   install / env regression fails fast instead of being masked by a
   scenario timeout.
   """
+  order_before = [item.nodeid for item in items]
   items.sort(key=lambda item: 0 if "smoke" in item.nodeid else 1)
+  order_after = [item.nodeid for item in items]
+  if order_before != order_after:
+    log("conftest", f"reordered tests (smoke first): {order_after}")
+  else:
+    log("conftest", f"test order: {order_after}")
 
 
 @pytest.fixture(scope="session", autouse=True)
 def _load_dotenv_and_route_claude() -> None:
   """Load .env and point Claude Code at DeepSeek before any test runs."""
-  load_dotenv(find_dotenv(usecwd=True), override=False)
+  log("conftest", f"python={sys.version.split()[0]} platform={sys.platform}")
+
+  env_path = find_dotenv(usecwd=True)
+  log("conftest", f".env search result: {env_path or '(none)'}")
+  load_dotenv(env_path, override=False)
+  if env_path:
+    log("conftest", f"loaded .env from {env_path}")
+
   api_key = os.environ.get("DEEPSEEK_API_KEY")
   if not api_key:
+    log("conftest", "DEEPSEEK_API_KEY MISSING — aborting")
     pytest.fail(
       "DEEPSEEK_API_KEY not set. Add it to skills-evals/.env or export it "
       "before running pytest — it powers both the judge LLM and the "
       "Claude Code backend.",
       pytrace=False,
     )
-  # ANTHROPIC_AUTH_TOKEN is what Claude Code reads; DEEPSEEK_API_KEY is
-  # what the judge's OpenAI-compatible client reads. Same secret, two
-  # env-var names.
-  os.environ.setdefault("ANTHROPIC_AUTH_TOKEN", api_key)
+  log(
+    "conftest",
+    f"DEEPSEEK_API_KEY: set (length={len(api_key)}, ...{api_key[-4:]})",
+  )
+
+  if not os.environ.get("ANTHROPIC_AUTH_TOKEN"):
+    os.environ["ANTHROPIC_AUTH_TOKEN"] = api_key
+    log("conftest", "mirrored DEEPSEEK_API_KEY into ANTHROPIC_AUTH_TOKEN")
+  else:
+    log("conftest", "ANTHROPIC_AUTH_TOKEN already set; leaving as-is")
+
   for k, v in CLAUDE_ENV_DEFAULTS.items():
-    os.environ.setdefault(k, v)
+    if k in os.environ:
+      log("conftest", f"env {k} already set: {os.environ[k]}")
+    else:
+      os.environ[k] = v
+      log("conftest", f"env {k}={v} (default)")
+
+  log("conftest", f"claude on PATH: {shutil.which('claude')}")
+  log("conftest", f"x-x on PATH: {shutil.which('x-x')}")
 
 
 @pytest.fixture
@@ -76,10 +105,12 @@ def workspace(tmp_path: Path) -> Path:
 
   ws = tmp_path / "eval-workspace"
   ws.mkdir()
-  subprocess.run(["git", "init", "-q"], cwd=ws, check=True)
-  subprocess.run(["git", "config", "user.email", "ci@example.com"], cwd=ws, check=True)
-  subprocess.run(["git", "config", "user.name", "CI"], cwd=ws, check=True)
-  subprocess.run(
+  log("conftest", f"workspace: {ws}")
+
+  for cmd in (
+    ["git", "init", "-q"],
+    ["git", "config", "user.email", "ci@example.com"],
+    ["git", "config", "user.name", "CI"],
     [
       "x-x", "init",
       "--scope", "project",
@@ -88,7 +119,21 @@ def workspace(tmp_path: Path) -> Path:
       "--max-plan-lines", "30",
       "--review-per", "plan",
     ],
-    cwd=ws,
-    check=True,
-  )
+  ):
+    log("conftest", f"run: {' '.join(cmd)}")
+    result = subprocess.run(cmd, cwd=ws, capture_output=True, text=True)
+    if result.stdout.strip():
+      for line in result.stdout.rstrip().splitlines():
+        log("conftest", f"  stdout: {line}")
+    if result.stderr.strip():
+      for line in result.stderr.rstrip().splitlines():
+        log("conftest", f"  stderr: {line}")
+    log("conftest", f"  exit={result.returncode}")
+    if result.returncode != 0:
+      pytest.fail(
+        f"workspace setup failed: {' '.join(cmd)} exited {result.returncode}",
+        pytrace=False,
+      )
+
+  log("conftest", f"workspace ready: {sorted(p.name for p in ws.iterdir())}")
   return ws
