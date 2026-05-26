@@ -43,8 +43,7 @@ faster than this doc would.
 Two unrelated families of workflows live in this repo. They never merge into
 each other.
 
-1. **Standalone single-platform regressions.** E.g. the now-graduated
-   `windows-cli.yml` (was `exp-windows-cli.yml` until it gated PRs).
+1. **Standalone single-platform regressions.** E.g. `windows-cli.yml`.
    These run a fixed test matrix on one platform and assert pass/fail. They
    stay as standalone files forever — there's no "later" they merge into.
 2. **Agent-eval family.** E.g. `manual-claude-judge.yml`, future
