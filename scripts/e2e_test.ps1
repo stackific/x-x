@@ -11,8 +11,8 @@
 # into an isolated %USERPROFILE%, exercises every subcommand, asserts the
 # documented side effects.
 #
-# Designed to run on `windows-latest` (Server 2022) via
-# .github/workflows/exp-windows-cli.yml. Also runnable locally on a Windows
+# Designed to run on `windows-latest` via
+# .github/workflows/windows-cli.yml. Also runnable locally on a Windows
 # host with PowerShell 7+ and Go on PATH:
 #
 #   pwsh -File scripts\e2e_test.ps1
