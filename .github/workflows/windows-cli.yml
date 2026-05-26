@@ -1,15 +1,18 @@
-name: exp / windows cli smoke
+name: windows cli smoke
 
-# Manually-triggered Windows smoke test, two-job pipeline:
+# Windows smoke test, two-job pipeline:
 #
 #   build  (ubuntu-latest, golang container) -> `task build` -> upload bin/
 #   smoke  (windows-latest)                  -> download bin/ ->
 #                                               INSTALL_LOCAL.ps1 -> e2e_test.ps1
 #                                               -> UNINSTALL.ps1 -> assert clean
 #
-# Verbose by default: every step prints version banners, env dumps, file
-# listings, and command tracing so a failure in CI is fully diagnosable
-# from the log alone without needing a re-run.
+# Triggers:
+#   - pull_request against main: every PR gets a Windows smoke check.
+#   - push to main: post-merge sanity; catches commits that land without PR.
+#   - workflow_dispatch: manual re-run with the loud, self-diagnosing log
+#     form (verbose=true by default; ACTIONS_STEP_DEBUG / RUNNER_DEBUG fire
+#     only on this path so PR-trigger logs stay readable).
 
 on:
   workflow_dispatch:
@@ -18,16 +21,28 @@ on:
         description: 'Print per-case stdout/stderr/RC in the e2e harness'
         type: boolean
         default: true
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Cancel an in-flight run for the same ref when a new commit lands — PR
+# iterations only need the latest signal. Workflow-scoped key isolates
+# this from any future Windows workflow's concurrency group.
+concurrency:
+  group: windows-cli-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 # ACTIONS_STEP_DEBUG / ACTIONS_RUNNER_DEBUG enable GitHub Actions internal
-# debug logging (step annotations, runner traces). Normally these require
-# a repo secret; setting them as plain env makes every run debug-logged.
+# debug logging (step annotations, runner traces). Gated on the manual
+# verbose input so PR / push runs stay quiet; a failed PR run can be
+# re-launched via workflow_dispatch with verbose=true for the loud form.
 env:
-  ACTIONS_STEP_DEBUG: true
-  ACTIONS_RUNNER_DEBUG: true
+  ACTIONS_STEP_DEBUG: ${{ inputs.verbose == true }}
+  ACTIONS_RUNNER_DEBUG: ${{ inputs.verbose == true }}
 
 jobs:
   build:
