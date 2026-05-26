@@ -42,7 +42,7 @@ each other.
 1. **Standalone single-platform regressions.** E.g. `exp-windows-cli.yml`.
    These run a fixed test matrix on one platform and assert pass/fail. They
    stay as standalone files forever — there's no "later" they merge into.
-2. **Agent-eval family.** E.g. `exp-claude-deepseek-judge.yml`, future
+2. **Agent-eval family.** E.g. `exp-claude-judge.yml`, future
    `exp-codex-judge.yml`, `exp-cursor-judge.yml`. Same planner + executor +
    LLM-judge loop, different agent backends. These will eventually fold into
    a single workflow with an `agent:` input.

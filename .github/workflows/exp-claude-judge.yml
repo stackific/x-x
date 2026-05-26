@@ -1,4 +1,4 @@
-name: exp / claude code on deepseek + llm judge
+name: exp / claude code <- llm judge
 
 # Manually-triggered experiment from the agent-eval lineage. The loop:
 #
