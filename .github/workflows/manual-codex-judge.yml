@@ -106,11 +106,20 @@ jobs:
               litellm_params:
                 model: deepseek/deepseek-v4-flash
                 api_key: os.environ/DEEPSEEK_API_KEY
+          # Drop tool entries whose type != "function" before forwarding
+          # to DeepSeek. Codex's namespace tools (apply_patch, MCP groups)
+          # are not accepted by DeepSeek's chat-completions parser.
+          # See skills-evals/litellm_proxy_hooks.py for context.
+          litellm_settings:
+            callbacks: ["litellm_proxy_hooks.proxy_handler_instance"]
           EOF
           echo "--- /tmp/litellm/config.yaml ---"
           cat /tmp/litellm/config.yaml
-          nohup litellm --config /tmp/litellm/config.yaml --port 4000 \
-            > /tmp/litellm/proxy.log 2>&1 &
+          # PYTHONPATH lets the proxy import the loose hook module from
+          # the repo without `pip install`-ing it.
+          PYTHONPATH=$GITHUB_WORKSPACE/skills-evals \
+            nohup litellm --config /tmp/litellm/config.yaml --port 4000 \
+              > /tmp/litellm/proxy.log 2>&1 &
           echo "litellm pid=$!"
           # Poll /health until ready (LiteLLM cold start is ~5-10s).
           for i in $(seq 1 30); do
@@ -121,7 +130,8 @@ jobs:
             fi
             sleep 1
           done
-          # Fail loudly if the proxy never came up.
+          # Fail loudly if the proxy never came up (a hook import error
+          # would also surface here — check proxy.log).
           curl -sS http://localhost:4000/health/liveliness 2>&1 \
             || curl -sS http://localhost:4000/health 2>&1 \
             || (echo "--- proxy.log ---"; cat /tmp/litellm/proxy.log; exit 1)

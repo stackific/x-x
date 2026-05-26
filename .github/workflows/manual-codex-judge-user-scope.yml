@@ -70,11 +70,14 @@ jobs:
               litellm_params:
                 model: deepseek/deepseek-v4-flash
                 api_key: os.environ/DEEPSEEK_API_KEY
+          litellm_settings:
+            callbacks: ["litellm_proxy_hooks.proxy_handler_instance"]
           EOF
           echo "--- /tmp/litellm/config.yaml ---"
           cat /tmp/litellm/config.yaml
-          nohup litellm --config /tmp/litellm/config.yaml --port 4000 \
-            > /tmp/litellm/proxy.log 2>&1 &
+          PYTHONPATH=$GITHUB_WORKSPACE/skills-evals \
+            nohup litellm --config /tmp/litellm/config.yaml --port 4000 \
+              > /tmp/litellm/proxy.log 2>&1 &
           echo "litellm pid=$!"
           for i in $(seq 1 30); do
             if curl -sf http://localhost:4000/health/liveliness > /dev/null 2>&1 \
