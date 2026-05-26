@@ -20,9 +20,12 @@ Wire format notes (the `--input-format stream-json` protocol is
 reverse-engineered — see github.com/anthropics/claude-code/issues/24594):
 - `--verbose` is required when `--output-format stream-json` is set;
   without it the CLI errors out or emits nothing on recent versions.
-- The agent signals "this turn is done, your move" via an `assistant`
-  event whose `message.stop_reason == "end_turn"`. The `result` event
-  fires ONCE per session (at stdin close), not per turn.
+- The agent signals "this turn is done, your move" via a `result` event,
+  one per user-message→agent-response cycle. The community docs that
+  claim `result` fires only once at session end are wrong (or wrong for
+  the DeepSeek-on-Anthropic-wire compat shim we route through here).
+  Verified empirically across 36+25 event runs: every `assistant` event
+  has `stop_reason: None`, every user→agent cycle ends with a `result`.
 - User-message envelope on stdin matches the Agent SDK examples at
   code.claude.com/docs/en/agent-sdk/streaming-vs-single-mode.
 
@@ -171,55 +174,66 @@ def drive_skill(
       etype = event.get("type")
       if etype == "assistant":
         message = event.get("message", {}) or {}
-        # Update last_assistant_text from any text block; the
-        # confirmation prompt (if any) lives at the end of the text.
+        # Accumulate text from this assistant message. We log every
+        # assistant event's stop_reason for diagnostic purposes (it is
+        # always None when routed through DeepSeek's compat shim — see
+        # wire format notes at top of file) but do NOT key off it.
+        # The turn-end signal in this wire is the `result` event below.
         for block in message.get("content", []) or []:
           if isinstance(block, dict) and block.get("type") == "text":
             last_assistant_text = block.get("text", "")
 
-        stop_reason = message.get("stop_reason")
-        # "end_turn" = agent is done, waiting for next user message.
-        # "tool_use" / "max_tokens" / "stop_sequence" = more events
-        # coming for the SAME turn; don't act on them.
-        if stop_reason == "end_turn":
-          run.turns += 1
-          log(
-            "driver",
-            f"turn {run.turns} ended (stop_reason=end_turn). "
-            f"assistant text tail: {_brief(last_assistant_text)}",
-          )
-          if not _asks_for_confirmation(last_assistant_text):
-            log(
-              "driver",
-              "no confirmation prompt detected — closing stdin to end session",
-            )
-            _close_stdin(proc)
-            continue
-          if run.turns >= max_turns:
-            log(
-              "driver",
-              f"hit max_turns={max_turns}; closing stdin and stopping",
-            )
-            _close_stdin(proc)
-            continue
-          log("driver", "confirmation prompt detected — sending 'yes'")
-          _send_user_message(proc.stdin, "yes")
-          run.yes_replies += 1
-          last_assistant_text = ""
-
       elif etype == "result":
-        # Session-end summary. The CLI exits shortly; the stdout pump
-        # will push None and our loop will hit the EOF branch above.
-        # Break NOW rather than waiting for EOF — avoids burning the
-        # 600s per-turn timeout if the stdout pipe lingers.
-        run.completed = True
+        # A `result` event ends one user→agent cycle. Decide whether to
+        # send "yes" to a confirmation prompt or end the session here.
+        # `result_text` is the final assistant message text; fall back
+        # to accumulated last_assistant_text if empty (defense in depth).
+        result_text = event.get("result", "") or ""
+        check_text = result_text or last_assistant_text
+        run.turns += 1
         log(
           "driver",
-          f"result event; ending loop. turns_observed={run.turns} "
-          f"events_received={run.events_received}",
+          f"turn {run.turns} ended (result event). "
+          f"final text: {_brief(check_text)}",
         )
-        _close_stdin(proc)
-        break
+
+        if not _asks_for_confirmation(check_text):
+          log(
+            "driver",
+            "no confirmation prompt — closing stdin to end session",
+          )
+          run.completed = True
+          _close_stdin(proc)
+          # Don't break — let the loop drain to EOF so we know the
+          # process actually exited (line is None branch sets completed
+          # and breaks).
+          continue
+
+        if run.turns >= max_turns:
+          log(
+            "driver",
+            f"hit max_turns={max_turns} (still being asked for "
+            f"confirmation); closing stdin and stopping",
+          )
+          _close_stdin(proc)
+          continue
+
+        log(
+          "driver",
+          "confirmation prompt detected in result; sending 'yes' to continue",
+        )
+        if not _send_user_message_safely(proc.stdin, "yes"):
+          # Pipe is closed — claude has already exited after the result
+          # event. We can't drive any more turns.
+          log(
+            "driver",
+            "stdin pipe closed before 'yes' could be sent; agent exited "
+            "after result. multi-turn auto-yes not supported on this "
+            "Claude Code version / wire combination.",
+          )
+          break
+        run.yes_replies += 1
+        last_assistant_text = ""
 
   finally:
     _close_stdin(proc)
@@ -378,6 +392,24 @@ def _send_user_message(stdin: IO[str], content: str) -> None:
   stdin.write(payload + "\n")
   stdin.flush()
   log("driver", f"sent user message ({len(payload)} bytes): {_brief(content, 100)}")
+
+
+def _send_user_message_safely(stdin: IO[str], content: str) -> bool:
+  """Send a user message, returning False if the pipe is already closed.
+
+  Used for replies sent after a `result` event, where claude may have
+  exited even though we want to drive another turn. A closed pipe is a
+  real failure mode (not a bug), not an exception to swallow silently.
+  """
+  if stdin is None or stdin.closed:
+    return False
+  try:
+    _send_user_message(stdin, content)
+    return True
+  except (BrokenPipeError, ValueError) as e:
+    # ValueError covers "I/O operation on closed file" from text-mode IO.
+    log("driver", f"send failed: {type(e).__name__}: {e}")
+    return False
 
 
 def _close_stdin(proc: subprocess.Popen) -> None:
