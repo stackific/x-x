@@ -120,6 +120,20 @@ var agentTargets = []agentTarget{
 	// config.toml, etc.) still lives under .codex/ — see Codex docs:
 	// https://developers.openai.com/codex/hooks for the lookup order.
 	{"codex", "Codex CLI", ".agents/skills", "codex", ".codex"},
+	// OpenCode's TUI resolves slash commands from `.opencode/commands/`
+	// (project) or `~/.config/opencode/commands/` (user). We install the
+	// bundled SKILL.md tree under the project- / user-scope `.opencode/commands/`
+	// root so the on-disk shape matches Claude/Codex. Note: at the time of
+	// writing, `opencode run` does NOT resolve slash commands
+	// (anomalyco/opencode#7345, #2330, #5073) — the TUI does, the headless
+	// `run` does not. Until those land, automated callers (including
+	// skills-evals/src/skills_evals/opencode_driver.py) must inline the
+	// SKILL.md content into the prompt rather than relying on `/x-plan`-style
+	// resolution. We ship to `.opencode/commands/` anyway so interactive
+	// TUI use of the bundled skills works today without a re-install.
+	// No per-agent config is bundled for OpenCode yet (auth + provider
+	// routing live outside the install scope, in `~/.local/share/opencode/`).
+	{"opencode", "OpenCode", ".opencode/commands", "", ""},
 }
 
 // skillsSubdir is the directory inside ~/.x-x/agents/ that holds the

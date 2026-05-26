@@ -64,11 +64,14 @@ Set-Variable -Option Constant -Name SKILL_MANIFEST_FILE -Value 'SKILL.md'
 
 Set-Variable -Option Constant -Name OWNED_SKILLS -Value @($SKILL_X_PLAN_DIR, $SKILL_X_X_DIR)
 
-# agentTargets in constants.go — index 0 = Claude Code, 1 = Codex CLI.
-Set-Variable -Option Constant -Name CLAUDE_SKILLS_REL -Value '.claude\skills'
-Set-Variable -Option Constant -Name CLAUDE_CONFIG_REL -Value '.claude'
-Set-Variable -Option Constant -Name CODEX_SKILLS_REL  -Value '.agents\skills'
-Set-Variable -Option Constant -Name CODEX_CONFIG_REL  -Value '.codex'
+# agentTargets in constants.go — index 0 = Claude Code, 1 = Codex CLI,
+# 2 = OpenCode. OpenCode ships no per-agent config today (configRel is "")
+# so there is no OPENCODE_CONFIG_REL mirror.
+Set-Variable -Option Constant -Name CLAUDE_SKILLS_REL   -Value '.claude\skills'
+Set-Variable -Option Constant -Name CLAUDE_CONFIG_REL   -Value '.claude'
+Set-Variable -Option Constant -Name CODEX_SKILLS_REL    -Value '.agents\skills'
+Set-Variable -Option Constant -Name CODEX_CONFIG_REL    -Value '.codex'
+Set-Variable -Option Constant -Name OPENCODE_SKILLS_REL -Value '.opencode\commands'
 
 # Bundled config filenames (not constants in Go; pinned here for assertions).
 Set-Variable -Option Constant -Name CLAUDE_SETTINGS_FILE -Value 'settings.json'
@@ -989,6 +992,19 @@ try {
   Assert-Eq    'exit 0' $RunRC 0
   Assert-IsDir 'claude skills tree' (Join-Path $projInitBoth (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
   Assert-IsDir 'codex skills tree'  (Join-Path $projInitBoth (Join-Path $CODEX_SKILLS_REL  $SKILL_X_X_DIR))
+} finally { Pop-Location }
+
+Start-Case 'init --agents claude,codex,opencode installs all three skill trees'
+Reset-UserHome
+$projInitAll = New-FreshProject
+Push-Location $projInitAll
+try {
+  Invoke-XX init --scope project --agents 'claude,codex,opencode' `
+                    --prefix-width 4 --max-plan-lines 30 --review-per task
+  Assert-Eq    'exit 0' $RunRC 0
+  Assert-IsDir 'claude skills tree'   (Join-Path $projInitAll (Join-Path $CLAUDE_SKILLS_REL   $SKILL_X_X_DIR))
+  Assert-IsDir 'codex skills tree'    (Join-Path $projInitAll (Join-Path $CODEX_SKILLS_REL    $SKILL_X_X_DIR))
+  Assert-IsDir 'opencode skills tree' (Join-Path $projInitAll (Join-Path $OPENCODE_SKILLS_REL $SKILL_X_X_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init refuses re-run on an already-initialized project'
@@ -2343,6 +2359,19 @@ try {
   Assert-Eq        'exit 0'                   $RunRC 0
   Assert-IsDir     'codex skills present'    (Join-Path $projF2 (Join-Path $CODEX_SKILLS_REL $SKILL_X_X_DIR))
   Assert-NotExists 'claude skills NOT present' (Join-Path $projF2 (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+} finally { Pop-Location }
+
+Start-Case 'init --agents=opencode single-agent install'
+Reset-UserHome
+$projF2o = New-FreshProject
+Push-Location $projF2o
+try {
+  Invoke-XX init --scope project --agents=opencode `
+                    --prefix-width 4 --max-plan-lines 30 --review-per task
+  Assert-Eq        'exit 0'                     $RunRC 0
+  Assert-IsDir     'opencode skills present'    (Join-Path $projF2o (Join-Path $OPENCODE_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'claude skills NOT present'  (Join-Path $projF2o (Join-Path $CLAUDE_SKILLS_REL   $SKILL_X_X_DIR))
+  Assert-NotExists 'codex skills NOT present'   (Join-Path $projF2o (Join-Path $CODEX_SKILLS_REL    $SKILL_X_X_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init --prefix-width=6 seeds the lock with 6'

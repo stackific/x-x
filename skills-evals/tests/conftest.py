@@ -35,6 +35,31 @@ CLAUDE_ENV_DEFAULTS = {
   "CLAUDE_CODE_EFFORT_LEVEL": "max",
 }
 
+# OpenCode reads provider credentials via Models.dev — for the `deepseek`
+# provider, `DEEPSEEK_API_KEY` is the routing key. No additional env mirror
+# is required (unlike Claude Code, where DeepSeek's key has to be re-named
+# into ANTHROPIC_AUTH_TOKEN so the Anthropic-compatible client picks it
+# up). Model selection is passed via `--model deepseek/<id>` from
+# opencode_driver.py at spawn time, not from env — recorded here as an
+# empty dict so the per-agent env-setup loop in `_load_dotenv_and_route`
+# stays uniform across backends.
+OPENCODE_ENV_DEFAULTS: dict[str, str] = {}
+
+# Which agent backend the workspace fixture installs and probes for.
+# Default `claude` keeps the existing Claude tests running unchanged.
+# Workflows targeting other backends (e.g. manual-opencode-judge.yml)
+# set X_X_AGENT_KEY=opencode to flip both the `--agents <key>` value
+# passed to `x-x init` and the binary the fixture skips on if missing.
+VALID_AGENT_KEYS = ("claude", "opencode")
+AGENT_BINARY_FOR_KEY = {
+  "claude": "claude",
+  "opencode": "opencode",
+}
+AGENT_ENV_DEFAULTS_FOR_KEY = {
+  "claude": CLAUDE_ENV_DEFAULTS,
+  "opencode": OPENCODE_ENV_DEFAULTS,
+}
+
 # Which `x-x init --scope` value to use when bootstrapping each test's
 # workspace. Default `project` installs skills into <workspace>/.claude/skills/.
 # Set X_X_INSTALL_SCOPE=user (e.g. from manual-claude-judge-user-scope.yml)
@@ -46,13 +71,39 @@ VALID_SCOPES = ("project", "user")
 
 
 def pytest_collection_modifyitems(items: list[Item]) -> None:
-  """Run smoke tests before scenario tests.
+  """Filter to the active agent's tests, then run smoke before scenario.
 
-  A scenario test costs 5–15 min of real DeepSeek + Claude time. The
-  smoke test costs seconds. Running smoke first means a protocol-format /
-  install / env regression fails fast instead of being masked by a
-  scenario timeout.
+  Each test file is named `test_<agent>_<scenario>.py` and is bound to
+  exactly one backend — claude tests use the Anthropic-compatible stream
+  and resolve slash commands natively; opencode tests inline SKILL.md
+  content because `opencode run` does not resolve slashes today. Mixing
+  them in one pytest session would have each set fail on the other's
+  workspace shape, so collection deselects everything but the active
+  agent's files.
+
+  Active agent is `X_X_AGENT_KEY` (default `claude`). After filtering,
+  smoke tests sort first so a wire-format / install / env regression
+  fails fast instead of being masked by a scenario timeout.
   """
+  active = os.environ.get("X_X_AGENT_KEY", "claude")
+  selected: list[Item] = []
+  deselected: list[Item] = []
+  for item in items:
+    if f"test_{active}_" in item.nodeid:
+      selected.append(item)
+    elif any(f"test_{k}_" in item.nodeid for k in VALID_AGENT_KEYS):
+      deselected.append(item)
+    else:
+      # Unknown / agent-agnostic file — keep it in selection.
+      selected.append(item)
+  if deselected:
+    items[:] = selected
+    log(
+      "conftest",
+      f"deselected {len(deselected)} tests not matching agent={active!r}: "
+      f"{[d.nodeid for d in deselected]}",
+    )
+
   order_before = [item.nodeid for item in items]
   items.sort(key=lambda item: 0 if "smoke" in item.nodeid else 1)
   order_after = [item.nodeid for item in items]
@@ -63,8 +114,15 @@ def pytest_collection_modifyitems(items: list[Item]) -> None:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _load_dotenv_and_route_claude() -> None:
-  """Load .env and point Claude Code at DeepSeek before any test runs."""
+def _load_dotenv_and_route_agent() -> None:
+  """Load .env and route the active agent at DeepSeek before tests run.
+
+  The active agent is selected by `X_X_AGENT_KEY` (default `claude`).
+  Each agent's per-process env requirements are encoded in
+  `AGENT_ENV_DEFAULTS_FOR_KEY` — Claude needs the `ANTHROPIC_*` block
+  pointed at DeepSeek's compat shim; OpenCode picks up the deepseek
+  provider directly from `DEEPSEEK_API_KEY` and needs no extra mirror.
+  """
   log("conftest", f"python={sys.version.split()[0]} platform={sys.platform}")
 
   env_path = find_dotenv(usecwd=True)
@@ -78,8 +136,8 @@ def _load_dotenv_and_route_claude() -> None:
     log("conftest", "DEEPSEEK_API_KEY MISSING — aborting")
     pytest.fail(
       "DEEPSEEK_API_KEY not set. Add it to skills-evals/.env or export it "
-      "before running pytest — it powers both the judge LLM and the "
-      "Claude Code backend.",
+      "before running pytest — it powers both the judge LLM and every "
+      "agent backend routed through DeepSeek.",
       pytrace=False,
     )
   log(
@@ -87,21 +145,40 @@ def _load_dotenv_and_route_claude() -> None:
     f"DEEPSEEK_API_KEY: set (length={len(api_key)}, ...{api_key[-4:]})",
   )
 
-  if not os.environ.get("ANTHROPIC_AUTH_TOKEN"):
+  agent_key = _resolve_agent_key()
+  log("conftest", f"active agent backend: {agent_key} (from X_X_AGENT_KEY)")
+
+  # Claude routes via Anthropic-compatible env vars; mirror the DeepSeek
+  # key into ANTHROPIC_AUTH_TOKEN so the Anthropic SDK in Claude Code
+  # picks it up. OpenCode (and future native-provider agents) read
+  # DEEPSEEK_API_KEY directly via Models.dev, so no mirror is needed.
+  if agent_key == "claude" and not os.environ.get("ANTHROPIC_AUTH_TOKEN"):
     os.environ["ANTHROPIC_AUTH_TOKEN"] = api_key
     log("conftest", "mirrored DEEPSEEK_API_KEY into ANTHROPIC_AUTH_TOKEN")
-  else:
-    log("conftest", "ANTHROPIC_AUTH_TOKEN already set; leaving as-is")
 
-  for k, v in CLAUDE_ENV_DEFAULTS.items():
+  for k, v in AGENT_ENV_DEFAULTS_FOR_KEY[agent_key].items():
     if k in os.environ:
       log("conftest", f"env {k} already set: {os.environ[k]}")
     else:
       os.environ[k] = v
       log("conftest", f"env {k}={v} (default)")
 
-  log("conftest", f"claude on PATH: {shutil.which('claude')}")
+  log(
+    "conftest",
+    f"{AGENT_BINARY_FOR_KEY[agent_key]} on PATH: "
+    f"{shutil.which(AGENT_BINARY_FOR_KEY[agent_key])}",
+  )
   log("conftest", f"x-x on PATH: {shutil.which('x-x')}")
+
+
+def _resolve_agent_key() -> str:
+  key = os.environ.get("X_X_AGENT_KEY", "claude")
+  if key not in VALID_AGENT_KEYS:
+    pytest.fail(
+      f"X_X_AGENT_KEY={key!r} is not one of {VALID_AGENT_KEYS}",
+      pytrace=False,
+    )
+  return key
 
 
 @pytest.fixture
@@ -110,10 +187,12 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
   The init scope is read from X_X_INSTALL_SCOPE (default "project") so
   the same test suite can be driven against both
-  `x-x init --scope project` (skills land under <ws>/.claude/skills/)
-  and `x-x init --scope user` (skills land under ~/.claude/skills/).
-  Both workflows in .github/workflows/manual-claude-*judge.yml share
-  these tests; only the env value differs.
+  `x-x init --scope project` (skills land under <ws>/<agent-skills-rel>/)
+  and `x-x init --scope user` (skills land under $HOME/<agent-skills-rel>/).
+  X_X_AGENT_KEY (default "claude") selects which agent's `--agents <key>`
+  value to pass to `x-x init` and which binary to require on PATH —
+  per-agent workflows (.github/workflows/manual-<agent>-*judge.yml)
+  reuse this same pytest collection by flipping that env var.
 
   $HOME (and $USERPROFILE on Windows) is redirected to a per-test
   sandboxed directory before `x-x init` runs, so every test sees a
@@ -122,14 +201,17 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
   populated by test N-1, and the asymmetry between project-scope
   (fresh per test from tmp_path) and user-scope (carries state) would
   let a latent dependency on pre-install state pass undetected. The
-  compiled x-x and claude binaries live outside $HOME (typically under
-  $(go env GOPATH)/bin and the node tool cache), so the sandbox does
-  not affect binary resolution.
+  compiled x-x and agent CLI binaries live outside $HOME (typically
+  under $(go env GOPATH)/bin and the node tool cache), so the sandbox
+  does not affect binary resolution.
   """
   if shutil.which("x-x") is None:
     pytest.skip("`x-x` not on PATH — install it with `go install .` from repo root")
-  if shutil.which("claude") is None:
-    pytest.skip("`claude` not on PATH — install Claude Code first")
+
+  agent_key = _resolve_agent_key()
+  agent_bin = AGENT_BINARY_FOR_KEY[agent_key]
+  if shutil.which(agent_bin) is None:
+    pytest.skip(f"`{agent_bin}` not on PATH — install the {agent_key} CLI first")
 
   scope = os.environ.get("X_X_INSTALL_SCOPE", "project")
   if scope not in VALID_SCOPES:
@@ -158,7 +240,7 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     [
       "x-x", "init",
       "--scope", scope,
-      "--agents", "claude",
+      "--agents", agent_key,
       "--prefix-width", "4",
       "--max-plan-lines", "30",
       "--review-per", "plan",
@@ -182,13 +264,18 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
   log("conftest", f"workspace ready: {sorted(p.name for p in ws.iterdir())}")
   if scope == "user":
     home = Path.home()
-    user_skills = home / ".claude" / "skills"
-    if user_skills.is_dir():
+    # Mirror the on-disk path each agent's skills install to so the
+    # post-install log shows what landed.
+    skills_root = {
+      "claude": home / ".claude" / "skills",
+      "opencode": home / ".opencode" / "commands",
+    }[agent_key]
+    if skills_root.is_dir():
       log(
         "conftest",
-        f"user-scope skills present at {user_skills}: "
-        f"{sorted(p.name for p in user_skills.iterdir())}",
+        f"user-scope skills present at {skills_root}: "
+        f"{sorted(p.name for p in skills_root.iterdir())}",
       )
     else:
-      log("conftest", f"user-scope skills NOT found at {user_skills}")
+      log("conftest", f"user-scope skills NOT found at {skills_root}")
   return ws

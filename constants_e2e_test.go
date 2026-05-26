@@ -44,10 +44,13 @@ func TestE2EShellConstantsMatchGo(t *testing.T) {
 		"SKILL_X_X_DIR":       skillXXDir,
 		"SKILL_MANIFEST_FILE": skillManifestFile,
 
-		"CLAUDE_SKILLS_REL": agentTargets[0].skillsRel,
-		"CLAUDE_CONFIG_REL": agentTargets[0].configRel,
-		"CODEX_SKILLS_REL":  agentTargets[1].skillsRel,
-		"CODEX_CONFIG_REL":  agentTargets[1].configRel,
+		"CLAUDE_SKILLS_REL":   agentTargets[0].skillsRel,
+		"CLAUDE_CONFIG_REL":   agentTargets[0].configRel,
+		"CODEX_SKILLS_REL":    agentTargets[1].skillsRel,
+		"CODEX_CONFIG_REL":    agentTargets[1].configRel,
+		"OPENCODE_SKILLS_REL": agentTargets[2].skillsRel,
+		// OpenCode has no per-agent config bundled — agentTargets[2].configRel
+		// is "" and is intentionally not mirrored on the shell side.
 	}
 
 	for name, expected := range want {
