@@ -59,7 +59,15 @@ CONFIRMATION_PATTERN = re.compile(r"reply\s+`?yes`?", re.IGNORECASE)
 DEFAULT_MAX_TURNS = 20
 DEFAULT_PER_TURN_TIMEOUT_S = 600.0
 
-DEFAULT_MODEL = "deepseek/deepseek-v4-pro[1m]"
+DEFAULT_MODEL = "deepseek/deepseek-v4-pro"
+# Note: the trailing "[1m]" variant suffix that Claude Code uses
+# (`deepseek-v4-pro[1m]` — the 1M-context build) is an Anthropic-shim
+# convention. OpenCode reads provider/model IDs from Models.dev's
+# deepseek registry, which exposes the plain IDs only
+# (`deepseek-v4-pro`, `deepseek-v4-flash`, `deepseek-chat`). Adding the
+# `[1m]` suffix to the --model flag fails fast with:
+#   Model not found: deepseek/deepseek-v4-pro[1m]. Did you mean:
+#   deepseek-v4-pro, deepseek-v4-flash, deepseek-chat?
 
 # Env vars echoed at startup for CI-log clarity. Anything carrying a
 # secret reports as set/MISSING with a 4-char suffix, never the value.
