@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 
 from deepeval.metrics import GEval
-from deepeval.test_case import LLMTestCase, LLMTestCaseParams
+from deepeval.test_case import LLMTestCase, SingleTurnParams
 
 from .._logging import log
 from ..models import DEFAULT_JUDGE_MODEL, DeepSeekModel
@@ -85,8 +85,8 @@ class ArtifactJudge(Judge):
       name="ArtifactQuality",
       evaluation_steps=EVALUATION_STEPS,
       evaluation_params=[
-        LLMTestCaseParams.INPUT,
-        LLMTestCaseParams.ACTUAL_OUTPUT,
+        SingleTurnParams.INPUT,
+        SingleTurnParams.ACTUAL_OUTPUT,
       ],
       model=self.model,
       threshold=threshold,
