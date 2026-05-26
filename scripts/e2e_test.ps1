@@ -63,6 +63,7 @@ Set-Variable -Option Constant -Name CODEX_CONFIG_REL  -Value '.codex'
 Set-Variable -Option Constant -Name CLAUDE_SETTINGS_FILE -Value 'settings.json'
 Set-Variable -Option Constant -Name CODEX_HOOKS_FILE     -Value 'hooks.json'
 
+Set-Variable -Option Constant -Name E2E_VERSION -Value 'v0.0.0-e2e'
 
 # Compositions so call sites read as plain English.
 $Script:XX_AGENTS_DIR        = Join-Path $XX_HOME_DIR    $AGENTS_EMBED_ROOT
@@ -240,15 +241,15 @@ function Assert-IsCopyNotSymlink {
 # Mirrors the bash harness's `run_capture <stdin> <args...>`. Stores the
 # captured stdout/stderr/exit code in $Script:RunOut / $Script:RunErr /
 # $Script:RunRC so per-case assertions read like the bash form.
-
+#
 # IMPORTANT: `Invoke-XX` is a deliberately NON-advanced function (no
 # `[CmdletBinding()]`, no `param()` block). PowerShell's parameter binder
-# rules that drove this shape:
+# rules:
 #   - Any declared parameter without a Position attribute becomes positional
-#     in declaration order. A `[string]$Stdin = ''` first param would
-#     silently swallow the first positional arg from every call site —
-#     `Invoke-XX frobnicate` would set $Stdin='frobnicate' and run the exe
-#     with no args. That was the bug in the earlier draft.
+#     in declaration order — so a `[string]$Stdin` would silently swallow
+#     the first positional arg from every call site. That's the bug the
+#     earlier draft hit; every `Invoke-XX frobnicate` bound 'frobnicate'
+#     to $Stdin and ran the exe with no args.
 #   - The `--` end-of-parameters marker is ALWAYS consumed/stripped by the
 #     binder, in both advanced and non-advanced functions, with no opt-out
 #     (PowerShell/PowerShell#21208). So we can't rely on it either.
@@ -264,8 +265,8 @@ function Assert-IsCopyNotSymlink {
 # (resets to $null on entry) so a stale value can't leak into the next call.
 #
 # Invocation uses the `&` call operator with `@args` splat — pwsh 7+ passes
-# each array element as a distinct argv entry, preserving quoting, spaces,
-# and embedded tabs without the lossy joining behavior of
+# each array element as a distinct argv entry, preserving quoting / spaces /
+# embedded tabs without the lossy joining behavior of
 # `Start-Process -ArgumentList`. `> file 2> file` redirection preserves byte
 # streams since pwsh 7.4; we deliberately AVOID `2>&1` because it triggers
 # NativeCommandError wrapping that fights with $ErrorActionPreference='Stop'.
@@ -407,64 +408,35 @@ function Write-Registry {
   Set-Content -LiteralPath (Join-Path $PlansDir $PLANS_SYSTEMS_FILE) -Value $body -Encoding ascii
 }
 
-# ---------- locate the installed binary ----------
-#
-# AGENTS.md non-negotiable: the binary is cross-compiled by `task build` in
-# a Linux container (Job 1 of the workflow) and installed onto the Windows
-# runner via scripts\INSTALL_LOCAL.ps1 (Job 2). The harness does NOT build
-# its own binary. We just point $Script:BuildBin at the installed location
-# so the rest of the file's call sites work unchanged.
+# ---------- build ----------
 
-$Script:BuildBin = Join-Path $HOME (Join-Path '.x-x' 'x-x.exe')
-if (-not (Test-Path -LiteralPath $Script:BuildBin -PathType Leaf)) {
-  throw "expected installed binary not found: $($Script:BuildBin); run scripts\INSTALL_LOCAL.ps1 first"
+Write-Host "Building $($Script:BuildBin) (release-flavored, CGO disabled)..."
+Push-Location $RepoRoot
+try {
+  $env:CGO_ENABLED = '0'
+  & go build -ldflags "-s -w -X main.Version=$E2E_VERSION" -o $Script:BuildBin .
+  if ($LASTEXITCODE -ne 0) {
+    throw "go build failed with exit code $LASTEXITCODE"
+  }
+} finally {
+  Pop-Location
 }
 
-# Probe the actual version stamp once so case-level assertions don't have
-# to hardcode `v0.0.0-e2e` (which only the in-harness build path stamped).
-# `task build` doesn't pass `-X main.Version=...`, so the binary's Version
-# defaults to "dev" — or whatever the release stamp is. Capturing the
-# probed value here keeps the harness agnostic.
-$probe = & $Script:BuildBin --version
-$Script:DetectedVersion = ($probe -split "`r?`n")[0].Split(' ')[-1]
-if (-not $Script:DetectedVersion) {
-  throw "could not probe version: --version output was empty"
-}
-
-# Pivot HOME AFTER probing the version so the probe runs against the
-# actually-installed binary (under the real $HOME), and the rest of the
-# harness operates in the sandbox.
+# Now that the build is done, pivot HOME so every subsequent x-x invocation
+# writes into the sandbox instead of the developer's real user profile.
 Reset-UserHome
 
-Write-Host "Sandbox:         $Sandbox"
-Write-Host "Installed binary: $($Script:BuildBin)"
-Write-Host "Detected version: $($Script:DetectedVersion)"
+if (-not (Test-Path -LiteralPath $Script:BuildBin -PathType Leaf)) {
+  throw "expected build artifact not found: $($Script:BuildBin)"
+}
+
+Write-Host "Sandbox: $Sandbox"
+Write-Host "Binary:  $($Script:BuildBin)"
 Write-Host ''
 
 # ==========================================================================
 # Test cases
 # ==========================================================================
-
-# ---------- harness meta-smoke ----------
-#
-# Before any real assertion, confirm the runner is actually forwarding args
-# to the binary. If THIS fails, every downstream case will report a
-# meaningless error — bailing here points straight at the harness instead
-# of at the CLI.
-
-Start-Case 'harness forwards args to the binary verbatim (meta-smoke)'
-Invoke-XX plans slugify foo
-Assert-Eq 'exit 0'           $RunRC 0
-Assert-Eq 'stdout is "foo"'  $RunOut 'foo'
-if ($Script:RunRC -ne 0 -or $Script:RunOut -ne 'foo') {
-  Write-Host ''
-  Write-Host 'FATAL: harness self-check failed. Subsequent cases will be skipped.' -ForegroundColor Red
-  Write-Host "  Got RC=$($Script:RunRC) stdout=[$($Script:RunOut)] stderr=[$($Script:RunErr)]" -ForegroundColor Red
-  Write-Host ''
-  Write-Host ('-' * 40)
-  Write-Host ("e2e: {0} passed, {1} failed (aborted at meta-smoke)" -f $PassCount, $FailCount)
-  exit 1
-}
 
 # ---------- bare invocation ----------
 
@@ -472,7 +444,7 @@ Start-Case 'bare x-x prints the notice block'
 Invoke-XX
 Assert-Eq      'exit 0'           $RunRC 0
 Assert-Contains 'version line'    $RunOut 'x-x by Stackific'
-Assert-Contains 'version stamp'   $RunOut $Script:DetectedVersion
+Assert-Contains 'version stamp'   $RunOut $E2E_VERSION
 Assert-Contains 'product tagline' $RunOut 'evidence-based'
 Assert-Contains 'copyright line'  $RunOut 'Copyright 2026 Stackific Inc.'
 Assert-Contains 'SPDX line'       $RunOut 'Apache-2.0'
@@ -503,10 +475,10 @@ $secondMtime = (Get-Item -LiteralPath $sentinel).LastWriteTimeUtc
 Assert-Eq 'mtime unchanged across runs' $firstMtime $secondMtime
 
 Start-Case 'x-x --version prints the notice'
-Invoke-XX --version
+Invoke-XXversion
 Assert-Eq       'exit 0'        $RunRC 0
 Assert-Contains 'version line'  $RunOut 'x-x by Stackific'
-Assert-Contains 'version stamp' $RunOut $Script:DetectedVersion
+Assert-Contains 'version stamp' $RunOut $E2E_VERSION
 
 Start-Case 'x-x -h prints the usage block'
 Invoke-XX -h
@@ -578,8 +550,16 @@ Assert-Eq 'slug printed' $RunOut 'foo-bar-baz'
 
 Start-Case 'plans slugify trims leading/trailing dashes'
 Invoke-XX plans slugify '---foo---'
-Assert-Eq 'exit 0'      $RunRC 0
+Assert-Eq 'exit 0'       $RunRC 0
 Assert-Eq 'slug printed' $RunOut 'foo'
+
+Start-Case 'plans slugify accepts a double-dash-prefixed title WITHOUT --'
+# runPlansSlugify bypasses flag.Parse so `--draft note` is treated as the
+# title verbatim, not as a flag. Without that fix, flag.Parse would reject
+# this with "flag provided but not defined: -draft".
+Invoke-XX plans slugify '--draft note'
+Assert-Eq 'exit 0'         $RunRC 0
+Assert-Eq 'double-dash slug' $RunOut 'draft-note'
 
 Start-Case 'plans slugify accepts pure numerics'
 Invoke-XX plans slugify '12345'
@@ -737,7 +717,7 @@ try {
 Start-Case 'plans list --status accepts comma list'
 Push-Location $projL
 try {
-  Invoke-XX plans list --status valid,superseded
+  Invoke-XX plans list --status 'valid,superseded'
   Assert-Eq 'exit 0' $RunRC 0
   $expected = @(
     "0003-charlie`tsuperseded`tauth"
@@ -966,7 +946,7 @@ Reset-UserHome
 $projInitBoth = New-FreshProject
 Push-Location $projInitBoth
 try {
-  Invoke-XX init --scope project --agents claude,codex `
+  Invoke-XX init --scope project --agents 'claude,codex' `
                     --prefix-width 4 --max-plan-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   Assert-IsDir 'claude skills tree' (Join-Path $projInitBoth (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
@@ -1052,10 +1032,6 @@ try {
   # Order: agents (blank = all defaults to all), scope (1=project),
   # prefix-width (blank = default), max-plan-lines (blank = default),
   # review-per (1=task).
-  # The interactive invocation is called without subcommand args because
-  # the test feeds the prompts; the script defaults to `init`-style on bare
-  # invocation. Actually, runDefault handles bare; for true interactive
-  # init we need to pass `init` explicitly:
   $Script:NextStdin = "`n1`n`n`n1`n"
   Invoke-XX init
   Assert-Eq    'exit 0'                 $RunRC 0
@@ -1117,13 +1093,23 @@ try {
 
 # ---------- copy vs symlink ----------
 
-Start-Case 'user-scope install uses COPY (not symlink) on Windows'
+Start-Case 'user-scope install uses COPY (not symlink) on Windows + leaves cwd clean'
 Reset-UserHome
-Invoke-XX init --scope user --agents claude `
-                  --prefix-width 4 --max-plan-lines 30 --review-per task
-Assert-Eq 'exit 0' $RunRC 0
-$userClaudeSkill = Join-Path $env:USERPROFILE (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR)
-Assert-IsCopyNotSymlink 'x-x skill is a copy, not symlink' $userClaudeSkill
+# Push to a throwaway dir so the cwd-pollution assertion has a known scope.
+$userInitCwd = New-FreshProject
+Push-Location $userInitCwd
+try {
+  Invoke-XX init --scope user --agents claude `
+                    --prefix-width 4 --max-plan-lines 30 --review-per task
+  Assert-Eq 'exit 0' $RunRC 0
+  $userClaudeSkill = Join-Path $env:USERPROFILE (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR)
+  Assert-IsCopyNotSymlink 'x-x skill is a copy, not symlink' $userClaudeSkill
+  # User-scope MUST NOT drop the project-scoped .x-plans/ scaffold into cwd.
+  # Without this gate, every user-scope init would pollute the user's
+  # terminal pwd and the project gate would mistake it for an initialised
+  # project on every subsequent invocation.
+  Assert-NotExists 'user-scope init leaves cwd .x-plans untouched' (Join-Path $userInitCwd $PLANS_DIR)
+} finally { Pop-Location }
 
 Start-Case 'user-scope install copies bundled skill content verbatim'
 $copySource = Join-Path $env:USERPROFILE (Join-Path $XX_AGENTS_SKILLS_DIR (Join-Path $SKILL_X_X_DIR $SKILL_MANIFEST_FILE))
@@ -1386,7 +1372,7 @@ Write-PlanWithBody -PlansDir $plansDirOK6 -Name "$('{0:D4}' -f ($PLANS_LIST_OVER
 Write-PlanWithBody -PlansDir $plansDirOK6 -Name "$('{0:D4}' -f ($PLANS_LIST_OVERFLOW_THRESHOLD + 2))-bravo.md" -Body 'mentions retry only'
 Push-Location $projOK6
 try {
-  Invoke-XX plans list --overflow-keywords webhook,retry
+  Invoke-XX plans list --overflow-keywords 'webhook,retry'
   Assert-Eq       'exit 0' $RunRC 0
   Assert-Contains 'OR match: alpha present' $RunOut 'alpha'
   Assert-Contains 'OR match: bravo present' $RunOut 'bravo'
@@ -1459,7 +1445,7 @@ Write-Plan $plansDirOK9 '0002-b.md' 'valid' 'payment-audit-log'
 Write-Plan $plansDirOK9 '0003-c.md' 'valid' 'other-system'
 Push-Location $projOK9
 try {
-  Invoke-XX plans list --system checkout-service,payment-audit-log --order=asc
+  Invoke-XX plans list --system 'checkout-service,payment-audit-log' --order=asc
   Assert-Eq 'exit 0' $RunRC 0
   $expected = @("0001-a`tvalid`tcheckout-service", "0002-b`tvalid`tpayment-audit-log") -join "`n"
   Assert-Eq 'comma-list OR' $RunOut $expected
@@ -2636,7 +2622,7 @@ try {
 
 Start-Case 'skills remove --user removes user-scope install end-to-end'
 Reset-UserHome
-Invoke-XX init --scope user --agents claude,codex `
+Invoke-XX init --scope user --agents 'claude,codex' `
                   --prefix-width 4 --max-plan-lines 30 --review-per task
 Assert-Eq    'init exit 0' $RunRC 0
 $preClaude = Join-Path $env:USERPROFILE (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR)
@@ -2912,7 +2898,7 @@ Start-Case 'x-x --version output matches bare x-x'
 Reset-UserHome
 Invoke-XX
 $bareOut = $RunOut
-Invoke-XX --version
+Invoke-XXversion
 Assert-Eq 'output parity' $RunOut $bareOut
 
 # ==========================================================================
@@ -3162,7 +3148,7 @@ Write-Plan (Join-Path $projDS $PLANS_DIR) '0001-alpha.md' 'valid' 'auth'
 Write-Plan (Join-Path $projDS $PLANS_DIR) '0002-bravo.md' 'valid' 'auth'
 Push-Location $projDS
 try {
-  Invoke-XX plans list --status valid,valid
+  Invoke-XX plans list --status 'valid,valid'
   Assert-Eq 'exit 0' $RunRC 0
   $expected = @("0002-bravo`tvalid`tauth", "0001-alpha`tvalid`tauth") -join "`n"
   Assert-Eq 'dup statuses collapsed' $RunOut $expected
@@ -3431,7 +3417,7 @@ try {
 # ---------- Windows-specific: --help equivalent forms ----------
 
 Start-Case 'x-x --help renders the same notice as -h'
-Invoke-XX --help
+Invoke-XXhelp
 $helpOut = $RunOut
 Invoke-XX -h
 Assert-Eq 'parity between --help and -h' $RunOut $helpOut

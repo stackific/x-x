@@ -97,16 +97,19 @@ func loadPrefixWidth(plansDir string) int {
 }
 
 // scanHighestPrefix returns the largest numeric prefix found among entry
-// names in plansDir whose first `width` characters are digits. Matches the
-// regex `^(\d{width})` — the prefix does NOT have to be followed by `-`
-// here; that stricter shape is enforced by `plans lint`, not by the
-// next-prefix lookup.
+// names in plansDir whose name shape matches `<width digits>-<rest>.md` —
+// the same filename pattern listPlans accepts. Anchoring on `-` and the
+// `.md` extension (not just `\d{width}`) keeps next-prefix consistent
+// with what list / lint will recognise: a 5-digit-prefixed file when
+// width=4 doesn't match either pattern and must not be counted, otherwise
+// next-prefix would hand out numbers based on files list / lint silently
+// ignore.
 func scanHighestPrefix(plansDir string, width int) int {
 	entries, err := os.ReadDir(plansDir)
 	if err != nil {
 		return 0
 	}
-	re := regexp.MustCompile(fmt.Sprintf(`^(\d{%d})`, width))
+	re := regexp.MustCompile(fmt.Sprintf(`^(\d{%d})-.+%s$`, width, regexp.QuoteMeta(planFileExt)))
 	highest := 0
 	for _, e := range entries {
 		m := re.FindStringSubmatch(e.Name())
@@ -1152,19 +1155,38 @@ func slugify(title string) string {
 // its kebab-case slug to stdout. Exits 2 on missing/extra arguments or when
 // the title contains no characters that survive slugification. No project
 // gate — slugify is a pure transform and is useful before `x-x init`.
+// runPlansSlugify is the only subcommand that takes a single positional and
+// no flags. flag.Parse can't help here — the title may legitimately start
+// with `-` (e.g. "---draft note"), and flag.Parse would reject it as an
+// unknown flag. Instead we handle the three flag-shaped tokens we care
+// about manually: `-h`/`--help` print usage, `--` is a legacy separator
+// stripped if present, and everything else is treated as the title.
 func runPlansSlugify(args []string) {
-	fs := flag.NewFlagSet("plans slugify", flag.ExitOnError)
-	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, `Usage: x-x plans slugify "<title>"`)
+	// Help short-circuit. flag.Parse would do this for us, but we don't
+	// use flag.Parse — handle it explicitly so users still get usage on
+	// `x-x plans slugify -h`.
+	if len(args) >= 1 {
+		switch args[0] {
+		case "-h", "--help":
+			fmt.Fprintln(os.Stderr, `Usage: x-x plans slugify "<title>"`)
+			return
+		case "--":
+			// Legacy end-of-flags marker — the historical (flag.Parse-based)
+			// CLI required `--` before a leading-dash title. Strip and
+			// continue so existing scripts keep working; new callers don't
+			// need it.
+			args = args[1:]
+		}
 	}
-	_ = fs.Parse(args)
-	if fs.NArg() != 1 {
+	if len(args) != 1 {
+		fmt.Fprintln(os.Stderr, `Usage: x-x plans slugify "<title>"`)
 		fmt.Fprintln(os.Stderr, `x-x plans slugify takes exactly one positional argument: the title (quote it)`)
 		os.Exit(2)
 	}
-	slug := slugify(fs.Arg(0))
+	title := args[0]
+	slug := slugify(title)
 	if slug == "" {
-		fmt.Fprintf(os.Stderr, "x-x plans slugify: title %q has no slug-able characters\n", fs.Arg(0))
+		fmt.Fprintf(os.Stderr, "x-x plans slugify: title %q has no slug-able characters\n", title)
 		os.Exit(2)
 	}
 	fmt.Println(slug)
