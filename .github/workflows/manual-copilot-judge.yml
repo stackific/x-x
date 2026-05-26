@@ -1,0 +1,113 @@
+name: manual / github copilot cli <- llm judge
+
+# Manually-triggered experiment from the agent-eval lineage. Mirrors
+# manual-claude-judge.yml but targets GitHub Copilot CLI via BYOK to
+# DeepSeek's Anthropic-compatible endpoint. The loop:
+#
+#   1. Install GitHub Copilot CLI (npm @github/copilot); install x-x to PATH.
+#   2. Sync the uv-managed skills-evals project.
+#   3. Run `uv run pytest`. The tests:
+#        a. Spawn `copilot -p "<prompt>" --allow-all-tools --no-ask-user`
+#           against DeepSeek (COPILOT_PROVIDER_* env vars).
+#        b. Each skill invocation is a single shot — `--no-ask-user`
+#           replaces the auto-yes loop Claude needs because Copilot CLI
+#           does not have a documented stream-json multi-turn protocol.
+#        c. Score the plan and produced artifacts with the same DeepEval
+#           `GEval` metrics used by the Claude eval.
+#   4. Upload the pytest tmp directory (transcripts + workspace) on
+#      failure so the run can be inspected offline.
+#
+# Provider type MUST be `anthropic` (not `openai`) — DeepSeek requires
+# reasoning_content echo-back on subsequent requests, which Copilot CLI's
+# OpenAI integration does not support and reports as 400 "The
+# reasoning_content in the thinking mode must be passed back to the API".
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    # Same envelope as the Claude eval: 60-minute cap leaves headroom for
+    # DeepSeek latency across the smoke + three scenario tests without
+    # rewarding a stuck agent.
+    timeout-minutes: 60
+
+    env:
+      # Copilot CLI BYOK routing for DeepSeek's Anthropic-compatible endpoint.
+      # The conftest mirrors DEEPSEEK_API_KEY into COPILOT_PROVIDER_API_KEY
+      # at session-setup time so judge (direct DeepSeek) and agent (DeepSeek
+      # via Anthropic-compat wire) share one secret.
+      COPILOT_PROVIDER_TYPE: anthropic
+      COPILOT_PROVIDER_BASE_URL: https://api.deepseek.com/anthropic
+      COPILOT_PROVIDER_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      COPILOT_MODEL: deepseek-v4-pro
+      # deepseek-v4-pro is not in Copilot CLI's built-in catalog; advertise
+      # the context window and output cap so the CLI doesn't fall back to
+      # a conservative default. See `copilot help providers`.
+      COPILOT_PROVIDER_MAX_PROMPT_TOKENS: '840000'
+      COPILOT_PROVIDER_MAX_OUTPUT_TOKENS: '128000'
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # `go install .` lands a release-flavored x-x in $(go env GOPATH)/bin.
+      # The setup-go action puts that directory on PATH.
+      - name: install x-x to PATH
+        run: |
+          go install .
+          x-x --version
+
+      # GitHub Copilot CLI requires Node 22+.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      # The Copilot CLI BYOK / wire surface evolves; pinning to @latest is
+      # fragile but acceptable for a manually-triggered experiment. Bump
+      # intentionally after verifying the smoke test still passes against
+      # the new version.
+      - name: install github copilot cli
+        run: |
+          npm install -g @github/copilot@latest
+          copilot --version
+
+      # setup-uv no longer publishes moving major tags (@v8), so pin to a
+      # specific version. Bump intentionally after checking release notes.
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - name: install skills-evals deps
+        working-directory: skills-evals
+        run: uv sync --frozen || uv sync
+
+      # `test_copilot_stream_smoke.py` runs first via the smoke-first
+      # collection hook in conftest — a wire-format / install / env
+      # regression fails it without burning a full planner+executor
+      # cycle on a real scenario.
+      - name: run pytest
+        working-directory: skills-evals
+        run: uv run pytest tests/test_copilot_stream_smoke.py tests/test_copilot_todo.py tests/test_copilot_plan_extends.py tests/test_copilot_reminders_supersedes_todo.py
+
+      # Pytest writes transcripts and per-test workspaces under tmp_path
+      # (`/tmp/pytest-of-runner/...`). Uploading on failure gives us the
+      # stdout transcript that records every line the agent emitted, plus
+      # the workspace state at failure.
+      - name: upload pytest tmp on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: pytest-tmp-${{ github.run_id }}
+          path: /tmp/pytest-of-runner/
+          if-no-files-found: warn
+          retention-days: 14
