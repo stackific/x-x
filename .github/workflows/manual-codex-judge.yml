@@ -102,24 +102,30 @@ jobs:
         run: |
           mkdir -p /tmp/litellm
           cat > /tmp/litellm/config.yaml <<'EOF'
-          # reasoning_effort=none disables DeepSeek v4 thinking mode.
-          # Without it, DeepSeek emits `reasoning_content` on the first
-          # turn and 400s on every subsequent turn with
-          # "The reasoning_content in the thinking mode must be passed
-          # back to the API" — codex strips non-OpenAI fields between
-          # turns so it cannot echo reasoning_content back. Disabling
-          # thinking sidesteps the protocol mismatch.
+          # `thinking: { type: "disabled" }` disables DeepSeek v4 thinking
+          # mode (per api-docs.deepseek.com/api/create-chat-completion;
+          # values are "enabled" | "disabled", default "enabled"). Without
+          # this, DeepSeek emits `reasoning_content` on the first turn and
+          # 400s on every subsequent turn with "The reasoning_content in
+          # the thinking mode must be passed back to the API" — codex
+          # strips non-OpenAI fields between turns so it cannot echo
+          # reasoning_content back. extra_body merges the field into the
+          # upstream HTTP body that LiteLLM forwards to DeepSeek.
           model_list:
             - model_name: deepseek-v4-pro
               litellm_params:
                 model: deepseek/deepseek-v4-pro
                 api_key: os.environ/DEEPSEEK_API_KEY
-                reasoning_effort: none
+                extra_body:
+                  thinking:
+                    type: disabled
             - model_name: deepseek-v4-flash
               litellm_params:
                 model: deepseek/deepseek-v4-flash
                 api_key: os.environ/DEEPSEEK_API_KEY
-                reasoning_effort: none
+                extra_body:
+                  thinking:
+                    type: disabled
           # Drop tool entries whose type != "function" before forwarding
           # to DeepSeek. Codex's namespace tools (apply_patch, MCP groups)
           # are not accepted by DeepSeek's chat-completions parser.
