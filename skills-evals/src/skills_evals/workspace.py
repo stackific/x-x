@@ -3,9 +3,22 @@
 """Read an eval workspace and render it as plain text for an LLM judge.
 
 The workspace is whatever directory `x-x init` was run in followed by a
-planner/executor loop. Scaffold directories (`.x-plans/`, `.claude/`, ...)
-are installed by `x-x init` itself and so are not "produced artifacts" —
-they're collapsed in the tree summary and skipped in the per-file dump.
+planner/executor loop. Two categories of paths get excluded from what the
+judge sees:
+
+  - Scaffold dirs (`.x-plans/`, `.claude/`, …) — installed by `x-x init`
+    before the agent runs; not the agent's deliverable.
+  - Noise dirs (`node_modules/`, `.venv/`, `__pycache__/`, build outputs,
+    …) — the agent may legitimately create these as a side effect (e.g.
+    running `npm install jsdom` to smoke-test the HTML it just wrote per
+    /x-x's verify-before-flip rule). Vendored deps and build caches
+    aren't the agent's deliverable either, and they routinely blow the
+    judge's context budget (one prior CI run dumped 11 MB of
+    node_modules and got rejected with a 400 from DeepSeek's 1M-token cap).
+
+A total-bytes backstop bounds the combined dump regardless of file
+count: if a future surprise dir blows past the cap, the dump is
+truncated with an explicit marker the judge can see.
 """
 
 from __future__ import annotations
@@ -15,15 +28,41 @@ from pathlib import Path
 
 import yaml
 
-# Installed by `x-x init` before the planner/executor runs. The judge sees
-# them in the tree summary but the per-file dump skips them so the prompt
-# stays bounded.
+# Installed by `x-x init` before the planner/executor runs.
 SCAFFOLD_DIRS = {".x-plans", ".claude", ".agents", ".git", ".codex", ".x-x"}
+
+# Dirs the agent may create as a side effect (vendored deps, virtualenvs,
+# build outputs, caches). Not scaffold, but not the deliverable either.
+NOISE_DIRS = {
+  "node_modules",
+  ".venv", "venv",
+  "__pycache__",
+  "dist", "build", "target",
+  ".next", ".cache", ".pytest_cache", ".mypy_cache", ".ruff_cache",
+}
+
+# Combined exclusion set. Used as a path-component blacklist — a path is
+# excluded if ANY of its components match (handles nested cases like
+# `pkg/node_modules/foo`).
+EXCLUDED_DIRS = SCAFFOLD_DIRS | NOISE_DIRS
 
 # Per-file cap. The judge prompt grows linearly with artifact size;
 # truncating per-file stops a misbehaving executor from blowing the prompt
 # budget on a single large file.
 MAX_FILE_BYTES = 32_000
+
+# Total combined cap on the produced-files dump. DeepSeek's pro model has
+# a 1M-token (~4 MB) context window; we keep the artifact section well
+# under that to leave room for the rubric prompt and the tree summary.
+# When the cap fires, a truncation marker is appended so the judge can
+# see that the input was bounded (and not score it as "agent produced
+# nothing").
+MAX_TOTAL_ARTIFACT_BYTES = 500_000
+
+
+def _is_excluded(rel: Path) -> bool:
+  """True if any path component is in EXCLUDED_DIRS."""
+  return any(part in EXCLUDED_DIRS for part in rel.parts)
 
 
 def collect_plan_files(workspace: Path) -> str:
@@ -44,8 +83,14 @@ def collect_plan_files(workspace: Path) -> str:
 
 
 def collect_produced_files(workspace: Path) -> str:
-  """Concatenated text of every file in the workspace minus scaffold dirs."""
-  chunks = []
+  """Concatenated text of every produced file, scaffold + noise excluded.
+
+  Stops dumping once the combined size hits MAX_TOTAL_ARTIFACT_BYTES and
+  appends an explicit truncation marker so the judge sees a bounded
+  input rather than silently losing tail files.
+  """
+  chunks: list[str] = []
+  total = 0
   for p in sorted(workspace.rglob("*")):
     if not p.is_file():
       continue
@@ -53,14 +98,29 @@ def collect_produced_files(workspace: Path) -> str:
       rel = p.relative_to(workspace)
     except ValueError:
       continue
-    if rel.parts and rel.parts[0] in SCAFFOLD_DIRS:
+    if _is_excluded(rel):
       continue
-    chunks.append(_dump_file(p, workspace))
+    chunk = _dump_file(p, workspace)
+    if total + len(chunk) > MAX_TOTAL_ARTIFACT_BYTES:
+      chunks.append(
+        f"\n... [total artifact size cap of {MAX_TOTAL_ARTIFACT_BYTES} "
+        f"bytes reached; remaining files elided]\n"
+      )
+      break
+    chunks.append(chunk)
+    total += len(chunk)
   return "\n".join(chunks) if chunks else "(no produced files)"
 
 
 def collect_tree(workspace: Path) -> str:
-  """One line per file/dir; scaffold dirs shown as collapsed entries."""
+  """One line per file/dir; excluded top-level dirs are collapsed.
+
+  `.x-plans/` is the one scaffold dir whose contents stay visible — the
+  judge needs to see plan filenames in the tree. Everything else in
+  SCAFFOLD_DIRS or NOISE_DIRS is shown as a single collapsed line at
+  its top level; nested matches (e.g. `pkg/node_modules/foo`) are
+  dropped silently to keep the tree readable.
+  """
   lines = []
   seen_collapsed: set[str] = set()
   for p in sorted(workspace.rglob("*")):
@@ -71,11 +131,16 @@ def collect_tree(workspace: Path) -> str:
     if not rel.parts:
       continue
     top = rel.parts[0]
-    if top in SCAFFOLD_DIRS and top != ".x-plans":
+    if top in EXCLUDED_DIRS and top != ".x-plans":
       if top in seen_collapsed:
         continue
       seen_collapsed.add(top)
-      lines.append(f"[d] {top}/  (scaffold, contents elided)")
+      kind = "scaffold" if top in SCAFFOLD_DIRS else "noise"
+      lines.append(f"[d] {top}/  ({kind}, contents elided)")
+      continue
+    # Drop deeper nested noise (e.g. `pkg/node_modules/foo`) without a
+    # collapse label — keeps the tree readable for legitimate files.
+    if _is_excluded(rel):
       continue
     prefix = "[d] " if p.is_dir() else "    "
     lines.append(f"{prefix}{rel}")

@@ -35,6 +35,14 @@ CLAUDE_ENV_DEFAULTS = {
   "CLAUDE_CODE_EFFORT_LEVEL": "max",
 }
 
+# Which `x-x init --scope` value to use when bootstrapping each test's
+# workspace. Default `project` installs skills into <workspace>/.claude/skills/
+# so each test gets a hermetic skill tree. Set X_X_INSTALL_SCOPE=user (e.g.
+# from manual-claude-judge-user-scope.yml) to install skills into
+# ~/.claude/skills/ once on the runner and reuse across every test in the
+# session — exercises the user-scope path of `x-x init`.
+VALID_SCOPES = ("project", "user")
+
 
 def pytest_collection_modifyitems(items: list[Item]) -> None:
   """Run smoke tests before scenario tests.
@@ -97,11 +105,27 @@ def _load_dotenv_and_route_claude() -> None:
 
 @pytest.fixture
 def workspace(tmp_path: Path) -> Path:
-  """A throwaway directory with `x-x init` already run inside it."""
+  """A throwaway directory with `x-x init` already run inside it.
+
+  The init scope is read from X_X_INSTALL_SCOPE (default "project") so
+  the same test suite can be driven against both
+  `x-x init --scope project` (skills land under <ws>/.claude/skills/)
+  and `x-x init --scope user` (skills land under ~/.claude/skills/).
+  Both workflows in .github/workflows/manual-claude-*judge.yml share
+  these tests; only the env value differs.
+  """
   if shutil.which("x-x") is None:
     pytest.skip("`x-x` not on PATH — install it with `go install .` from repo root")
   if shutil.which("claude") is None:
     pytest.skip("`claude` not on PATH — install Claude Code first")
+
+  scope = os.environ.get("X_X_INSTALL_SCOPE", "project")
+  if scope not in VALID_SCOPES:
+    pytest.fail(
+      f"X_X_INSTALL_SCOPE={scope!r} is not one of {VALID_SCOPES}",
+      pytrace=False,
+    )
+  log("conftest", f"x-x init scope: {scope} (from X_X_INSTALL_SCOPE)")
 
   ws = tmp_path / "eval-workspace"
   ws.mkdir()
@@ -113,7 +137,7 @@ def workspace(tmp_path: Path) -> Path:
     ["git", "config", "user.name", "CI"],
     [
       "x-x", "init",
-      "--scope", "project",
+      "--scope", scope,
       "--agents", "claude",
       "--prefix-width", "4",
       "--max-plan-lines", "30",
@@ -136,4 +160,15 @@ def workspace(tmp_path: Path) -> Path:
       )
 
   log("conftest", f"workspace ready: {sorted(p.name for p in ws.iterdir())}")
+  if scope == "user":
+    home = Path.home()
+    user_skills = home / ".claude" / "skills"
+    if user_skills.is_dir():
+      log(
+        "conftest",
+        f"user-scope skills present at {user_skills}: "
+        f"{sorted(p.name for p in user_skills.iterdir())}",
+      )
+    else:
+      log("conftest", f"user-scope skills NOT found at {user_skills}")
   return ws
