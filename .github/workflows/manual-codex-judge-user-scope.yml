@@ -61,15 +61,19 @@ jobs:
         run: |
           mkdir -p /tmp/litellm
           cat > /tmp/litellm/config.yaml <<'EOF'
+          # reasoning_effort=none disables DeepSeek v4 thinking mode;
+          # see manual-codex-judge.yml for the protocol-mismatch rationale.
           model_list:
             - model_name: deepseek-v4-pro
               litellm_params:
                 model: deepseek/deepseek-v4-pro
                 api_key: os.environ/DEEPSEEK_API_KEY
+                reasoning_effort: none
             - model_name: deepseek-v4-flash
               litellm_params:
                 model: deepseek/deepseek-v4-flash
                 api_key: os.environ/DEEPSEEK_API_KEY
+                reasoning_effort: none
           litellm_settings:
             callbacks: ["litellm_proxy_hooks.proxy_handler_instance"]
           EOF
