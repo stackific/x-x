@@ -1443,7 +1443,8 @@ func TestRunInit_AgentsFilter_OnlyInstallsSelected(t *testing.T) {
 // the whole point of supporting two scopes.
 func TestRunInit_UserScope_EndToEnd(t *testing.T) {
 	home := pinHome(t)
-	chdir(t, t.TempDir())
+	cwd := t.TempDir()
+	chdir(t, cwd)
 	runInit([]string{"--scope", "user"})
 
 	// User-scope on POSIX uses symlinks; on Windows it falls back to copy.
@@ -1461,6 +1462,16 @@ func TestRunInit_UserScope_EndToEnd(t *testing.T) {
 				}
 			}
 		}
+	}
+
+	// User-scope MUST NOT drop the project-scoped .x-plans/ scaffold into
+	// the user's terminal cwd. Earlier the scaffold write was unconditional;
+	// that polluted unrelated working directories and tripped the project
+	// gate on the next x-x invocation. Gating the scaffold-write on
+	// project scope keeps the user's cwd untouched.
+	if _, err := os.Stat(filepath.Join(cwd, plansDir)); !os.IsNotExist(err) {
+		t.Fatalf("user-scope init leaked %s/ into cwd (%v); should only land for --scope project",
+			plansDir, err)
 	}
 }
 

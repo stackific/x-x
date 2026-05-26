@@ -138,6 +138,30 @@ func TestScanHighestPrefix_IgnoresNonNumericPrefixes(t *testing.T) {
 	}
 }
 
+// TestScanHighestPrefix_IgnoresWiderPrefix locks in consistency with
+// listPlans / lint: a file whose digit-prefix is WIDER than the
+// configured width (5 digits when width=4) must not be counted. Earlier
+// the scan used `^(\d{width})` which would greedily read the first
+// `width` digits of `00099-extra.md` as prefix 9 — but listPlans / lint
+// require `^\d{width}-` to recognise a plan file, so next-prefix would
+// hand out numbers based on files list/lint silently ignore. Anchoring
+// the scan on the trailing `-` and `.md` plugs that gap.
+func TestScanHighestPrefix_IgnoresWiderPrefix(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{
+		"0003-three" + planFileExt,   // 4-digit prefix, valid
+		"00099-extra" + planFileExt,  // 5-digit prefix, invisible at width=4
+		"00500-bigger" + planFileExt, // 5-digit prefix, invisible at width=4
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o600); err != nil {
+			t.Fatalf("seed %s: %v", name, err)
+		}
+	}
+	if got := scanHighestPrefix(dir, 4); got != 3 {
+		t.Fatalf("got %d, want 3 (5-digit prefixes must be ignored at width=4)", got)
+	}
+}
+
 // TestScanHighestPrefix_RespectsCustomWidth proves the function uses
 // the width argument (not a baked-in 5) to derive the digit-count
 // regex — projects with width=7 pinned via _config.lock must work.
@@ -1115,9 +1139,12 @@ func TestSlugify(t *testing.T) {
 		{"Plan プラン", "plan"},
 		// Embedded quotes are stripped by the non-alnum class.
 		{`Joe's "Cool" Plan`, "joe-s-cool-plan"},
-		// Leading-dash titles slugify correctly when fed in (the CLI flag
-		// parser still requires `--` to deliver them — separate concern).
+		// Leading-dash titles slugify correctly when fed in. runPlansSlugify
+		// deliberately skips flag.Parse for this reason, so titles like
+		// "---draft note" reach this function unmangled from the CLI.
 		{"-foo bar", "foo-bar"},
+		{"---foo---", "foo"},
+		{"--draft note", "draft-note"},
 		// Slash-separated paths flatten to a single slug.
 		{"lib/foo/bar", "lib-foo-bar"},
 		// Underscores are non-alnum → become separators (so kebab is the

@@ -2,18 +2,18 @@ name: exp / windows cli smoke
 
 # Manually-triggered Windows smoke test, two-job pipeline:
 #
-#   build  (ubuntu-latest, golang container) -> `task build` -> upload bin/
-#   smoke  (windows-latest)                  -> download bin/ ->
-#                                               INSTALL_LOCAL.ps1 -> e2e_test.ps1
-#                                               -> UNINSTALL.ps1 -> assert clean
+#   build  (ubuntu-latest, golang container) → `task build` → upload bin/
+#   smoke  (windows-latest)                  → download bin/ →
+#                                              INSTALL_LOCAL.ps1 → e2e_test.ps1
+#                                              → UNINSTALL.ps1 → assert clean
 #
-# Why the split: building inside a Linux container is non-negotiable -
+# Why the split: building inside a Linux container is non-negotiable —
 # `task build` cross-compiles every supported platform into ./bin in one
 # pass, matching the release pipeline, so the Windows binary the smoke
 # tests run against is bit-equivalent with what real users would download.
 # The Windows runner only consumes the artifact; it doesn't build.
 #
-# Standalone - never merges with the agent-eval lineage (see
+# Standalone — never merges with the agent-eval lineage (see
 # docs/internal/manually-triggered-workflows.md).
 
 on:
@@ -56,8 +56,9 @@ jobs:
 
       # `task build` cross-compiles for linux/{amd64,arm64}, darwin/{amd64,
       # arm64}, windows/{amd64,arm64} into ./bin. The Windows smoke job
-      # only needs windows-amd64, but uploading the full set keeps the
-      # artifact useful for inspection / debugging.
+      # only needs the windows-amd64 binary, but uploading the full set
+      # keeps the artifact useful for inspection / debugging without a
+      # second job.
       - name: task build
         run: task build
 
@@ -74,7 +75,7 @@ jobs:
     needs: build
     timeout-minutes: 30
 
-    # All steps run in pwsh (PowerShell 7) - the default on windows-latest,
+    # All steps run in pwsh (PowerShell 7) — the default on windows-latest,
     # pinned explicitly so a future image change can't surprise us.
     defaults:
       run:
@@ -84,9 +85,8 @@ jobs:
       - uses: actions/checkout@v4
 
       # Pull the artifact built by the Linux container job. INSTALL_LOCAL.ps1
-      # reads bin\x-x-windows-amd64.exe (computed from
-      # $env:PROCESSOR_ARCHITECTURE - windows-latest is x64, so this picks
-      # the amd64 variant).
+      # reads bin\x-x-windows-amd64.exe (computed from $env:PROCESSOR_ARCHITECTURE
+      # — windows-latest is x64, so this picks the amd64 variant).
       - name: download bin
         uses: actions/download-artifact@v4
         with:
@@ -99,8 +99,8 @@ jobs:
 
       # INSTALL_LOCAL.ps1 picks the right binary from bin/ based on the
       # host architecture, copies it to $HOME\.x-x\x-x.exe, patches the
-      # user PATH, and seeds ~/.x-x/.config.json + materialized agents
-      # tree. This is the install flow we want to verify end-to-end.
+      # user PATH, and seeds ~/.x-x/.config.json + materialized agents tree.
+      # This is the install flow we want to verify end-to-end.
       - name: install via INSTALL_LOCAL.ps1
         run: |
           .\scripts\INSTALL_LOCAL.ps1
@@ -117,10 +117,7 @@ jobs:
       # and runs ~180 cases covering bare invocation, init matrix, skills
       # remove, plans next-prefix/list/lint/slugify, and Windows-specific
       # behaviors (copy-not-symlink, %USERPROFILE% scope, CRLF, reserved
-      # filenames, case-insensitive filesystem, etc.). Case #1 is a
-      # meta-smoke that aborts the whole suite if the harness itself is
-      # broken, so a regression in Invoke-XX never cascades into hundreds
-      # of misleading failures.
+      # filenames, case-insensitive filesystem, etc.).
       - name: run e2e suite
         run: |
           $verboseFlag = if ('${{ inputs.verbose }}' -eq 'true') { '-Verbose' } else { '' }

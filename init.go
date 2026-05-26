@@ -157,19 +157,37 @@ func runInit(args []string) {
 		installForTarget(&cfg.agents[i], skills, scopeRoot, skillsSource, agentsRoot, useSymlink)
 	}
 
-	// .x-plans/ scaffold is written after skills so it's the last thing the
-	// user sees. Failures here are non-fatal — they downgrade to a warning
-	// because the skill install (the primary purpose) already succeeded.
-	if err := writePlansScaffold(cwd, cfg); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
+	// .x-plans/ scaffold is project-scoped — it pins per-project plan
+	// tooling defaults and seeds the systems registry that THIS project's
+	// plans reference. User-scope install is about cross-project skill
+	// installation (~/.claude/skills, ~/.agents/skills); it has no business
+	// dropping a plans scaffold into whatever cwd happens to be the user's
+	// terminal pwd. docs/public/reference.md describes user-scope as
+	// $HOME-only for that reason.
+	//
+	// Gating on scope keeps `x-x init --scope user` from polluting an
+	// unrelated directory with `.x-plans/_config.lock`, which the project
+	// gate would then mistake for an initialized project on every
+	// subsequent invocation.
+	if cfg.scope == scopeProject {
+		// Failures here are non-fatal — they downgrade to a warning because
+		// the skill install (the primary purpose) already succeeded.
+		if err := writePlansScaffold(cwd, cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: %v\n", err)
+		}
 	}
 
 	fmt.Println("\nDone.")
-	// Plan files are first-class repo content (frontmatter + EARS tasks),
-	// not local state. Nudge the user to commit them so the team shares the
-	// same plan history. Phrased as a tip rather than auto-editing
-	// .gitignore so we never touch git config behind the user's back.
-	fmt.Printf("\nTip: commit %s/ to git so your team shares plan history.\n", plansDir)
+	// Tip is project-scoped too: a user-scope install hasn't created any
+	// plan files for the user to commit.
+	if cfg.scope == scopeProject {
+		// Plan files are first-class repo content (frontmatter + EARS
+		// tasks), not local state. Nudge the user to commit them so the
+		// team shares the same plan history. Phrased as a tip rather than
+		// auto-editing .gitignore so we never touch git config behind the
+		// user's back.
+		fmt.Printf("\nTip: commit %s/ to git so your team shares plan history.\n", plansDir)
+	}
 }
 
 // validateInitIntFlags rejects non-positive --prefix-width / --max-plan-lines

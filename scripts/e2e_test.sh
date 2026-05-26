@@ -424,7 +424,8 @@ assert_absent "${AGENTS_EMBED_ROOT}/${EMBED_README} not materialized" \
 
 case_start "x-x init --scope user end-to-end"
 reset_user_home
-cd "$(fresh_project)"
+USER_INIT_CWD="$(fresh_project)"
+cd "$USER_INIT_CWD"
 run_capture "" init --scope user
 assert_eq "exit 0" "$RUN_RC" "0"
 for base in "${CLAUDE_SKILLS_REL}" "${CODEX_SKILLS_REL}"; do
@@ -439,6 +440,16 @@ for base in "${CLAUDE_SKILLS_REL}" "${CODEX_SKILLS_REL}"; do
     esac
   done
 done
+# User-scope MUST NOT drop the project-scoped ${PLANS_DIR}/ scaffold into
+# the user's terminal cwd. Earlier the scaffold write was unconditional;
+# that polluted unrelated working directories and tripped the project
+# gate on every subsequent x-x invocation in the same shell.
+if [ -e "${USER_INIT_CWD}/${PLANS_DIR}" ]; then
+  fail "user-scope init must not leak ${PLANS_DIR}/ into cwd" \
+       "found: ${USER_INIT_CWD}/${PLANS_DIR}"
+else
+  ok "user-scope init leaves cwd's ${PLANS_DIR} untouched"
+fi
 
 # ---------- init interactive prompts ----------
 #
@@ -1536,6 +1547,20 @@ cd "$PROJ_NP4"
 run_capture "" plans next-prefix
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_eq "non-matching ignored" "$RUN_OUT" "$(prefix "$DEFAULT_PREFIX_WIDTH" 8)"
+
+case_start "x-x plans next-prefix ignores prefixes WIDER than the configured width"
+# scanHighestPrefix anchors on `<width digits>-` (same shape listPlans uses)
+# so a 5-digit-prefixed file at width=4 is invisible — otherwise next-prefix
+# would hand out numbers based on files list / lint silently ignore.
+PROJ_NP_WIDE="$(fresh_project)"
+seed_project_scaffold "$PROJ_NP_WIDE"
+touch "$PROJ_NP_WIDE/${PLANS_DIR}/$(prefix "$DEFAULT_PREFIX_WIDTH" 3)-three.md" \
+      "$PROJ_NP_WIDE/${PLANS_DIR}/00099-extra.md" \
+      "$PROJ_NP_WIDE/${PLANS_DIR}/00500-bigger.md"
+cd "$PROJ_NP_WIDE"
+run_capture "" plans next-prefix
+assert_eq "exit 0"                  "$RUN_RC" "0"
+assert_eq "wider prefix invisible"  "$RUN_OUT" "$(prefix "$DEFAULT_PREFIX_WIDTH" 4)"
 
 case_start "x-x plans next-prefix with only lock file (no plan files)"
 PROJ_NP5="$(fresh_project)"
@@ -2782,11 +2807,22 @@ assert_eq "exit 0"           "$RUN_RC" "0"
 assert_eq "numeric slug"     "$RUN_OUT" "123"
 
 case_start "x-x plans slugify accepts leading-dash titles after --"
-# Bare `-foo` would be caught by flag.Parse as "bad flag syntax"; the
-# standard `--` end-of-flags separator delivers it as a positional.
+# `--` is honored as a legacy end-of-flags separator for backward compat
+# with scripts that wrote it before the flag.Parse removal.
 run_capture "" plans slugify -- "-foo bar"
 assert_eq "exit 0"           "$RUN_RC" "0"
 assert_eq "leading-dash slug" "$RUN_OUT" "foo-bar"
+
+case_start "x-x plans slugify accepts leading-dash titles WITHOUT --"
+# runPlansSlugify deliberately bypasses flag.Parse so leading-dash titles
+# work without the separator dance. This is the new ergonomic path; the
+# `--` form above still works for backward compat.
+run_capture "" plans slugify "---foo---"
+assert_eq "exit 0"            "$RUN_RC" "0"
+assert_eq "leading-dash slug" "$RUN_OUT" "foo"
+run_capture "" plans slugify "--draft note"
+assert_eq "exit 0"             "$RUN_RC" "0"
+assert_eq "double-dash slug"   "$RUN_OUT" "draft-note"
 
 case_start "x-x plans slugify drops non-ASCII; wholly-non-ASCII is unsluggable"
 run_capture "" plans slugify "Plan プラン"
