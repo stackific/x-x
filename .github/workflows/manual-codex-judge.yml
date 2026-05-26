@@ -1,0 +1,144 @@
+name: manual / codex cli <- llm judge
+
+# Manually-triggered experiment from the agent-eval lineage. Mirror of
+# manual-claude-judge.yml against the OpenAI Codex CLI. The loop:
+#
+#   1. Install Codex CLI (npm) on the runner; install x-x to PATH.
+#   2. Write a minimal ~/.codex/config.toml that defines an OpenRouter
+#      provider + an `eval` profile pointing model_provider=openrouter.
+#      Required because Codex's custom providers speak OpenAI Responses
+#      protocol while DeepSeek's native API speaks Chat Completions —
+#      direct routing is incompatible. OpenRouter BYOK is the bridge.
+#      See docs/internal/adding-agent-eval-backend.md.
+#   3. Sync the uv-managed skills-evals project (deepeval, openai, pytest,
+#      python-dotenv).
+#   4. Run `uv run pytest` against the codex test files. The tests:
+#        a. Spawn `codex exec --json` against OpenRouter→DeepSeek.
+#        b. Drive `/x-plan` and `/x-x` with an auto-yes loop
+#           (skills-evals/src/skills_evals/codex_driver.py) using
+#           `codex exec resume <session-id>` for multi-turn.
+#        c. Score the plan and the produced artifacts with two DeepEval
+#           `GEval` metrics backed by DeepSeek (the judge LLM is direct,
+#           independent of which agent backend produced the artifacts).
+#   5. Upload the pytest tmp directory on failure for offline inspection.
+#
+# Secret requirements (one-time setup per repo):
+#   - DEEPSEEK_API_KEY: already configured for the Claude workflow;
+#     powers the judge LLM.
+#   - OPENROUTER_API_KEY: NEW. Provision a key at
+#     https://openrouter.ai/keys and bind your DeepSeek provider key
+#     under OpenRouter's BYOK settings so it forwards to DeepSeek using
+#     your account.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    # One scenario (TODO app) takes 5–15 min: planner + executor + two
+    # judge LLM calls. 60-minute cap leaves headroom for OpenRouter +
+    # DeepSeek latency without rewarding a stuck agent.
+    timeout-minutes: 60
+
+    env:
+      # Active agent for the conftest. Selects which backend the driver
+      # spawns, which env-defaults dict gets applied, and which CLI
+      # presence is required.
+      X_X_AGENT: codex
+
+      # DEEPSEEK_API_KEY powers the DeepEval judges (DeepSeek direct,
+      # OpenAI-compatible endpoint at api.deepseek.com).
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+
+      # OPENROUTER_API_KEY routes the Codex CLI through OpenRouter, which
+      # holds the BYOK binding to the user's DeepSeek provider key. The
+      # config.toml step below defines the openrouter provider and a
+      # named profile that codex exec --profile picks up.
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # `go install .` lands a release-flavored x-x in $(go env GOPATH)/bin.
+      # The setup-go action puts that directory on PATH.
+      - name: install x-x to PATH
+        run: |
+          go install .
+          x-x --version
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      # Codex CLI's `exec --json` wire shape is documented at
+      # developers.openai.com/codex/noninteractive but has drifted across
+      # minor releases. Prefer pinning once a known-good version is
+      # confirmed; `@latest` is fragile when the event shape moves.
+      - name: install codex cli
+        run: |
+          npm install -g @openai/codex@latest
+          codex --version
+
+      # Codex talks to custom providers via OpenAI Responses protocol;
+      # DeepSeek's native API is Chat Completions. OpenRouter BYOK is the
+      # bridge: Codex → OpenRouter (Responses) → DeepSeek (whatever
+      # OpenRouter does internally). The `eval` profile is selected by
+      # codex_driver.py via `--profile eval` if/when we wire it; for now
+      # the driver passes overrides on the command line, but the file is
+      # required so the openrouter provider definition exists.
+      - name: configure codex for openrouter
+        run: |
+          mkdir -p ~/.codex
+          cat > ~/.codex/config.toml <<'EOF'
+          [model_providers.openrouter]
+          name = "OpenRouter"
+          base_url = "https://openrouter.ai/api/v1"
+          env_key = "OPENROUTER_API_KEY"
+
+          [profiles.eval]
+          model = "deepseek/deepseek-chat"
+          model_provider = "openrouter"
+          EOF
+          echo "--- ~/.codex/config.toml ---"
+          cat ~/.codex/config.toml
+
+      # setup-uv no longer publishes moving major tags (@v8), so pin to a
+      # specific version. Bump intentionally after checking release notes.
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - name: install skills-evals deps
+        working-directory: skills-evals
+        run: uv sync --frozen || uv sync
+
+      # File-scoped pytest run so a Claude regression on this PR doesn't
+      # masquerade as a Codex failure (and vice versa). The codex smoke
+      # test is alphabetically first within the file list; conftest's
+      # smoke-first reordering keeps it that way regardless.
+      - name: run pytest (codex suite)
+        working-directory: skills-evals
+        run: |
+          uv run pytest \
+            tests/test_codex_smoke.py \
+            tests/test_codex_todo.py \
+            tests/test_codex_plan_extends.py \
+            tests/test_codex_reminders_supersedes_todo.py
+
+      - name: upload pytest tmp on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: pytest-tmp-${{ github.run_id }}
+          path: /tmp/pytest-of-runner/
+          if-no-files-found: warn
+          retention-days: 14
