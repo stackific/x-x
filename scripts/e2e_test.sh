@@ -48,11 +48,18 @@ readonly SHARED_DOC_EARS="_ears.md"               # sharedDocEars
 # ownedSkills, flattened to a space-separated list for `for` iteration.
 readonly OWNED_SKILLS="${SKILL_SHARED_DIR} ${SKILL_X_PLAN_DIR} ${SKILL_X_X_DIR}"
 
-# agentTargets in constants.go — index 0 = Claude Code, 1 = Codex CLI.
+# agentTargets in constants.go — index 0 = Claude Code, 1 = Codex CLI,
+# 2 = Kilo Code. Kilo has no per-agent config dir (configSrc/configRel are
+# empty in the registry), so no KILO_CONFIG_REL constant is needed here.
 readonly CLAUDE_SKILLS_REL=".claude/skills"       # agentTargets[0].skillsRel
 readonly CLAUDE_CONFIG_REL=".claude"              # agentTargets[0].configRel
 readonly CODEX_SKILLS_REL=".agents/skills"        # agentTargets[1].skillsRel
 readonly CODEX_CONFIG_REL=".codex"                # agentTargets[1].configRel
+readonly KILO_SKILLS_REL=".kilo/skills"           # agentTargets[2].skillsRel
+# Parent of KILO_SKILLS_REL — kilo has no configRel to give us the same dir,
+# so we derive it. Used by `reset_user_home` and per-case wipes to clear
+# any leftover .kilo/ install between scenarios.
+readonly KILO_SKILLS_PARENT="${KILO_SKILLS_REL%/*}"
 # Parent of CODEX_SKILLS_REL — used by isolation cases that seed sibling
 # files alongside the Codex skills dir. Derived (not a Go constant) to
 # avoid drift if agentTargets[1].skillsRel ever moves.
@@ -170,6 +177,7 @@ reset_user_home() {
   rm -rf "$HOME/${CLAUDE_CONFIG_REL}" \
          "$HOME/${CODEX_CONFIG_REL}" \
          "$HOME/${CODEX_SKILLS_PARENT}" \
+         "$HOME/${KILO_SKILLS_PARENT}" \
          "$HOME/${XX_HOME_DIR}"
 }
 
@@ -586,6 +594,18 @@ run_capture "" init --agents=claude,codex --scope=project
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_is_dir "claude installed" "$PROJ_AB/${CLAUDE_SKILLS_REL}/${SKILL_X_X_DIR}"
 assert_is_dir "codex installed"  "$PROJ_AB/${CODEX_SKILLS_REL}/${SKILL_X_X_DIR}"
+
+case_start "x-x init --agents=kilo installs only Kilo Code"
+reset_user_home
+PROJ_AK="$(fresh_project)"
+cd "$PROJ_AK"
+run_capture "" init --agents=kilo --scope=project
+assert_eq "exit 0" "$RUN_RC" "0"
+assert_is_dir "kilo installed" "$PROJ_AK/${KILO_SKILLS_REL}/${SKILL_X_X_DIR}"
+assert_absent "claude NOT installed" "$PROJ_AK/${CLAUDE_SKILLS_REL}"
+assert_absent "codex NOT installed"  "$PROJ_AK/${CODEX_SKILLS_REL}"
+# Kilo has no configSrc → no .kilo/ config file is written by x-x.
+assert_absent "no .kilo provider config written" "$PROJ_AK/.kilo/kilo.jsonc"
 
 case_start "x-x init --agents=invalid rejects unknown agent"
 reset_user_home
@@ -1209,7 +1229,7 @@ reset_user_home
 # Trigger the lazy first-run write of ~/${XX_HOME_DIR}/agents/ via bare
 # x-x, then wipe the install dirs so skill remove has nothing to do.
 run_capture "" >/dev/null
-rm -rf "$HOME/${CLAUDE_CONFIG_REL}" "$HOME/${CODEX_SKILLS_PARENT}" "$HOME/${CODEX_CONFIG_REL}"
+rm -rf "$HOME/${CLAUDE_CONFIG_REL}" "$HOME/${CODEX_SKILLS_PARENT}" "$HOME/${CODEX_CONFIG_REL}" "$HOME/${KILO_SKILLS_PARENT}"
 run_capture "" skills remove --user
 assert_eq "exit 0 on empty state" "$RUN_RC" "0"
 assert_contains "summary line" "$RUN_OUT" "Removed 0"

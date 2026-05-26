@@ -69,11 +69,14 @@ Set-Variable -Option Constant -Name SHARED_DOC_EARS       -Value '_ears.md'
 
 Set-Variable -Option Constant -Name OWNED_SKILLS -Value @($SKILL_SHARED_DIR, $SKILL_X_PLAN_DIR, $SKILL_X_X_DIR)
 
-# agentTargets in constants.go — index 0 = Claude Code, 1 = Codex CLI.
+# agentTargets in constants.go — index 0 = Claude Code, 1 = Codex CLI,
+# 2 = Kilo Code. Kilo has no per-agent config dir (configSrc/configRel
+# empty), so no KILO_CONFIG_REL is mirrored.
 Set-Variable -Option Constant -Name CLAUDE_SKILLS_REL -Value '.claude\skills'
 Set-Variable -Option Constant -Name CLAUDE_CONFIG_REL -Value '.claude'
 Set-Variable -Option Constant -Name CODEX_SKILLS_REL  -Value '.agents\skills'
 Set-Variable -Option Constant -Name CODEX_CONFIG_REL  -Value '.codex'
+Set-Variable -Option Constant -Name KILO_SKILLS_REL   -Value '.kilo\skills'
 
 # Bundled config filenames (not constants in Go; pinned here for assertions).
 Set-Variable -Option Constant -Name CLAUDE_SETTINGS_FILE -Value 'settings.json'
@@ -2343,6 +2346,21 @@ try {
   Assert-Eq        'exit 0'                   $RunRC 0
   Assert-IsDir     'codex skills present'    (Join-Path $projF2 (Join-Path $CODEX_SKILLS_REL $SKILL_X_X_DIR))
   Assert-NotExists 'claude skills NOT present' (Join-Path $projF2 (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+} finally { Pop-Location }
+
+Start-Case 'init --agents=kilo single-agent install'
+Reset-UserHome
+$projFK = New-FreshProject
+Push-Location $projFK
+try {
+  Invoke-XX init --scope project --agents=kilo `
+                    --prefix-width 4 --max-plan-lines 30 --review-per task
+  Assert-Eq        'exit 0'                    $RunRC 0
+  Assert-IsDir     'kilo skills present'       (Join-Path $projFK (Join-Path $KILO_SKILLS_REL   $SKILL_X_X_DIR))
+  Assert-NotExists 'claude skills NOT present' (Join-Path $projFK (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'codex skills NOT present'  (Join-Path $projFK (Join-Path $CODEX_SKILLS_REL  $SKILL_X_X_DIR))
+  # Kilo has no configSrc → no .kilo/kilo.jsonc written by x-x.
+  Assert-NotExists 'no .kilo provider config'  (Join-Path $projFK '.kilo\kilo.jsonc')
 } finally { Pop-Location }
 
 Start-Case 'init --prefix-width=6 seeds the lock with 6'

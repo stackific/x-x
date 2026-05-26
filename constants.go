@@ -120,6 +120,17 @@ var agentTargets = []agentTarget{
 	// config.toml, etc.) still lives under .codex/ — see Codex docs:
 	// https://developers.openai.com/codex/hooks for the lookup order.
 	{"codex", "Codex CLI", ".agents/skills", "codex", ".codex"},
+	// Kilo Code CLI (a fork of OpenCode) discovers skills from `.kilo/skills/`
+	// at project scope and `~/.kilo/skills/` at user scope; it also picks up
+	// `.agents/skills/` (Open Agent Standard) and `.claude/skills/` (compat
+	// mode) but `.kilo/skills/` is the only path Kilo treats as native, so
+	// that's where x-x installs. See https://kilo.ai/docs/customize/skills.
+	// configSrc is empty: Kilo's `kilo.jsonc` is provider-routing config,
+	// not a hook integration surface like Claude `settings.json` or Codex
+	// `hooks.json`. Users opt into provider routing through Kilo's own
+	// `/connect` flow or by writing `kilo.jsonc` themselves — x-x does not
+	// pick a provider for them.
+	{"kilo", "Kilo Code", ".kilo/skills", "", ""},
 }
 
 // skillsSubdir is the directory inside ~/.x-x/agents/ that holds the
