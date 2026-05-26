@@ -11,7 +11,7 @@ This module spawns `claude` in stream-json mode (multi-turn over JSON-Lines
 on stdin/stdout), reads each event the agent emits, and writes a `yes`
 message back whenever the agent ends a turn with a confirmation prompt.
 The loop terminates when the agent ends a turn without asking, the
-turn cap is hit, or stdin/stdout closes.
+turn cap is hit, the session-end `result` event arrives, or stdout closes.
 
 Stream-json is one process for the whole session — no `--resume` round
 trips, no context reload per turn.
@@ -25,47 +25,56 @@ reverse-engineered — see github.com/anthropics/claude-code/issues/24594):
   fires ONCE per session (at stdin close), not per turn.
 - User-message envelope on stdin matches the Agent SDK examples at
   code.claude.com/docs/en/agent-sdk/streaming-vs-single-mode.
+
+Logging policy: every state transition, every event, every external call
+gets a line on stderr via `_logging.log`. CI logs are the only diagnostic
+surface — silence is a bug.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import queue
 import re
+import shutil
 import subprocess
-import sys
 import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO
 
-# Matches the literal protocol phrase the skills end on
-# (see agents/skills/_x-x_shared/_plan_first.md: "Reply `yes` to proceed,
-# or tell me what to change."). Case-insensitive, tolerant of backticks
-# around `yes` and arbitrary whitespace.
+from ._logging import log
+
 CONFIRMATION_PATTERN = re.compile(r"reply\s+`?yes`?", re.IGNORECASE)
 
-# A turn here = one user message + the full agent response (text + tool
-# calls + tool results) until the agent emits its end-of-turn `result`
-# event. A real planner+executor loop is bounded — /x-plan asks at most a
-# handful of times, /x-x asks at most once per task per plan — but we cap
-# to stop a misbehaving agent from looping forever.
 DEFAULT_MAX_TURNS = 20
-
-# Per-turn wall-clock cap. Claude on DeepSeek can spend 30–90s on a single
-# turn that does real planning; 10 minutes is generous but still bounded.
 DEFAULT_PER_TURN_TIMEOUT_S = 600.0
+
+# Claude Code env vars the driver echoes at startup so the CI log shows
+# exactly which backend the agent is routed to. Anything containing a
+# secret is reported as set/MISSING with a 4-char suffix, never the value.
+ECHOED_ENV_KEYS = (
+  "ANTHROPIC_BASE_URL",
+  "ANTHROPIC_MODEL",
+  "ANTHROPIC_DEFAULT_OPUS_MODEL",
+  "ANTHROPIC_DEFAULT_SONNET_MODEL",
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+  "CLAUDE_CODE_SUBAGENT_MODEL",
+  "CLAUDE_CODE_EFFORT_LEVEL",
+)
+SECRET_ENV_KEYS = ("ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY")
 
 
 @dataclass
 class SkillRun:
-  """Captures everything observable about one driven Claude session."""
-
   workspace: Path
   initial_prompt: str
   transcript: list[dict] = field(default_factory=list)
   turns: int = 0
   yes_replies: int = 0
+  events_received: int = 0
   completed: bool = False
   timed_out: bool = False
   exit_code: int | None = None
@@ -85,14 +94,11 @@ def drive_skill(
   max_turns: int = DEFAULT_MAX_TURNS,
   per_turn_timeout: float = DEFAULT_PER_TURN_TIMEOUT_S,
   transcript_path: Path | None = None,
-  log_progress: bool = True,
 ) -> SkillRun:
-  """Run one skill in `workspace` and auto-reply 'yes' until done.
-
-  Returns a SkillRun summarizing the transcript, turn count, and how the
-  session ended (completed normally / hit turn cap / timed out / exited).
-  """
+  """Run one skill in `workspace` and auto-reply 'yes' until done."""
   run = SkillRun(workspace=workspace, initial_prompt=initial_prompt)
+
+  _log_startup(workspace, initial_prompt, max_turns, per_turn_timeout)
 
   cmd = [
     "claude",
@@ -102,6 +108,9 @@ def drive_skill(
     "--verbose",
     "--dangerously-skip-permissions",
   ]
+  log("driver", f"spawn: {' '.join(cmd)}")
+  log("driver", f"cwd: {workspace}")
+
   proc = subprocess.Popen(
     cmd,
     stdin=subprocess.PIPE,
@@ -111,6 +120,7 @@ def drive_skill(
     text=True,
     bufsize=1,
   )
+  log("driver", f"spawned pid={proc.pid}")
 
   out_q: queue.Queue[str | None] = queue.Queue()
   err_lines: list[str] = []
@@ -118,12 +128,13 @@ def drive_skill(
     target=_pump_to_queue, args=(proc.stdout, out_q), daemon=True
   ).start()
   threading.Thread(
-    target=_pump_to_list, args=(proc.stderr, err_lines), daemon=True
+    target=_pump_stderr_live, args=(proc.stderr, err_lines), daemon=True
   ).start()
 
-  _send_user_message(proc.stdin, initial_prompt, log_progress=log_progress)
+  _send_user_message(proc.stdin, initial_prompt)
 
   last_assistant_text = ""
+  loop_start = time.time()
 
   try:
     while True:
@@ -131,12 +142,16 @@ def drive_skill(
         line = out_q.get(timeout=per_turn_timeout)
       except queue.Empty:
         run.timed_out = True
-        if log_progress:
-          _log(f"[driver] timeout after {per_turn_timeout}s waiting for event")
+        log(
+          "driver",
+          f"TIMEOUT after {per_turn_timeout}s waiting for next event "
+          f"(events seen: {run.events_received}, turns: {run.turns}, "
+          f"elapsed since spawn: {time.time() - loop_start:.1f}s)",
+        )
         break
 
       if line is None:
-        # stdout EOF — claude exited (probably after a `result` event).
+        log("driver", f"stdout EOF (claude exited); events seen: {run.events_received}")
         run.completed = True
         break
       if not line.strip():
@@ -144,88 +159,234 @@ def drive_skill(
 
       try:
         event = json.loads(line)
-      except json.JSONDecodeError:
+      except json.JSONDecodeError as e:
+        log("driver", f"unparseable line ({e}): {line[:200]}")
         run.transcript.append({"_raw": line})
         continue
       run.transcript.append(event)
+      run.events_received += 1
+
+      _log_event(event, run.events_received)
 
       etype = event.get("type")
       if etype == "assistant":
         message = event.get("message", {}) or {}
-        # Accumulate the final text block from this assistant message —
-        # the confirmation prompt (if any) lives at the end of the text.
+        # Update last_assistant_text from any text block; the
+        # confirmation prompt (if any) lives at the end of the text.
         for block in message.get("content", []) or []:
           if isinstance(block, dict) and block.get("type") == "text":
             last_assistant_text = block.get("text", "")
 
-        # stop_reason "end_turn" means the agent is done with this turn
-        # and is waiting for the next user message. Other stop_reasons
-        # ("tool_use", "max_tokens", "stop_sequence") mean more events
-        # are coming for the SAME turn — don't act on them.
-        if message.get("stop_reason") == "end_turn":
+        stop_reason = message.get("stop_reason")
+        # "end_turn" = agent is done, waiting for next user message.
+        # "tool_use" / "max_tokens" / "stop_sequence" = more events
+        # coming for the SAME turn; don't act on them.
+        if stop_reason == "end_turn":
           run.turns += 1
-          if log_progress:
-            _log(
-              f"[driver] turn {run.turns} ended; "
-              f"assistant said: {_brief(last_assistant_text)}"
-            )
+          log(
+            "driver",
+            f"turn {run.turns} ended (stop_reason=end_turn). "
+            f"assistant text tail: {_brief(last_assistant_text)}",
+          )
           if not _asks_for_confirmation(last_assistant_text):
-            # No prompt — agent is done. Closing stdin will trigger the
-            # session-end `result` event, then EOF on stdout.
-            try:
-              proc.stdin.close()
-            except Exception:
-              pass
+            log(
+              "driver",
+              "no confirmation prompt detected — closing stdin to end session",
+            )
+            _close_stdin(proc)
             continue
           if run.turns >= max_turns:
-            if log_progress:
-              _log(f"[driver] hit max_turns={max_turns} cap; stopping")
-            try:
-              proc.stdin.close()
-            except Exception:
-              pass
+            log(
+              "driver",
+              f"hit max_turns={max_turns}; closing stdin and stopping",
+            )
+            _close_stdin(proc)
             continue
-          _send_user_message(proc.stdin, "yes", log_progress=log_progress)
+          log("driver", "confirmation prompt detected — sending 'yes'")
+          _send_user_message(proc.stdin, "yes")
           run.yes_replies += 1
           last_assistant_text = ""
+
       elif etype == "result":
-        # Session-end summary. Stdout EOF should follow shortly.
+        # Session-end summary. The CLI exits shortly; the stdout pump
+        # will push None and our loop will hit the EOF branch above.
+        # Break NOW rather than waiting for EOF — avoids burning the
+        # 600s per-turn timeout if the stdout pipe lingers.
         run.completed = True
-        if log_progress:
-          _log(f"[driver] result event; session ending after {run.turns} turn(s)")
+        log(
+          "driver",
+          f"result event; ending loop. turns_observed={run.turns} "
+          f"events_received={run.events_received}",
+        )
+        _close_stdin(proc)
+        break
+
   finally:
-    try:
-      proc.stdin.close()
-    except Exception:
-      pass
+    _close_stdin(proc)
     try:
       proc.wait(timeout=15)
     except subprocess.TimeoutExpired:
+      log("driver", "claude did not exit within 15s after stdin close; killing")
       proc.kill()
       proc.wait(timeout=5)
     run.exit_code = proc.returncode
     run.stderr_tail = "\n".join(err_lines[-40:])
+    log(
+      "driver",
+      f"claude exited code={run.exit_code} "
+      f"turns={run.turns} yes_replies={run.yes_replies} "
+      f"events={run.events_received} "
+      f"completed={run.completed} timed_out={run.timed_out} "
+      f"elapsed={time.time() - loop_start:.1f}s",
+    )
 
   if transcript_path is not None:
     run.save_transcript(transcript_path)
+    log("driver", f"transcript written to {transcript_path}")
 
   return run
 
 
-def _send_user_message(stdin: IO[str], content: str, *, log_progress: bool) -> None:
-  # Envelope shape matches the Agent SDK streaming-input example at
-  # code.claude.com/docs/en/agent-sdk/streaming-vs-single-mode.
-  # parent_tool_use_id is null for top-level user messages (non-null
-  # only when responding from within a sub-agent's tool call).
+def _log_startup(
+  workspace: Path,
+  initial_prompt: str,
+  max_turns: int,
+  per_turn_timeout: float,
+) -> None:
+  log("driver", f"drive_skill called: workspace={workspace}")
+  log("driver", f"initial_prompt: {_brief(initial_prompt, 200)}")
+  log("driver", f"max_turns={max_turns} per_turn_timeout={per_turn_timeout}s")
+
+  claude_path = shutil.which("claude")
+  log("driver", f"claude on PATH: {claude_path}")
+  if claude_path:
+    try:
+      out = subprocess.run(
+        ["claude", "--version"],
+        capture_output=True, text=True, timeout=10,
+      )
+      log("driver", f"claude --version: {(out.stdout or out.stderr).strip()}")
+    except Exception as e:
+      log("driver", f"claude --version failed: {e}")
+
+  for key in ECHOED_ENV_KEYS:
+    log("driver", f"env {key}={os.environ.get(key, '(unset)')}")
+  for key in SECRET_ENV_KEYS:
+    val = os.environ.get(key)
+    if val:
+      log("driver", f"env {key}=set (length={len(val)}, ...{val[-4:]})")
+    else:
+      log("driver", f"env {key}=MISSING")
+
+
+def _log_event(event: dict, idx: int) -> None:
+  etype = event.get("type", "?")
+  subtype = event.get("subtype", "")
+  tag = f"{etype}/{subtype}" if subtype else etype
+  summary = _summarize_event(event)
+  log("driver", f"event #{idx} type={tag} {summary}")
+
+
+def _summarize_event(event: dict) -> str:
+  etype = event.get("type")
+  subtype = event.get("subtype", "")
+
+  if etype == "assistant":
+    msg = event.get("message", {}) or {}
+    blocks = msg.get("content", []) or []
+    block_summaries = []
+    for b in blocks:
+      if not isinstance(b, dict):
+        continue
+      bt = b.get("type", "?")
+      if bt == "text":
+        block_summaries.append(f"text({_brief(b.get('text', ''), 60)})")
+      elif bt == "tool_use":
+        block_summaries.append(f"tool_use({b.get('name', '?')})")
+      elif bt == "tool_result":
+        block_summaries.append(f"tool_result(id={b.get('tool_use_id', '?')[:8]})")
+      elif bt == "thinking":
+        block_summaries.append(f"thinking({_brief(b.get('thinking', ''), 40)})")
+      else:
+        block_summaries.append(bt)
+    usage = msg.get("usage", {}) or {}
+    return (
+      f"id={(msg.get('id') or '?')[:12]} "
+      f"stop_reason={msg.get('stop_reason')!r} "
+      f"model={msg.get('model', '?')} "
+      f"blocks=[{', '.join(block_summaries)}] "
+      f"usage_in={usage.get('input_tokens', '?')} "
+      f"usage_out={usage.get('output_tokens', '?')}"
+    )
+
+  if etype == "user":
+    msg = event.get("message", {}) or {}
+    content = msg.get("content")
+    if isinstance(content, str):
+      return f"text={_brief(content, 100)}"
+    if isinstance(content, list):
+      return f"blocks={len(content)}"
+    return "(empty)"
+
+  if etype == "system":
+    if subtype == "init":
+      return (
+        f"model={event.get('model')} "
+        f"session={(event.get('session_id') or '?')[:12]} "
+        f"tools={len(event.get('tools', []) or [])} "
+        f"mcp_servers={len(event.get('mcp_servers', []) or [])} "
+        f"permissionMode={event.get('permissionMode')} "
+        f"apiKeySource={event.get('apiKeySource')}"
+      )
+    if subtype == "api_retry":
+      return (
+        f"attempt={event.get('attempt')} "
+        f"max={event.get('max_retries')} "
+        f"delay_ms={event.get('retry_delay_ms')} "
+        f"error={event.get('error')} "
+        f"status={event.get('error_status')}"
+      )
+    # Unknown system subtype — dump it. CI logs are cheap.
+    return json.dumps({k: v for k, v in event.items() if k not in ("type",)})[:400]
+
+  if etype == "result":
+    return (
+      f"subtype={subtype} "
+      f"is_error={event.get('is_error')} "
+      f"num_turns={event.get('num_turns')} "
+      f"duration_ms={event.get('duration_ms')} "
+      f"duration_api_ms={event.get('duration_api_ms')} "
+      f"cost_usd={event.get('total_cost_usd')} "
+      f"result_text={_brief(str(event.get('result', '')), 100)}"
+    )
+
+  if etype == "stream_event":
+    inner = event.get("event", {}) or {}
+    return f"inner_type={inner.get('type')} {_brief(json.dumps(inner), 100)}"
+
+  # Anything else — dump it raw so we can spot unexpected types.
+  return _brief(json.dumps(event), 200)
+
+
+def _send_user_message(stdin: IO[str], content: str) -> None:
   msg = {
     "type": "user",
     "message": {"role": "user", "content": content},
     "parent_tool_use_id": None,
   }
-  stdin.write(json.dumps(msg) + "\n")
+  payload = json.dumps(msg)
+  stdin.write(payload + "\n")
   stdin.flush()
-  if log_progress:
-    _log(f"[driver] sent user message: {_brief(content)}")
+  log("driver", f"sent user message ({len(payload)} bytes): {_brief(content, 100)}")
+
+
+def _close_stdin(proc: subprocess.Popen) -> None:
+  try:
+    if proc.stdin and not proc.stdin.closed:
+      proc.stdin.close()
+      log("driver", "closed stdin")
+  except Exception as e:
+    log("driver", f"close stdin error (ignored): {e}")
 
 
 def _pump_to_queue(stream: IO[str], q: queue.Queue[str | None]) -> None:
@@ -236,9 +397,12 @@ def _pump_to_queue(stream: IO[str], q: queue.Queue[str | None]) -> None:
     q.put(None)
 
 
-def _pump_to_list(stream: IO[str], sink: list[str]) -> None:
+def _pump_stderr_live(stream: IO[str], sink: list[str]) -> None:
   for line in stream:
-    sink.append(line.rstrip("\n"))
+    s = line.rstrip("\n")
+    sink.append(s)
+    if s.strip():
+      log("driver", f"stderr: {s}")
 
 
 def _asks_for_confirmation(assistant_text: str) -> bool:
@@ -248,7 +412,3 @@ def _asks_for_confirmation(assistant_text: str) -> bool:
 def _brief(text: str, limit: int = 140) -> str:
   collapsed = " ".join((text or "").split())
   return collapsed if len(collapsed) <= limit else collapsed[: limit - 1] + "…"
-
-
-def _log(msg: str) -> None:
-  print(msg, file=sys.stderr, flush=True)

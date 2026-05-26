@@ -11,11 +11,13 @@ the task?
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 from deepeval.metrics import GEval
 from deepeval.test_case import LLMTestCase, LLMTestCaseParams
 
+from .._logging import log
 from ..models import DEFAULT_JUDGE_MODEL, DeepSeekModel
 from ..workspace import collect_produced_files, collect_tree
 from .base import Judge, Judgment
@@ -96,14 +98,26 @@ class ArtifactJudge(Judge):
       produced_files=collect_produced_files(workspace),
       tree=collect_tree(workspace),
     )
-    test_case = LLMTestCase(
-      input=INPUT_TEMPLATE.format(task=task),
-      actual_output=actual,
+    input_text = INPUT_TEMPLATE.format(task=task)
+    log(
+      "judge:artifact",
+      f"evaluating: model={self.model.get_model_name()} "
+      f"threshold={self.metric.threshold} "
+      f"steps={len(EVALUATION_STEPS)} "
+      f"input_chars={len(input_text)} actual_chars={len(actual)}",
     )
+    test_case = LLMTestCase(input=input_text, actual_output=actual)
+    start = time.time()
     self.metric.measure(test_case)
-    return Judgment(
-      name=self.name,
-      passed=bool(self.metric.is_successful()),
-      score=float(self.metric.score),
-      reason=self.metric.reason or "",
+    elapsed = time.time() - start
+    score = float(self.metric.score)
+    passed = bool(self.metric.is_successful())
+    reason = self.metric.reason or ""
+    log(
+      "judge:artifact",
+      f"done in {elapsed:.1f}s: score={score:.3f} "
+      f"threshold={self.metric.threshold} pass={passed}",
     )
+    if reason:
+      log("judge:artifact", f"reason: {reason}")
+    return Judgment(name=self.name, passed=passed, score=score, reason=reason)
