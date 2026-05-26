@@ -1582,12 +1582,16 @@ source = { editable = "." }
 dependencies = [
     { name = "deepeval" },
     { name = "openai" },
+    { name = "pytest" },
+    { name = "python-dotenv" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "deepeval", specifier = ">=2.0.0" },
     { name = "openai", specifier = ">=1.50.0" },
+    { name = "pytest", specifier = ">=8.0.0" },
+    { name = "python-dotenv", specifier = ">=1.0.0" },
 ]
 
 [[package]]

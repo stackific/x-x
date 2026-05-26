@@ -1,68 +1,78 @@
 # skills-evals
 
-LLM-judged evaluations for the `x-x` planner (`/x-plan`) + executor (`/x-x`)
-loop. Managed with [uv](https://docs.astral.sh/uv/) and built on
+End-to-end evaluations of the `x-x` planner (`/x-plan`) + executor (`/x-x`)
+skills against Claude Code. Each test:
+
+1. Spawns `claude` in stream-json mode against DeepSeek.
+2. Invokes `/x-plan <task>` and auto-replies `yes` to every confirmation
+   prompt until the planner stops asking.
+3. Scores the produced plan file with a DeepEval `GEval` judge.
+4. Invokes `/x-x`, auto-replies `yes` until the executor stops asking.
+5. Scores the produced artifacts with a second `GEval` judge.
+
+Managed with [uv](https://docs.astral.sh/uv/) and built on
 [DeepEval](https://github.com/confident-ai/deepeval).
 
 ## Layout
 
 ```
 skills-evals/
-├── pyproject.toml              # uv project (deepeval, openai)
-├── scenarios/                  # <agent>-<name>.md scenarios with `task:` frontmatter
-└── src/skills_evals/
-    ├── cli.py                  # entrypoint: skills-evals --scenario ... --workspace ...
-    ├── scenarios.py            # frontmatter parser
-    ├── workspace.py            # collects artifacts from an eval workspace
-    ├── models.py               # DeepSeek wrapper for DeepEval
-    └── judges/
-        ├── base.py             # Judge ABC + Judgment dataclass
-        └── rubric.py           # 4-criterion rubric via DeepEval GEval
+├── pyproject.toml                       # uv project (deepeval, openai, python-dotenv, pytest)
+├── src/skills_evals/
+│   ├── claude_driver.py                 # stream-json subprocess + auto-yes loop
+│   ├── workspace.py                     # collects plan/produced artifacts as text
+│   ├── models.py                        # DeepSeek wrapper for DeepEval
+│   └── judges/
+│       ├── base.py                      # Judge ABC + Judgment dataclass
+│       ├── plan_judge.py                # GEval on the plan file
+│       └── artifact_judge.py            # GEval on /x-x's produced files
+└── tests/
+    ├── conftest.py                      # .env load + DeepSeek/Anthropic routing + workspace fixture
+    └── test_claude_todo.py              # the TODO-app scenario
 ```
 
-## Run locally
+## Prerequisites
+
+- `x-x` on PATH (`go install .` from repo root).
+- `claude` on PATH (`npm install -g @anthropic-ai/claude-code`).
+- A DeepSeek API key. Put it in `skills-evals/.env`:
+  ```
+  DEEPSEEK_API_KEY=sk-...
+  ```
+  The fixture loads `.env` and uses the same key for the judge LLM
+  (DeepSeek direct) and the Claude Code backend (DeepSeek via
+  `ANTHROPIC_*` env vars).
+
+## Run
 
 ```sh
 cd skills-evals
 uv sync
-export DEEPSEEK_API_KEY=sk-...
-uv run skills-evals \
-  --scenario scenarios/claude-deepseek-baseline.md \
-  --workspace /path/to/eval-workspace \
-  --output judgment.json
+uv run pytest
 ```
 
-Exit code is `0` if every judge passed, `1` if any failed, `2` on a usage
-or setup error.
+A single test runs an entire planner + executor loop on a real Claude
+session against DeepSeek — expect 5–15 minutes per scenario and real API
+spend. Output is verbose (`-v -s` in `pyproject.toml`) so you can watch
+the driver narrate the auto-yes loop and the judges report their scores.
 
-## Run in CI
+## Stream-json + auto-yes
 
-`.github/workflows/exp-claude-deepseek-judge.yml` drives a full end-to-end
-loop: install `x-x`, init a throwaway workspace, run `/x-plan` then `/x-x`
-through Claude Code on DeepSeek, then call this runner.
-
-## Adding a judge
-
-1. Create `src/skills_evals/judges/<name>.py` with a `Judge` subclass that
-   sets a `name` class attribute and implements
-   `evaluate(self, task: str, workspace: Path) -> Judgment`.
-2. Register it in `src/skills_evals/judges/__init__.py` (add to `JUDGES`).
-3. Run it on its own with `--judge <name>`, or omit `--judge` to run all.
-
-A judge evaluates _what is being checked_ (rubric correctness, security,
-accessibility, …); the agent that produced the artifacts (claude, codex,
-cursor) is captured in the scenario filename, not the judge name.
+`claude_driver.py` spawns `claude -p --input-format stream-json
+--output-format stream-json --dangerously-skip-permissions` once per
+skill. It reads JSON-Lines events on stdout, accumulates each turn's
+assistant text, and when the agent ends a turn it checks whether the
+text ends on the protocol phrase `Reply yes to proceed`. If yes, it
+writes `{"type":"user","message":{"role":"user","content":"yes"}}` to
+stdin and loops. If no, the agent is done — the driver closes stdin and
+returns. A `max_turns=20` cap keeps a misbehaving agent from running
+forever.
 
 ## Adding a scenario
 
-Drop `scenarios/<agent>-<name>.md` with the frontmatter:
-
-```markdown
----
-task: One-line task string handed to /x-plan.
----
-
-# Notes (free-form)
-```
-
-Then trigger the workflow with `scenario: <agent>-<name>`.
+Drop another `tests/test_<agent>_<name>.py` mirroring `test_claude_todo.py`:
+hardcode the task, call `drive_skill(workspace, "/x-plan <task>")`,
+assert `PlanJudge`, call `drive_skill(workspace, "/x-x")`, assert
+`ArtifactJudge`. The `workspace` fixture already initializes a throwaway
+project. New backends (codex, cursor, …) get their own driver — the
+DeepEval judges are agent-agnostic and can be reused as-is.

@@ -6,10 +6,9 @@ requires-python = ">=3.10"
 dependencies = [
   "deepeval>=2.0.0",
   "openai>=1.50.0",
+  "python-dotenv>=1.0.0",
+  "pytest>=8.0.0",
 ]
-
-[project.scripts]
-skills-evals = "skills_evals.cli:main"
 
 [build-system]
 requires = ["hatchling>=1.18"]
@@ -17,3 +16,11 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/skills_evals"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Each scenario drives a real Claude session against DeepSeek end-to-end
+# (planner + executor + two LLM-judged metric calls). A single test
+# routinely takes 5+ minutes, so default verbosity is high and capture is
+# off so users can see the driver narrate the auto-yes loop as it runs.
+addopts = "-v -s"

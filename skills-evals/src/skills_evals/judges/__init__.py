@@ -1,14 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Stackific Inc.
-"""Judge registry. Add new judges by mapping a stable name to a class here."""
+"""DeepEval-backed judges. One judge per evaluation phase."""
 
 from __future__ import annotations
 
+from .artifact_judge import ArtifactJudge
 from .base import Judge, Judgment
-from .rubric import RubricJudge
+from .plan_judge import PlanJudge
 
-JUDGES: dict[str, type[Judge]] = {
-  RubricJudge.name: RubricJudge,
-}
-
-__all__ = ["JUDGES", "Judge", "Judgment", "RubricJudge"]
+__all__ = ["ArtifactJudge", "Judge", "Judgment", "PlanJudge"]
