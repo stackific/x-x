@@ -1,4 +1,4 @@
-name: exp / claude code <- llm judge
+name: manual / claude code <- llm judge
 
 # Manually-triggered experiment from the agent-eval lineage. The loop:
 #
@@ -51,9 +51,9 @@ jobs:
       CLAUDE_CODE_EFFORT_LEVEL: max
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
@@ -65,9 +65,9 @@ jobs:
           go install .
           x-x --version
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22'
 
       # Claude Code's `--input-format stream-json` is reverse-engineered
       # (see github.com/anthropics/claude-code/issues/24594). The wire
@@ -79,7 +79,9 @@ jobs:
           npm install -g @anthropic-ai/claude-code@latest
           claude --version
 
-      - uses: astral-sh/setup-uv@v3
+      # setup-uv no longer publishes moving major tags (@v8), so pin to a
+      # specific version. Bump intentionally after checking release notes.
+      - uses: astral-sh/setup-uv@v8.1.0
         with:
           enable-cache: true
 
@@ -100,7 +102,7 @@ jobs:
       # workspace state at failure.
       - name: upload pytest tmp on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: pytest-tmp-${{ github.run_id }}
           path: /tmp/pytest-of-runner/
