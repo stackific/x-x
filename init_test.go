@@ -1466,14 +1466,20 @@ func TestRunInit_UserScope_EndToEnd(t *testing.T) {
 		}
 	}
 
-	// User-scope MUST NOT drop the project-scoped .x-plans/ scaffold into
-	// the user's terminal cwd. Earlier the scaffold write was unconditional;
-	// that polluted unrelated working directories and tripped the project
-	// gate on the next x-x invocation. Gating the scaffold-write on
-	// project scope keeps the user's cwd untouched.
-	if _, err := os.Stat(filepath.Join(cwd, plansDir)); !os.IsNotExist(err) {
-		t.Fatalf("user-scope init leaked %s/ into cwd (%v); should only land for --scope project",
-			plansDir, err)
+	// User-scope MUST also drop the .x-plans/ scaffold into cwd. Scope
+	// only decides where SKILLS land (project tree vs $HOME); the project
+	// gate keyed on `<cwd>/.x-plans/_config.lock` is what makes cwd usable
+	// with `/x-plan`, `/x-x`, and the `x-x plans *` CLI subcommands. A
+	// user-scope install that left cwd un-scaffolded produced skills with
+	// nowhere to anchor plans — every subsequent command tripped the
+	// `not an x-x project` gate.
+	lockPath := filepath.Join(cwd, plansDir, plansConfigLockFile)
+	if _, err := os.Stat(lockPath); err != nil {
+		t.Fatalf("user-scope init did not seed %s in cwd: %v", lockPath, err)
+	}
+	systemsPath := filepath.Join(cwd, plansDir, plansSystemsFile)
+	if _, err := os.Stat(systemsPath); err != nil {
+		t.Fatalf("user-scope init did not seed %s in cwd: %v", systemsPath, err)
 	}
 }
 

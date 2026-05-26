@@ -1139,9 +1139,9 @@ try {
 
 # ---------- copy vs symlink ----------
 
-Start-Case 'user-scope install uses COPY (not symlink) on Windows + leaves cwd clean'
+Start-Case 'user-scope install uses COPY (not symlink) on Windows + seeds .x-plans in cwd'
 Reset-UserHome
-# Push to a throwaway dir so the cwd-pollution assertion has a known scope.
+# Push to a throwaway dir so the cwd-scaffold assertion has a known scope.
 $userInitCwd = New-FreshProject
 Push-Location $userInitCwd
 try {
@@ -1150,11 +1150,12 @@ try {
   Assert-Eq 'exit 0' $RunRC 0
   $userClaudeSkill = Join-Path $env:USERPROFILE (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR)
   Assert-IsCopyNotSymlink 'x-x skill is a copy, not symlink' $userClaudeSkill
-  # User-scope MUST NOT drop the project-scoped .x-plans/ scaffold into cwd.
-  # Without this gate, every user-scope init would pollute the user's
-  # terminal pwd and the project gate would mistake it for an initialised
-  # project on every subsequent invocation.
-  Assert-NotExists 'user-scope init leaves cwd .x-plans untouched' (Join-Path $userInitCwd $PLANS_DIR)
+  # User-scope MUST also drop the .x-plans/ scaffold into cwd. Scope only
+  # decides where SKILLS land (project tree vs $env:USERPROFILE); the
+  # project gate keyed on <cwd>/$PLANS_LOCK_PATH is what makes cwd usable
+  # with /x-plan, /x-x, and the `x-x plans *` CLI subcommands.
+  Assert-IsFile 'user-scope seeds _config.lock in cwd' (Join-Path $userInitCwd $Script:PLANS_LOCK_PATH)
+  Assert-IsFile 'user-scope seeds _data_systems.yaml in cwd' (Join-Path $userInitCwd $Script:PLANS_SYSTEMS_PATH)
 } finally { Pop-Location }
 
 Start-Case 'user-scope install copies bundled skill content verbatim'

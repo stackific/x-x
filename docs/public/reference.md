@@ -25,9 +25,9 @@ Running `x-x` with no arguments prints the about banner and command list. Use on
 Installs every bundled skill into the locations each agent looks for, then seeds the project's `.x-plans/` scaffold. Five questions run in order; when stdin is a terminal with arrow-key select / multiselect and Shift+Tab back-navigation, so you can revise an earlier answer before submitting the final group. When stdin is piped or redirected, the same questions fall back to line-by-line prompts (which the CI test harness exercises).
 
 1. **Which agents?** Multi-select over every registered agent (Claude Code, Codex CLI today). Blank line / no toggle accepts the default (all agents).
-2. **Which scope?**
-   - **This project only** — writes under the current working directory (`.claude/skills/`, `.agents/skills/`, and seeds `.x-plans/`).
-   - **All my projects (user scope)** — writes under `$HOME` (`~/.claude/skills/`, `~/.agents/skills/`).
+2. **Which scope?** Decides where the bundled SKILLS land. Either way, `.x-plans/` is seeded in the current working directory — that's how the project gate (`./.x-plans/_config.lock`) recognizes the directory as an x-x project.
+   - **This project only** — skills under the current working directory (`.claude/skills/`, `.agents/skills/`).
+   - **All my projects (user scope)** — skills under `$HOME` (`~/.claude/skills/`, `~/.agents/skills/`).
 3. **Prefix width for plan files** — zero-padded width for plan filenames (e.g. width `4` → `0001-foo.md`). Default: `4`.
 4. **Maximum lines per plan** — cap enforced by `x-x plans lint`. Keeps AI agents on a short leash: forces them to split sprawling work into smaller, reviewable plans. Default: `30`.
 5. **Pause for review after every…** — `task` reviews each EARS criterion as the planner finishes it (tight loop, more interruptions); `plan` reviews only at plan boundaries (looser loop, larger diffs). Default: `task`.
@@ -58,7 +58,7 @@ The following are never touched:
 
 - Folders whose name is not on the bundled-skill allowlist (your own skills sitting alongside ours).
 - Anything in the agent config files outside of their `"hooks"` subtree — top-level keys like `"fastMode"` and any user-authored content. Empty arrays or event-key maps left behind by the un-merge are kept as-is; we subtract records, not containers.
-- The `.x-plans/` scaffold at project scope. Once `init` writes it, it's yours.
+- The `.x-plans/` scaffold in cwd. Once `init` writes it (at any scope), it's yours.
 - Parent directories (`.claude/`, `.codex/`). Only the `skills/` subdirectory under each may be removed, and only when it is empty after cleanup.
 
 ### `x-x skills remove --project`

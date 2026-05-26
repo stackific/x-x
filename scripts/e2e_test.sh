@@ -440,16 +440,14 @@ for base in "${CLAUDE_SKILLS_REL}" "${CODEX_SKILLS_REL}"; do
     esac
   done
 done
-# User-scope MUST NOT drop the project-scoped ${PLANS_DIR}/ scaffold into
-# the user's terminal cwd. Earlier the scaffold write was unconditional;
-# that polluted unrelated working directories and tripped the project
-# gate on every subsequent x-x invocation in the same shell.
-if [ -e "${USER_INIT_CWD}/${PLANS_DIR}" ]; then
-  fail "user-scope init must not leak ${PLANS_DIR}/ into cwd" \
-       "found: ${USER_INIT_CWD}/${PLANS_DIR}"
-else
-  ok "user-scope init leaves cwd's ${PLANS_DIR} untouched"
-fi
+# User-scope MUST also drop the ${PLANS_DIR}/ scaffold into cwd. Scope
+# only decides where SKILLS land (project tree vs \$HOME); the project
+# gate keyed on <cwd>/${PLANS_LOCK_PATH} is what makes cwd usable with
+# `/x-plan`, `/x-x`, and the `x-x plans *` CLI subcommands.
+assert_is_file "user-scope seeds ${PLANS_LOCK_PATH} in cwd" \
+  "${USER_INIT_CWD}/${PLANS_LOCK_PATH}"
+assert_is_file "user-scope seeds ${PLANS_SYSTEMS_PATH} in cwd" \
+  "${USER_INIT_CWD}/${PLANS_SYSTEMS_PATH}"
 
 # ---------- init interactive prompts ----------
 #
