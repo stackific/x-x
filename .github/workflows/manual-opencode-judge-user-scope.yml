@@ -1,0 +1,70 @@
+name: manual / opencode <- llm judge (user scope)
+
+# Identical to manual-opencode-judge.yml EXCEPT for X_X_INSTALL_SCOPE.
+# This workflow installs skills at user scope (~/.opencode/commands/)
+# rather than project scope (<workspace>/.opencode/commands/) so we
+# exercise that branch of `x-x init`. The pytest fixture
+# (skills-evals/tests/conftest.py) reads X_X_INSTALL_SCOPE and passes
+# it to `x-x init --scope <value>`, and the opencode driver's
+# `resolve_skill_template` helper falls back from project to user scope
+# when locating the SKILL.md to inline.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      X_X_AGENT_KEY: opencode
+      X_X_INSTALL_SCOPE: user
+
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: install x-x to PATH
+        run: |
+          go install .
+          x-x --version
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: install opencode
+        run: |
+          npm install -g opencode-ai@latest
+          opencode --version
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - name: install skills-evals deps
+        working-directory: skills-evals
+        run: uv sync --frozen || uv sync
+
+      - name: run pytest
+        working-directory: skills-evals
+        run: uv run pytest
+
+      - name: upload pytest tmp on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: pytest-tmp-${{ github.run_id }}
+          path: /tmp/pytest-of-runner/
+          if-no-files-found: warn
+          retention-days: 14
