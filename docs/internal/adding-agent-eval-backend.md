@@ -1,6 +1,6 @@
 # Adding a new agent backend to skills-evals
 
-This guide walks the next contributor through wiring a new agent
+This guide walks the next contributor through integrating a new agent
 backend (Cursor, Gemini CLI, GitHub Copilot CLI, OpenAI Codex, etc.)
 into the existing `skills-evals` test suite alongside the Claude path.
 
@@ -11,14 +11,14 @@ section below maps to something already shipped there.
 
 ## Current state
 
-- One agent backend wired: Claude Code, routed at DeepSeek's
+- One agent backend routed: Claude Code, routed at DeepSeek's
   Anthropic-compatible endpoint.
 - Two scope workflows: `manual-claude-judge.yml` (project scope) and
   `manual-claude-judge-user-scope.yml` (user scope). They share the
   same pytest scenarios and differ only in the `X_X_INSTALL_SCOPE`
   env var.
 - Four pytest scenarios under `skills-evals/tests/`:
-  - `test_stream_json_smoke.py` — shape-check on the wire (runs first)
+  - `test_stream_json_smoke.py` — format-check on the protocol (runs first)
   - `test_claude_plan_extends.py` — bidirectional `extends:` /
     `extended_by:` link mechanic, planner only
   - `test_claude_reminders_supersedes_todo.py` — full e2e with
@@ -44,7 +44,7 @@ section below maps to something already shipped there.
 
 | File | What changes |
 |---|---|
-| `skills_evals/<agent>_driver.py` | Subprocess spawn, wire-protocol parsing, auto-yes loop. Each agent's CLI has different conventions; cannot be fully abstracted today. |
+| `skills_evals/<agent>_driver.py` | Subprocess spawn, protocol parsing, auto-yes loop. Each agent's CLI has different conventions; cannot be fully abstracted today. |
 | `tests/conftest.py` env defaults | Routing env vars are agent-specific (Claude uses `ANTHROPIC_*`; Cursor will use `CURSOR_*`; Gemini uses `GOOGLE_*`; …). Add a new defaults dict per agent. |
 | `tests/test_<agent>_*.py` | Either duplicate the test files (per-agent driver import) or refactor to a shared file with a `driver` fixture. Start with duplication; refactor once you have ≥3 backends. |
 | `.github/workflows/manual-<agent>-judge.yml` | Install step (npm/pip/cargo/bash), env block, secret mapping. |
@@ -94,7 +94,7 @@ Reuse `SkillRun` and `_logging.log` from the shared modules. The
 internal implementation is whatever the agent's CLI needs:
 
 - Subprocess spawn with the agent's headless flags
-- Stream reader that parses the agent's wire format and pushes events
+- Stream reader that parses the agent's protocol format and pushes events
   through a queue (the Claude pattern uses two daemon threads — one
   for stdout, one for stderr — to avoid pipe-buffer deadlocks)
 - Auto-yes loop: detect end-of-turn, check the agent's final text for
@@ -107,7 +107,7 @@ a one-line log entry with type + key fields. Every state transition
 in the driver logs a line. Stderr from the agent streams live, not
 buffered. CI logs are the only post-mortem surface — silence is a bug.
 
-### 3. Wire the conftest
+### 3. Route the conftest
 
 Add a defaults dict for the new agent's env vars next to
 `CLAUDE_ENV_DEFAULTS`:
@@ -145,7 +145,7 @@ Two options:
 
 The `TASK` strings (prompts to the agent) and assertions are
 agent-agnostic. They test the AGENT'S behavior against the skill
-spec — not the wire format.
+spec — not the protocol format.
 
 ### 5. Add the workflow file
 
@@ -161,7 +161,7 @@ Update:
 - `name:` — human-readable label shown in the Actions UI
 - Install step — `npm install -g cursor`, `pip install gemini-cli`,
   etc. Pin to a known-good version once you have one
-  (`@latest` is fragile when the agent's wire format evolves)
+  (`@latest` is fragile when the agent's protocol format evolves)
 - `env:` block — agent-specific routing vars + secret mapping
 - `actions/*` versions — match the existing workflow's pins
 - Concurrency / caching — keep `setup-uv` cache enabled; the uv
@@ -188,7 +188,7 @@ Once triggered, watch the verbose log:
 
 If the run fails, the failure is almost always one of:
 
-- **Wire-format mismatch** — driver parses for the wrong event shape.
+- **Protocol-format mismatch** — driver parses for the wrong event format.
   Fix: log every event type + key fields and see what the agent
   actually emits.
 - **Auto-yes never fires** — the end-of-turn signal you keyed off
@@ -206,7 +206,7 @@ If the run fails, the failure is almost always one of:
 
 - `--input-format stream-json` is undocumented
   ([anthropics/claude-code#24594](https://github.com/anthropics/claude-code/issues/24594)).
-  Wire format reverse-engineered from community sources.
+  Protocol format reverse-engineered from community sources.
 - DeepSeek's Anthropic-compat shim strips `stop_reason` from
   assistant events. Per-turn end-signal is the `result` event, NOT
   `assistant.stop_reason == "end_turn"`.
@@ -252,7 +252,7 @@ the agent's "deliverable". `workspace.py`'s `NOISE_DIRS` already
 covers the common ones; add new entries as you discover bloat from
 the new backend.
 
-### Don't silently fall back when the wire format mismatches
+### Don't silently fall back when the protocol format mismatches
 
 A driver that "works" on bad input by returning empty data is
 unfixable. Log loudly, fail explicitly with a clear message.

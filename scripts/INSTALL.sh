@@ -144,7 +144,7 @@ ensure_on_path() {
   rc=$(rc_file_for_shell)
   marker="# x-x installer: PATH"
   if [ -f "$rc" ] && grep -qF "$marker" "$rc"; then
-    info "${INSTALL_DIR} already wired into $rc"
+    info "${INSTALL_DIR} already added to $rc"
   else
     mkdir -p "$(dirname "$rc")"
     if [ "$(basename "${SHELL:-/bin/sh}")" = "fish" ]; then

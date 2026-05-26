@@ -39,7 +39,7 @@ func TestUpdateConfig_LastCheckedTime(t *testing.T) {
 	}
 }
 
-// TestSaveLoadUpdateConfig_RoundTrip locks the wire format: 2-space
+// TestSaveLoadUpdateConfig_RoundTrip locks the protocol format: 2-space
 // indent + trailing newline. The installer scripts (INSTALL.sh /
 // INSTALL.ps1) sometimes diff this file by hand; a JSON layout change
 // would surprise them.

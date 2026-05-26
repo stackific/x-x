@@ -100,7 +100,7 @@ func runSkillsRemove(args []string) {
 		os.Exit(2)
 	}
 
-	// Project scope is meaningful only inside an x-x project — gate
+	// Project scope is meaningful only inside an x-x project — check
 	// before any work. User scope is global, so it never needs the check.
 	if *projectScope {
 		requireProject()
@@ -141,7 +141,7 @@ func runSkillsRemove(args []string) {
 		// Hook un-merge: walk the bundled per-agent config dir and
 		// subtract our shipped hook records from the user's counterpart
 		// under <scopeRoot>/<t.configRel>. Agents that ship no config
-		// (empty configSrc) are skipped — same gate installAgentConfig uses.
+		// (empty configSrc) are skipped — same check installAgentConfig uses.
 		if agentsErr != nil || t.configSrc == "" {
 			continue
 		}
@@ -183,7 +183,7 @@ func removeOurSkillsIn(skillsDir, agentName string, owned map[string]bool) (remo
 	}
 	fmt.Printf("  %-13s %s\n", agentName, skillsDir)
 	for _, e := range entries {
-		// Allowlist check is the only gate. A folder named anything not
+		// Allowlist check is the only filter. A folder named anything not
 		// in ownedSkills is implicitly user-authored and skipped silently
 		// (we only log when *we own the name* and choose to act on it).
 		if !owned[e.Name()] {

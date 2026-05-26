@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// updateConfig mirrors the on-disk shape of ~/.x-x/.config.json. The
+// updateConfig mirrors the on-disk structure of ~/.x-x/.config.json. The
 // installer writes this file with the freshly-installed version and the
 // current epoch; the CLI reads and updates it from then on. The struct
 // tags lock the JSON key names so future field additions can't accidentally
@@ -35,7 +35,7 @@ func (c updateConfig) lastCheckedTime() time.Time {
 
 // configPath returns the absolute path to ~/.x-x/.config.json. Centralized
 // so installer and CLI agree, and so a future relocation only touches one
-// function. Mirrors agentsTarget's shape.
+// function. Mirrors agentsTarget's structure.
 func configPath() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -195,7 +195,7 @@ func fetchLatestVersion() (string, error) {
 		TagName string `json:"tag_name"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		// Body wasn't JSON or didn't have the expected shape. Surface
+		// Body wasn't JSON or didn't have the expected form. Surface
 		// as an error so the upsell stays silent.
 		return "", err
 	}

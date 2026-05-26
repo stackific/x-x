@@ -59,8 +59,8 @@ mkdir -p "${config_dir}"
 chmod 700 "${config_dir}"
 
 # Seed the update-check config so the first post-install invocation does
-# not probe the network. Mirrors INSTALL.sh exactly — same JSON shape, same
-# version-string parse (last whitespace-separated token on the first
+# not probe the network. Mirrors INSTALL.sh exactly — same JSON structure,
+# same version-string parse (last whitespace-separated token on the first
 # `--version` line).
 installed_version=$("${INSTALL_DIR}/${BINARY}" --version 2>/dev/null | awk 'NR==1 { print $NF; exit }')
 [ -n "$installed_version" ] || installed_version=unknown
@@ -90,7 +90,7 @@ ensure_on_path() {
   rc=$(rc_file_for_shell)
   marker="# x-x installer: PATH"
   if [ -f "$rc" ] && grep -qF "$marker" "$rc"; then
-    info "${INSTALL_DIR} already wired into $rc"
+    info "${INSTALL_DIR} already added to $rc"
   else
     mkdir -p "$(dirname "$rc")"
     if [ "$(basename "${SHELL:-/bin/sh}")" = "fish" ]; then

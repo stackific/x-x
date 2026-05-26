@@ -155,7 +155,7 @@ func copyEmbeddedFile(srcPath, destPath string) (retErr error) {
 		return fmt.Errorf("create %s: %w", destPath, err)
 	}
 	// Close-via-defer that promotes the close error if no earlier error
-	// won. This is the canonical "defer Close on a writer" pattern in Go.
+	// won. This is the standard "defer Close on a writer" pattern in Go.
 	defer func() {
 		if cerr := dest.Close(); retErr == nil {
 			retErr = cerr

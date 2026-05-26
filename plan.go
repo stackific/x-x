@@ -20,7 +20,7 @@ import (
 
 // runPlans dispatches `x-x plans <subcommand>`. Future plan-tooling commands
 // (e.g. `lint`) can be added here without restructuring, the same way
-// `runSkills` is shaped.
+// `runSkills` is structured.
 func runPlans(args []string) {
 	if len(args) == 0 {
 		printPlansUsage(os.Stderr)
@@ -43,7 +43,7 @@ func runPlans(args []string) {
 }
 
 // printPlansUsage writes the `x-x plans` help block to w. Mirrors the
-// printSkillsUsage shape (one-line subcommand summaries) so the two help
+// printSkillsUsage structure (one-line subcommand summaries) so the two help
 // surfaces stay visually aligned; both ride on a writer parameter rather
 // than os.Stderr directly so future `--help` paths can redirect to stdout.
 func printPlansUsage(w io.Writer) {
@@ -55,7 +55,7 @@ func printPlansUsage(w io.Writer) {
 }
 
 // runPlansNextPrefix prints the next available zero-padded plan prefix in
-// plansDir (the canonical ".x-plans" under cwd). Takes no arguments — the
+// plansDir (the standard ".x-plans" under cwd). Takes no arguments — the
 // directory is not user-configurable; plansDir is the single source of truth.
 //
 // Prefix width is read from <plansDir>/<plansConfigLockFile> (JSON), falling
@@ -67,10 +67,10 @@ func runPlansNextPrefix(args []string) {
 }
 
 // planNextPrefix is the testable body of runPlansNextPrefix: flag-set
-// parsing, project gate, format, write — all without touching os.Exit
+// parsing, project marker check, format, write — all without touching os.Exit
 // directly. Returns the desired exit code (0 happy, 2 usage error /
 // not-a-project). Pulled out so unit tests can drive the full flow
-// (argument rejection, project-gate banner, zero-pad shape) without
+// (argument rejection, project-marker-check banner, zero-pad format) without
 // shelling out a subprocess.
 func planNextPrefix(args []string, plansDir string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("plans next-prefix", flag.ContinueOnError)
@@ -112,10 +112,10 @@ func loadPrefixWidth(plansDir string) int {
 }
 
 // scanHighestPrefix returns the largest numeric prefix found among entry
-// names in plansDir whose name shape matches `<width digits>-<rest>.md` —
+// names in plansDir whose name pattern matches `<width digits>-<rest>.md` —
 // the same filename pattern listPlans accepts. Anchoring on `-` and the
 // `.md` extension (not just `\d{width}`) keeps next-prefix consistent
-// with what list / lint will recognise: a 5-digit-prefixed file when
+// with what list / lint will recognize: a 5-digit-prefixed file when
 // width=4 doesn't match either pattern and must not be counted, otherwise
 // next-prefix would hand out numbers based on files list / lint silently
 // ignore.
@@ -167,7 +167,7 @@ func runPlansList(args []string) {
 // as the wrapper (0 happy, 1 listPlans IO error, 2 usage / not-a-project
 // / bad --order). Pulled out so the filter chain + sort + overflow path
 // can be exercised end-to-end at unit level — the e2e suites cover the
-// same shape but a unit test fails faster on a contract regression.
+// same surface but a unit test fails faster on a contract regression.
 func planList(args []string, plansDir string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("plans list", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -431,7 +431,7 @@ func listPlans(plansDir string, width int, warnW io.Writer) ([]planRow, error) {
 
 	// `<width digits>-<at least one char><planFileExt>`. The trailing
 	// extension is part of the contract enforced by `plans lint`; we match
-	// the same shape so stray docs (README.md, _data_systems.yaml) are
+	// the same pattern so stray docs (README.md, _data_systems.yaml) are
 	// silently ignored.
 	nameRe := regexp.MustCompile(fmt.Sprintf(`^\d{%d}-.+%s$`, width, regexp.QuoteMeta(planFileExt)))
 
@@ -534,7 +534,7 @@ var requiredSections = []string{"## Goal", "## Approach", "## Tasks"}
 
 // Lint-only regexes. Frontmatter status/systems regexes are reused from
 // the listPlans path (planStatusRe / planSystemsRe) so both subcommands
-// agree on shape.
+// agree on structure.
 var (
 	planSupersedesRe   = regexp.MustCompile(`(?m)^supersedes:\s*\[([^\]]*)\]\s*$`)
 	planSupersededByRe = regexp.MustCompile(`(?m)^superseded_by:\s*\[([^\]]*)\]\s*$`)
@@ -546,7 +546,7 @@ var (
 	planTitleRe = regexp.MustCompile(`(?m)^title:\s*(.+?)\s*$`)
 	// planCreatedRe captures the raw value so a malformed date can still be
 	// reported by the value (vs. a regex miss reading as "field absent").
-	// Shape is then checked separately against planCreatedShapeRe.
+	// Format is then checked separately against planCreatedShapeRe.
 	planCreatedRe      = regexp.MustCompile(`(?m)^created:\s*(\S.*?)\s*$`)
 	planCreatedShapeRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$`)
 	// planKeyLineRe matches a top-level frontmatter key at the start of a
@@ -588,7 +588,7 @@ func loadMaxPlanLines(plansDir string) int {
 }
 
 // runPlansLint validates every *.md file in plansDir against the plan schema.
-// Takes no arguments — always operates on the canonical .x-plans/ scaffold.
+// Takes no arguments — always operates on the standard .x-plans/ scaffold.
 // Output contract:
 //
 //   - Per-file findings → stdout, one per line, prefixed with file path.
@@ -677,7 +677,7 @@ type registry struct {
 // for every entry that carries BOTH an `id:` and a `name:` field.
 // Hand-rolled to avoid pulling in a full YAML dependency for one file we
 // control end-to-end; tracks current list-entry boundaries so a multi-line
-// `- id: foo\n    name: Foo` shape and the single-line `- id: foo` shape
+// `- id: foo\n    name: Foo` form and the single-line `- id: foo` form
 // produce the same in-memory result.
 //
 // Missing/unreadable file → empty registry; caller decides how to flag it.
@@ -905,7 +905,7 @@ func lintSystems(fm string, reg registry, registryPath string) (declared, findin
 	return declared, findings
 }
 
-// lintRelationArray is the shared shape for `supersedes:`, `extends:`,
+// lintRelationArray is the shared structure for `supersedes:`, `extends:`,
 // `extended_by:`, `superseded_by:`: each entry must resolve to a sibling
 // plan, and self-references are rejected. Field name is passed in so the
 // finding strings are field-specific.
@@ -1029,7 +1029,7 @@ func lintTitle(fm string) (title string, findings []string) {
 }
 
 // lintCreated validates the `created:` frontmatter field against the
-// ISO 8601 UTC shape `YYYY-MM-DDTHH:MM:SSZ`. Calendar validity (e.g. Feb
+// ISO 8601 UTC form `YYYY-MM-DDTHH:MM:SSZ`. Calendar validity (e.g. Feb
 // 30, hour 25) is out of scope — callers can layer a stricter check on
 // top if needed.
 func lintCreated(fm string) []string {
@@ -1076,7 +1076,7 @@ func lintFrontmatterOrder(fm string) []string {
 // lintFilenameMatchesTitle verifies that the post-prefix portion of the
 // filename equals slugify(title). Skipped when the title is empty
 // (lintTitle already reported that) or when the filename doesn't carry a
-// `<prefix>-<slug>.md` shape (lintFilename already reported that) — the
+// `<prefix>-<slug>.md` form (lintFilename already reported that) — the
 // goal here is to surface the title↔filename drift, not to repeat
 // upstream findings.
 func lintFilenameMatchesTitle(name string, width int, title string) []string {
@@ -1199,11 +1199,11 @@ func slugify(title string) string {
 // runPlansSlugify takes a single positional argument (the title) and prints
 // its kebab-case slug to stdout. Exits 2 on missing/extra arguments or when
 // the title contains no characters that survive slugification. No project
-// gate — slugify is a pure transform and is useful before `x-x init`.
+// check — slugify is a pure transform and is useful before `x-x init`.
 // runPlansSlugify is the only subcommand that takes a single positional and
 // no flags. flag.Parse can't help here — the title may legitimately start
 // with `-` (e.g. "---draft note"), and flag.Parse would reject it as an
-// unknown flag. Instead we handle the three flag-shaped tokens we care
+// unknown flag. Instead we handle the three flag-like tokens we care
 // about manually: `-h`/`--help` print usage, `--` is a legacy separator
 // stripped if present, and everything else is treated as the title.
 func runPlansSlugify(args []string) {
@@ -1214,7 +1214,7 @@ func runPlansSlugify(args []string) {
 // contract: 0 happy (or -h/--help), 2 usage error (missing/extra args
 // or unsluggable title). No plansDir argument because slugify is a pure
 // transform — useful before `x-x init`, so it deliberately skips the
-// project gate.
+// project marker check.
 func planSlugify(args []string, stdout, stderr io.Writer) int {
 	if len(args) >= 1 {
 		switch args[0] {

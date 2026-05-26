@@ -51,7 +51,7 @@ import (
 //     (so user edits like a custom model name are preserved); bundled
 //     keys missing on the existing side are added (so freshly-shipped
 //     hooks land for users who already had a partial settings.json); array
-//     entries are unioned by deep equality (so the canonical hook entries
+//     entries are unioned by deep equality (so the standard hook entries
 //     are appended without duplicating the user's own).
 //   - Destination exists AND src is anything else → skip with a "skipping"
 //     log. We don't have a merger for TOML/YAML yet, so the conservative
@@ -139,7 +139,7 @@ func installOneAgentConfigFile(srcPath, destPath, rel string) error {
 //   - Either side failing to parse returns an error so the caller can
 //     log and leave the destination alone (see installAgentConfig).
 //   - The rewrite uses MarshalIndent with 2-space indent + trailing
-//     newline to match the conventional JSON-file shape.
+//     newline to match the conventional JSON-file format.
 func mergeJSONFile(bundlePath, existingPath string) error {
 	bundleRaw, err := os.ReadFile(bundlePath) // #nosec G304 -- bundlePath comes from agentsTarget materialized embed.
 	if err != nil {
@@ -174,7 +174,7 @@ func mergeJSONFile(bundlePath, existingPath string) error {
 		return fmt.Errorf("marshal merged: %w", err)
 	}
 	// Trailing newline matches standard text-file conventions and the
-	// bundled file's own shape.
+	// bundled file's own format.
 	body = append(body, '\n')
 	return os.WriteFile(existingPath, body, 0o600)
 }
@@ -221,7 +221,7 @@ func mergeJSON(existing, bundled any) any {
 // mergeJSONMaps deep-merges two JSON objects under the contract documented
 // on mergeJSON: existing keys keep their value, bundled-only keys are
 // added, shared keys are recursively merged. Pulled out as its own
-// function so mergeJSON's top level reads as one switch over JSON shapes.
+// function so mergeJSON's top level reads as one switch over JSON forms.
 func mergeJSONMaps(existing, bundled map[string]any) map[string]any {
 	out := make(map[string]any, len(existing)+len(bundled))
 	for k, v := range existing {
@@ -263,7 +263,7 @@ func mergeJSONArrays(existing, bundled []any) []any {
 //
 //   - Only records inside arrays nested under the top-level configHooksKey
 //     ("hooks") property are candidates. Everything outside that subtree —
-//     other top-level keys, the file's overall shape, user-added event keys
+//     other top-level keys, the file's overall structure, user-added event keys
 //     under "hooks" — is left exactly as the user wrote it.
 //   - A candidate user entry is removed only if it deep-equals an entry the
 //     bundle currently ships in the same event-key array. A user-tweaked
@@ -418,7 +418,7 @@ func buildHookUnmerge(bundlePath, userPath, rel string) (change hookUnmerge, ski
 //
 // Inputs are the *values* of the configHooksKey property on each side
 // (typed as map[string]any when JSON-decoded). When either side isn't
-// a map, the function is a no-op: type mismatches and unexpected shapes
+// a map, the function is a no-op: type mismatches and unexpected forms
 // are preserved untouched rather than silently corrected.
 //
 // Semantics:
@@ -435,7 +435,7 @@ func buildHookUnmerge(bundlePath, userPath, rel string) (change hookUnmerge, ski
 //     arrays by hand if they want to.
 //
 // Pure function — no I/O — so its rules are exercised in unit tests with
-// hand-built values, the same shape mergeJSON uses for its tests.
+// hand-built values, the same structure mergeJSON uses for its tests.
 func subtractHooks(user, bundled any) (any, bool) {
 	uMap, uIsMap := user.(map[string]any)
 	bMap, bIsMap := bundled.(map[string]any)
@@ -458,7 +458,7 @@ func subtractHooks(user, bundled any) (any, bool) {
 }
 
 // subtractEventArray drops every entry in user that deep-equals any entry
-// in bundled. Both must be []any (the JSON-decoded shape of an event-key
+// in bundled. Both must be []any (the JSON-decoded form of an event-key
 // array); otherwise the user value is returned unchanged with dropped=false.
 //
 // Comparison is whole-record — we never recurse into the user's entries.
@@ -469,7 +469,7 @@ func subtractEventArray(user, bundled any) (out []any, dropped bool) {
 	uArr, uIsArr := user.([]any)
 	bArr, bIsArr := bundled.([]any)
 	if !uIsArr || !bIsArr {
-		// Type mismatch — preserve the user shape verbatim. Return the
+		// Type mismatch — preserve the user structure verbatim. Return the
 		// original (which won't be assigned back since dropped=false).
 		return nil, false
 	}
@@ -497,7 +497,7 @@ func jsonContainsDeepEqual(pool []any, candidate any) bool {
 
 // jsonDeepEqual compares two JSON-decoded values for byte-for-byte
 // equivalence by round-tripping each through json.Marshal. Go's encoder
-// emits map keys in sorted order, which gives a canonical form suitable
+// emits map keys in sorted order, which gives a standard form suitable
 // for deep equality — `reflect.DeepEqual` would also work, but Marshal
 // is robust to any future numeric-type drift between json.Number and
 // float64 if a caller swaps decoder modes.

@@ -34,13 +34,13 @@ For each emitted row, ask the user — in the same single-turn questions batch f
 
 ## 2b. Research dependencies and external APIs
 
-Before drafting tasks that reference a specific library, a third-party API, an authentication mechanism, or any external service contract, run `WebSearch` and (where the search points at upstream docs) `WebFetch` to confirm current details. Do NOT trust training-data versions or API shapes — both drift.
+Before drafting tasks that reference a specific library, a third-party API, an authentication mechanism, or any external service contract, run `WebSearch` and (where the search points at upstream docs) `WebFetch` to confirm current details. Do NOT trust training-data versions or API forms — both drift.
 
 Mandatory when the plan touches:
 - A new package/adddependency — web-search the latest stable release before pinning (AGENTS.md hard rule).
 - An external service API (proxy providers, search engines, browser-automation libraries, observability backends, CDN/CI platforms, etc.).
 - An authentication format (proxy URL syntax, OAuth flows, HMAC payload layouts, header conventions).
-- A platform CLI (`gh`, `docker compose`, `uv`, etc.) where flags or output shape change between versions.
+- A platform CLI (`gh`, `docker compose`, `uv`, etc.) where flags or output format change between versions.
 
 Cite the upstream URLs in the plan's Approach section as parenthetical `(docs: <url>)` notes so the user can audit. If research surfaces a design conflict with the user's stated intent, do not write the plan in the same turn — loop back to step 2 and clarify via `AskUserQuestion`.
 

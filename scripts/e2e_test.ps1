@@ -256,7 +256,7 @@ function Assert-NotExists {
 # Symlinks on Windows require either Developer Mode, admin elevation, or
 # SeCreateSymbolicLinkPrivilege. x-x's install path falls back to a copy
 # on Windows for exactly this reason, so the assertion here checks for the
-# COPY shape (regular file/dir, no LinkType) — the inverse of the macOS
+# COPY form (regular file/dir, no LinkType) — the inverse of the macOS
 # user-scope assertion in the bash e2e.
 function Assert-IsCopyNotSymlink {
   param(
@@ -375,7 +375,7 @@ function New-FreshProject {
 
 # Seeds a project scaffold the way `x-x init --scope project` would: planDir
 # with a syntactically-valid lock file and an empty systems registry. Tests
-# that need a "fully initialized" project gate to pass use this rather than
+# that need a "fully initialized" project-marker check to pass use this rather than
 # running real init (which we test separately).
 function Initialize-ProjectScaffold {
   param([Parameter(Mandatory)][string]$Path)
@@ -582,7 +582,7 @@ Invoke-XX plans frobnicate
 Assert-Eq       'exit 2'     $RunRC 2
 Assert-Contains 'diagnostic' $RunErr 'unknown plans subcommand: frobnicate'
 
-# ---------- plans slugify (no project gate) ----------
+# ---------- plans slugify (no project-marker check) ----------
 
 Start-Case 'plans slugify lowercases ASCII'
 Invoke-XX plans slugify 'Add Payment Retry'
@@ -636,7 +636,7 @@ try {
   Assert-Eq 'slug printed' $RunOut 'some-title'
 } finally { Pop-Location }
 
-# ---------- project gate ----------
+# ---------- project-marker check ----------
 
 Start-Case 'plans next-prefix in non-project exits 2 with diagnostic'
 $noProj = New-FreshProject
@@ -663,7 +663,7 @@ try {
   Assert-Contains 'diagnostic' $RunErr 'not an x-x project'
 } finally { Pop-Location }
 
-Start-Case 'project-gate diagnostic does not leak internal path components'
+Start-Case 'project-marker-check diagnostic does not leak internal path components'
 Push-Location $noProj
 try {
   Invoke-XX plans list
@@ -1152,7 +1152,7 @@ try {
   Assert-IsCopyNotSymlink 'x-x skill is a copy, not symlink' $userClaudeSkill
   # User-scope MUST also drop the .x-plans/ scaffold into cwd. Scope only
   # decides where SKILLS land (project tree vs $env:USERPROFILE); the
-  # project gate keyed on <cwd>/$PLANS_LOCK_PATH is what makes cwd usable
+  # project marker check keyed on <cwd>/$PLANS_LOCK_PATH is what makes cwd usable
   # with /x-plan, /x-x, and the `x-x plans *` CLI subcommands.
   Assert-IsFile 'user-scope seeds _config.lock in cwd' (Join-Path $userInitCwd $Script:PLANS_LOCK_PATH)
   Assert-IsFile 'user-scope seeds _data_systems.yaml in cwd' (Join-Path $userInitCwd $Script:PLANS_SYSTEMS_PATH)
@@ -1171,18 +1171,25 @@ Assert-Eq 'manifest content matches byte-for-byte' $srcHash $dstHash
 
 Start-Case 'user-scope install lands under %USERPROFILE%, not under $HOME if they differ'
 Reset-UserHome
-# Diverge HOME and USERPROFILE so we can confirm Windows resolves to USERPROFILE.
-$divergedHome = Join-Path $Sandbox 'home-diverged'
-New-Item -ItemType Directory -Force -Path $divergedHome | Out-Null
-$env:HOME = $divergedHome
-$env:USERPROFILE = $SandboxHome
-Invoke-XX init --scope user --agents claude `
-                  --prefix-width 4 --max-plan-lines 30 --review-per task
-Assert-Eq    'exit 0' $RunRC 0
-Assert-IsDir 'install under USERPROFILE' (Join-Path $env:USERPROFILE (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
-Assert-NotExists 'NOT under HOME'        (Join-Path $env:HOME (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
-# Restore HOME == USERPROFILE for subsequent cases that assume parity.
-$env:HOME = $SandboxHome
+# `x-x init` (any scope) seeds <cwd>/.x-plans/_config.lock, so each init
+# call needs a fresh project dir — otherwise a leftover lock from an
+# earlier case fails the "already initialized" check.
+$projUP = New-FreshProject
+Push-Location $projUP
+try {
+  # Diverge HOME and USERPROFILE so we can confirm Windows resolves to USERPROFILE.
+  $divergedHome = Join-Path $Sandbox 'home-diverged'
+  New-Item -ItemType Directory -Force -Path $divergedHome | Out-Null
+  $env:HOME = $divergedHome
+  $env:USERPROFILE = $SandboxHome
+  Invoke-XX init --scope user --agents claude `
+                    --prefix-width 4 --max-plan-lines 30 --review-per task
+  Assert-Eq    'exit 0' $RunRC 0
+  Assert-IsDir 'install under USERPROFILE' (Join-Path $env:USERPROFILE (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'NOT under HOME'        (Join-Path $env:HOME (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+  # Restore HOME == USERPROFILE for subsequent cases that assume parity.
+  $env:HOME = $SandboxHome
+} finally { Pop-Location }
 
 # ---------- CRLF tolerance ----------
 
@@ -1208,7 +1215,7 @@ try {
 # accepts the create via .NET / NT-path APIs that bypass the Win32 reserved-
 # name filter. The CLI never produces such names because every plan slug is
 # prefixed with `\d{N}-` (so the basename is `<prefix>-<slug>`, never `CON`),
-# and listPlans / scanHighestPrefix both anchor on that shape via regex.
+# and listPlans / scanHighestPrefix both anchor on that format via regex.
 # This test verifies that anchor: if reserved-name files land in plansDir
 # (whatever way), `plans list` ignores them and `plans next-prefix` keeps
 # walking the conforming siblings.
@@ -1456,7 +1463,7 @@ for ($i = 1; $i -le $over7; $i++) {
 $plan7Match = '0007-payment007.md'
 $plan7MatchBody = "---`nstatus: valid`nsystems: [payment-service]`n---`nthis plan covers exponential retry backoff"
 Set-Content -LiteralPath (Join-Path $plansDirOK7 $plan7Match) -Value $plan7MatchBody -Encoding ascii
-# An unrelated-system plan with the same body keyword — must be gated out by --system.
+# An unrelated-system plan with the same body keyword — must be filtered out by --system.
 $plan7Unrelated = '0099-unrelated.md'
 $plan7UnrelatedBody = "---`nstatus: valid`nsystems: [other-system]`n---`nalso mentions retry"
 Set-Content -LiteralPath (Join-Path $plansDirOK7 $plan7Unrelated) -Value $plan7UnrelatedBody -Encoding ascii
@@ -1465,7 +1472,7 @@ try {
   Invoke-XX plans list --system payment-service --overflow-keywords retry
   Assert-Eq           'exit 0' $RunRC 0
   Assert-Contains     'payment007 in match'             $RunOut 'payment007'
-  Assert-NotContains  'unrelated gated out before narrow' $RunOut 'unrelated'
+  Assert-NotContains  'unrelated filtered out before narrow' $RunOut 'unrelated'
   $rowCount = ($RunOut -split "`n").Count
   Assert-Eq 'exactly one match (id ∩ keyword)' $rowCount 1
 } finally { Pop-Location }
@@ -1473,7 +1480,7 @@ try {
 Start-Case 'plans list --status + --system + --overflow-keywords narrows status∩system > threshold'
 # Proves --overflow-keywords is the layer that does the work when --status
 # and --system are already applied. Pre-overflow count must exceed the
-# threshold AFTER status+system gating, and the distractors that share
+# threshold AFTER status+system filtering, and the distractors that share
 # status AND system but lack the body keyword can ONLY be eliminated by
 # the overflow narrow. Two further distractors carry the keyword in body
 # but fail one of status / system — they assert layer ordering
@@ -1508,8 +1515,8 @@ try {
   Assert-Eq          'exit 0'                                    $RunRC 0
   Assert-Contains    'plan005 in match'                          $RunOut 'plan005'
   Assert-Contains    'plan017 in match'                          $RunOut 'plan017'
-  Assert-NotContains 'wrong-status gated by --status filter'     $RunOut 'wrong-status'
-  Assert-NotContains 'wrong-system gated by --system filter'     $RunOut 'wrong-system'
+  Assert-NotContains 'wrong-status filtered by --status filter'     $RunOut 'wrong-status'
+  Assert-NotContains 'wrong-system filtered by --system filter'     $RunOut 'wrong-system'
   $rowCountSSO = ($RunOut -split "`n").Count
   Assert-Eq 'exactly two matchers survive (status ∩ system ∩ keyword)' $rowCountSSO 2
 } finally { Pop-Location }
@@ -2523,7 +2530,7 @@ try {
 # installAgentConfig. The user's scalar values win; bundled keys missing
 # from the user file are added; arrays are unioned.
 #
-# A re-init on the same project is blocked by the lock-file gate (already
+# A re-init on the same project is blocked by the lock-file check (already
 # tested), so the merge path is exercised via INDEPENDENT projects: seed a
 # pre-existing settings.json with user content, then run init.
 
@@ -2722,17 +2729,24 @@ try {
 
 Start-Case 'skills remove --user removes user-scope install end-to-end'
 Reset-UserHome
-Invoke-XX init --scope user --agents 'claude,codex' `
-                  --prefix-width 4 --max-plan-lines 30 --review-per task
-Assert-Eq    'init exit 0' $RunRC 0
-$preClaude = Join-Path $env:USERPROFILE (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR)
-$preCodex  = Join-Path $env:USERPROFILE (Join-Path $CODEX_SKILLS_REL  $SKILL_X_X_DIR)
-Assert-IsDir 'pre-remove claude skill' $preClaude
-Assert-IsDir 'pre-remove codex skill'  $preCodex
-Invoke-XX skills remove --user
-Assert-Eq        'remove exit 0'   $RunRC 0
-Assert-NotExists 'claude removed'  $preClaude
-Assert-NotExists 'codex removed'   $preCodex
+# Fresh project dir so `x-x init`'s cwd-local .x-plans/_config.lock seed
+# does not trip the "already initialized" check against a leftover from
+# an earlier case.
+$projRMU = New-FreshProject
+Push-Location $projRMU
+try {
+  Invoke-XX init --scope user --agents 'claude,codex' `
+                    --prefix-width 4 --max-plan-lines 30 --review-per task
+  Assert-Eq    'init exit 0' $RunRC 0
+  $preClaude = Join-Path $env:USERPROFILE (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR)
+  $preCodex  = Join-Path $env:USERPROFILE (Join-Path $CODEX_SKILLS_REL  $SKILL_X_X_DIR)
+  Assert-IsDir 'pre-remove claude skill' $preClaude
+  Assert-IsDir 'pre-remove codex skill'  $preCodex
+  Invoke-XX skills remove --user
+  Assert-Eq        'remove exit 0'   $RunRC 0
+  Assert-NotExists 'claude removed'  $preClaude
+  Assert-NotExists 'codex removed'   $preCodex
+} finally { Pop-Location }
 
 # ---------- Windows-specific: PATH separator + drive letters ----------
 
@@ -2764,7 +2778,7 @@ $plansDirH = Join-Path $projH $PLANS_DIR
 Write-Plan $plansDirH '0001-keep.md' 'valid' 'auth'
 # listPlans walks via os.ReadDir + a filename-regex match; it does not
 # consult the Win32 hidden attribute. A user who hides a plan file for
-# their own organisational reasons should still see it in `plans list`,
+# their own organizational reasons should still see it in `plans list`,
 # matching POSIX dotfile-handling semantics elsewhere in the CLI.
 $hidden = Join-Path $plansDirH '0002-hidden.md'
 Write-Plan $plansDirH '0002-hidden.md' 'valid' 'auth'
@@ -2873,9 +2887,9 @@ foreach ($skill in $OWNED_SKILLS) {
   Assert-IsDir "skill $skill repopulated" (Join-Path $env:USERPROFILE (Join-Path $XX_AGENTS_SKILLS_DIR $skill))
 }
 
-# ---------- Windows-specific: project gate diagnostic is path-free ----------
+# ---------- Windows-specific: project-marker-check diagnostic is path-free ----------
 
-Start-Case 'project-gate diagnostic uses generic wording on Windows too'
+Start-Case 'project-marker-check diagnostic uses generic wording on Windows too'
 $noProjW = New-FreshProject
 Push-Location $noProjW
 try {
@@ -2971,7 +2985,7 @@ Invoke-XX plans slugify $longTitle
 Assert-Eq 'exit 0' $RunRC 0
 Assert-Contains 'slug starts with lorem' $RunOut 'lorem'
 
-Start-Case 'plans list ignores a filename with a 200-char slug if the prefix shape is right'
+Start-Case 'plans list ignores a filename with a 200-char slug if the prefix format is right'
 # A 200-char slug + the sandbox prefix exceeds MAX_PATH=260 on Windows
 # unless LongPathsEnabled is set (registry key HKLM\System\
 # CurrentControlSet\Control\FileSystem\LongPathsEnabled = 1). On a runner
@@ -3333,14 +3347,14 @@ try {
   Assert-Eq 'next after 0003 (not 00099)' $RunOut '0004'
 } finally { Pop-Location }
 
-Start-Case 'plans next-prefix ignores directories that match the prefix shape'
+Start-Case 'plans next-prefix ignores directories that match the prefix format'
 $projDX = New-FreshProject
 Initialize-ProjectScaffold $projDX
 $plansDirDX = Join-Path $projDX $PLANS_DIR
 Write-Plan $plansDirDX '0001-foo.md' 'valid' 'auth'
-# A subdir with the prefix shape but no `.md` extension. scanHighestPrefix's
+# A subdir with the prefix format but no `.md` extension. scanHighestPrefix's
 # regex is `^\d{N}-.+\.md$`, so this directory entry can't match and must be
-# silently ignored. Only 0001-foo.md remains as the recognised plan, so the
+# silently ignored. Only 0001-foo.md remains as the recognized plan, so the
 # next prefix is 0002.
 New-Item -ItemType Directory -Force -Path (Join-Path $plansDirDX '0050-bar') | Out-Null
 Push-Location $projDX
@@ -3384,16 +3398,23 @@ try {
 
 Start-Case 'skills remove --user touches user-scope hooks.json (codex)'
 Reset-UserHome
-Invoke-XX init --scope user --agents codex `
-                  --prefix-width 4 --max-plan-lines 30 --review-per task
-Assert-Eq 'init exit 0' $RunRC 0
-$userHooks = Join-Path $env:USERPROFILE (Join-Path $CODEX_CONFIG_REL $CODEX_HOOKS_FILE)
-$beforeContent = Get-Content -Raw -LiteralPath $userHooks
-Assert-Contains 'bundled hook present pre-remove' $beforeContent 'x-x plans lint'
-Invoke-XX skills remove --user
-Assert-Eq 'remove exit 0' $RunRC 0
-$afterContent = Get-Content -Raw -LiteralPath $userHooks
-Assert-NotContains 'bundled hook removed' $afterContent 'x-x plans lint'
+# Fresh project dir so `x-x init`'s cwd-local .x-plans/_config.lock seed
+# does not trip the "already initialized" check against a leftover from
+# an earlier case.
+$projRMHC = New-FreshProject
+Push-Location $projRMHC
+try {
+  Invoke-XX init --scope user --agents codex `
+                    --prefix-width 4 --max-plan-lines 30 --review-per task
+  Assert-Eq 'init exit 0' $RunRC 0
+  $userHooks = Join-Path $env:USERPROFILE (Join-Path $CODEX_CONFIG_REL $CODEX_HOOKS_FILE)
+  $beforeContent = Get-Content -Raw -LiteralPath $userHooks
+  Assert-Contains 'bundled hook present pre-remove' $beforeContent 'x-x plans lint'
+  Invoke-XX skills remove --user
+  Assert-Eq 'remove exit 0' $RunRC 0
+  $afterContent = Get-Content -Raw -LiteralPath $userHooks
+  Assert-NotContains 'bundled hook removed' $afterContent 'x-x plans lint'
+} finally { Pop-Location }
 
 # ---------- Windows-specific: encoding and output stability ----------
 
