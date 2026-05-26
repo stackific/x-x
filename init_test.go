@@ -6,6 +6,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -1552,5 +1554,110 @@ func TestRunInit_AllFlags(t *testing.T) {
 	}
 	if got.PrefixWidth != 6 || got.MaxPlanLines != 42 || got.ReviewPer != reviewPerPlan {
 		t.Fatalf("lock didn't honor flags: %+v", got)
+	}
+}
+
+// parseInitFlagsForTest re-creates the FlagSet runInit builds so the
+// validation pass can be exercised without going through os.Exit. Mirrors
+// the flag.NewFlagSet block in runInit exactly — keep them in sync.
+func parseInitFlagsForTest(t *testing.T, args []string) (fs *flag.FlagSet, prefixWidth, maxPlanLines *int, agents *stringSliceFlag, reviewPer *string) {
+	t.Helper()
+	fs = flag.NewFlagSet("init", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	var ag stringSliceFlag
+	fs.Var(&ag, "agents", "")
+	_ = fs.String("scope", "", "")
+	prefixWidth = fs.Int("prefix-width", 0, "")
+	maxPlanLines = fs.Int("max-plan-lines", 0, "")
+	reviewPer = fs.String("review-per", "", "")
+	if err := fs.Parse(args); err != nil {
+		t.Fatalf("parse %v: %v", args, err)
+	}
+	return fs, prefixWidth, maxPlanLines, &ag, reviewPer
+}
+
+// TestValidateInitFlags_PassesOnUnsetFlags pins the flag.Visit semantics:
+// unset flags must not trigger validation, otherwise the all-defaults
+// interactive path (no flags passed) would never reach the prompts.
+func TestValidateInitFlags_PassesOnUnsetFlags(t *testing.T) {
+	fs, pw, ml, ag, rp := parseInitFlagsForTest(t, nil)
+	if err := validateInitFlags(fs, pw, ml, ag, rp); err != nil {
+		t.Fatalf("expected nil for no-flags case, got %v", err)
+	}
+}
+
+// TestValidateInitFlags_PassesOnValidValues is the happy path: every flag
+// set to a valid value yields nil. Distinct from the unset case so a
+// future tightening (e.g. `--agents` requires more than the empty default)
+// can't accidentally regress the "valid input, no complaint" contract.
+func TestValidateInitFlags_PassesOnValidValues(t *testing.T) {
+	fs, pw, ml, ag, rp := parseInitFlagsForTest(t, []string{
+		"--agents", "claude",
+		"--prefix-width", "4",
+		"--max-plan-lines", "30",
+		"--review-per", reviewPerTask,
+	})
+	if err := validateInitFlags(fs, pw, ml, ag, rp); err != nil {
+		t.Fatalf("expected nil for all-valid, got %v", err)
+	}
+}
+
+// TestValidateInitFlags_RejectsEmptyAgents covers the bug that motivated
+// this validator: `--agents=` was treated as "user didn't pass --agents"
+// (because stringSliceFlag.Set("") accumulates nothing), so runInit fell
+// into the interactive prompt instead of erroring. The user explicitly
+// passing an empty value is a usage mistake, not a request to be prompted.
+func TestValidateInitFlags_RejectsEmptyAgents(t *testing.T) {
+	fs, pw, ml, ag, rp := parseInitFlagsForTest(t, []string{"--agents", ""})
+	err := validateInitFlags(fs, pw, ml, ag, rp)
+	if err == nil {
+		t.Fatal("expected error for --agents= with empty value")
+	}
+	if !strings.Contains(err.Error(), "--agents") {
+		t.Fatalf("error %q must mention --agents", err.Error())
+	}
+}
+
+// TestValidateInitFlags_RejectsEmptyReviewPer is the symmetric pin for the
+// other empty-string flag. parseReviewPer would catch this downstream on
+// the all-flags-set branch, but the validator fires earlier and surfaces
+// the same diagnostic regardless of which resolve branch fires.
+func TestValidateInitFlags_RejectsEmptyReviewPer(t *testing.T) {
+	fs, pw, ml, ag, rp := parseInitFlagsForTest(t, []string{"--review-per", ""})
+	err := validateInitFlags(fs, pw, ml, ag, rp)
+	if err == nil {
+		t.Fatal("expected error for --review-per '' with empty value")
+	}
+	if !strings.Contains(err.Error(), "invalid --review-per") {
+		t.Fatalf("error %q must mention 'invalid --review-per'", err.Error())
+	}
+}
+
+// TestValidateInitFlags_RejectsNonPositiveInts preserves the original
+// validateInitIntFlags contract under its renamed home. Both bad values
+// in one table-driven test so a future int-flag addition slots in by
+// extending the table, not the test function shape.
+func TestValidateInitFlags_RejectsNonPositiveInts(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"prefix-width=-1", []string{"--prefix-width", "-1"}, "--prefix-width must be positive"},
+		{"prefix-width=0", []string{"--prefix-width", "0"}, "--prefix-width must be positive"},
+		{"max-plan-lines=0", []string{"--max-plan-lines", "0"}, "--max-plan-lines must be positive"},
+		{"max-plan-lines=-5", []string{"--max-plan-lines", "-5"}, "--max-plan-lines must be positive"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fs, pw, ml, ag, rp := parseInitFlagsForTest(t, c.args)
+			err := validateInitFlags(fs, pw, ml, ag, rp)
+			if err == nil {
+				t.Fatalf("expected error for %v", c.args)
+			}
+			if !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("error %q must contain %q", err.Error(), c.want)
+			}
+		})
 	}
 }

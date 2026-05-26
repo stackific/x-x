@@ -22,7 +22,11 @@ faster than this doc would.
 ## Conventions
 
 - **File naming.** `.github/workflows/exp-<topic>.yml`. `<topic>` is short
-  and kebab-cased (`windows-cli`, `claude-deepseek-judge`).
+  and kebab-cased (`claude-deepseek-judge`). Once a workflow has produced
+  consistent signal and is ready to gate PRs / post-merge sanity, it drops
+  the `exp-` prefix in the same change that adds the `pull_request:` /
+  `push:` triggers — see `.github/workflows/windows-cli.yml` for the
+  graduated shape.
 - **Trigger.** `workflow_dispatch:` only. Never `push:` / `pull_request:` /
   `schedule:` while a workflow is in the `exp-` phase. The point of the
   `exp-` prefix is "I want to start this myself from the Actions tab."
@@ -39,7 +43,7 @@ faster than this doc would.
 Two unrelated families of workflows live in this repo. They never merge into
 each other.
 
-1. **Standalone single-platform regressions.** E.g. `exp-windows-cli.yml`.
+1. **Standalone single-platform regressions.** E.g. `windows-cli.yml`.
    These run a fixed test matrix on one platform and assert pass/fail. They
    stay as standalone files forever — there's no "later" they merge into.
 2. **Agent-eval family.** E.g. `manual-claude-judge.yml`, future

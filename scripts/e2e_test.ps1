@@ -11,17 +11,33 @@
 # into an isolated %USERPROFILE%, exercises every subcommand, asserts the
 # documented side effects.
 #
-# Designed to run on `windows-latest` (Server 2022) via
-# .github/workflows/exp-windows-cli.yml. Also runnable locally on a Windows
+# Designed to run on `windows-latest` via
+# .github/workflows/windows-cli.yml. Also runnable locally on a Windows
 # host with PowerShell 7+ and Go on PATH:
 #
 #   pwsh -File scripts\e2e_test.ps1
 #
-# Exits 0 on success, 1 on the first assertion failure (each failure prints
-# the offending case + actual/expected so logs are self-diagnosing).
+# Exits 0 on success, 1 on the first assertion failure. Every failure prints
+# the offending case + actual/expected AND the captured stdout/stderr/exit
+# code from the last Invoke-XX call, so the log is self-diagnosing.
+#
+# Pass -Verbose to also print stdout/stderr/RC on EVERY Invoke-XX call (not
+# just failures). Useful when iterating on a test that's mysteriously
+# passing or failing for the wrong reason.
+
+param(
+  [switch]$Verbose
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+# Honor -Verbose at the script level so any nested Write-Verbose calls fire.
+if ($Verbose) { $VerbosePreference = 'Continue' }
+
+# Capture the harness's own -Verbose flag in script scope so helpers can
+# branch on it without re-reading the parameter.
+$Script:VerboseMode = [bool]$Verbose
 
 # ---------- path constants (mirror of constants.go) ----------
 #
@@ -108,6 +124,7 @@ Register-EngineEvent -SourceIdentifier PowerShell.Exiting -Action { Invoke-Clean
 
 $Script:PassCount   = 0
 $Script:FailCount   = 0
+$Script:SkipCount   = 0
 $Script:CurrentCase = ''
 
 function Start-Case {
@@ -123,6 +140,18 @@ function Write-Pass {
   Write-Host "  ok   $Label"
 }
 
+# Write-Skip surfaces a case that didn't run because a host-level capability
+# was unavailable (8.3 short-path generation, LongPathsEnabled, etc.). Skips
+# are visible in the log AND counted in the final summary so a runner-config
+# regression that suddenly turns off a feature shows up as "skips ticked up"
+# rather than silently shrinking coverage. NOT for assertion bypass — use
+# Write-Pass or Write-Fail for that.
+function Write-Skip {
+  param([Parameter(Mandatory)][string]$Reason)
+  $Script:SkipCount++
+  Write-Host "  skip $Reason" -ForegroundColor Yellow
+}
+
 function Write-Fail {
   param(
     [Parameter(Mandatory)][string]$Label,
@@ -131,6 +160,16 @@ function Write-Fail {
   $Script:FailCount++
   Write-Host "  FAIL $Label" -ForegroundColor Red
   if ($Detail) { Write-Host "       $Detail" -ForegroundColor Red }
+  # Always surface the last Invoke-XX context on a failure. Even when the
+  # assertion didn't directly test stdout/stderr (e.g. it asserted an exit
+  # code), the captured streams are usually the first thing the human needs
+  # to diagnose. Without this, `got=[2] want=[0]` is opaque.
+  if ($Script:LastCmd) {
+    Write-Host ("       last cmd : " + $Script:LastCmd)        -ForegroundColor Yellow
+    Write-Host ("       last rc  : " + $Script:RunRC)          -ForegroundColor Yellow
+    if ($Script:RunOut) { Write-Host ("       last out : " + $Script:RunOut) -ForegroundColor Yellow }
+    if ($Script:RunErr) { Write-Host ("       last err : " + $Script:RunErr) -ForegroundColor Yellow }
+  }
 }
 
 function Assert-Eq {
@@ -275,17 +314,20 @@ $Script:RunOut    = ''
 $Script:RunErr    = ''
 $Script:RunRC     = 0
 $Script:NextStdin = $null
+$Script:LastCmd   = ''  # for Write-Fail diagnostics
 
 function Invoke-XX {
   $tmpOut = [System.IO.Path]::GetTempFileName()
   $tmpErr = [System.IO.Path]::GetTempFileName()
   $stdin  = $Script:NextStdin
   $Script:NextStdin = $null  # one-shot consumption
+  # Snapshot the command line so Write-Fail can include it in diagnostics.
+  $Script:LastCmd = "x-x " + ($args -join ' ')
+  if ($null -ne $stdin -and $stdin -ne '') {
+    $Script:LastCmd += "  (stdin: " + ($stdin -replace '`r', '\\r' -replace '`n', '\\n') + ')'
+  }
   try {
     if ($null -ne $stdin -and $stdin -ne '') {
-      # `$stdin | & $exe @args` pipes the string into the process's stdin
-      # one line per element. We pass the whole string in one go; the exe
-      # sees it as the byte sequence we composed (newlines included).
       $stdin | & $Script:BuildBin @args > $tmpOut 2> $tmpErr
     } else {
       & $Script:BuildBin @args > $tmpOut 2> $tmpErr
@@ -295,13 +337,17 @@ function Invoke-XX {
     $Script:RunErr = Get-Content -Raw -LiteralPath $tmpErr -ErrorAction SilentlyContinue
     if ($null -eq $Script:RunOut) { $Script:RunOut = '' }
     if ($null -eq $Script:RunErr) { $Script:RunErr = '' }
-    # Strip trailing CR/LF so `-ceq` checks aren't tripped by line-ending
-    # appends that Go's fmt.Println produces.
     $Script:RunOut = $Script:RunOut -replace '\r?\n$', ''
     $Script:RunErr = $Script:RunErr -replace '\r?\n$', ''
   } finally {
     Remove-Item -Force -LiteralPath $tmpOut -ErrorAction SilentlyContinue
     Remove-Item -Force -LiteralPath $tmpErr -ErrorAction SilentlyContinue
+  }
+  if ($Script:VerboseMode) {
+    Write-Host ("  [verbose] cmd : " + $Script:LastCmd)
+    Write-Host ("  [verbose] rc  : " + $Script:RunRC)
+    if ($Script:RunOut) { Write-Host ("  [verbose] out : " + $Script:RunOut) }
+    if ($Script:RunErr) { Write-Host ("  [verbose] err : " + $Script:RunErr) }
   }
 }
 
@@ -475,7 +521,7 @@ $secondMtime = (Get-Item -LiteralPath $sentinel).LastWriteTimeUtc
 Assert-Eq 'mtime unchanged across runs' $firstMtime $secondMtime
 
 Start-Case 'x-x --version prints the notice'
-Invoke-XXversion
+Invoke-XX --version
 Assert-Eq       'exit 0'        $RunRC 0
 Assert-Contains 'version line'  $RunOut 'x-x by Stackific'
 Assert-Contains 'version stamp' $RunOut $E2E_VERSION
@@ -1156,37 +1202,46 @@ try {
 
 # ---------- reserved Windows filenames ----------
 #
-# Windows reserves CON, PRN, AUX, NUL, COM1-9, LPT1-9 — these can't exist as
-# plain files even though POSIX allows them. The x-x lint/list paths don't
-# need to special-case these; the filesystem itself refuses creation. We
-# assert the filesystem behavior so a future change that DOES try to write
-# such files (e.g. an auto-generated plan with a slug that happens to be
-# `con`) fails loudly here rather than at user-report time.
+# Windows reserves CON, PRN, AUX, NUL, COM1-9, LPT1-9 as basenames. Older
+# builds + Win32 APIs refuse creation outright; modern Windows (>=10 1903)
+# accepts the create via .NET / NT-path APIs that bypass the Win32 reserved-
+# name filter. The CLI never produces such names because every plan slug is
+# prefixed with `\d{N}-` (so the basename is `<prefix>-<slug>`, never `CON`),
+# and listPlans / scanHighestPrefix both anchor on that shape via regex.
+# This test verifies that anchor: if reserved-name files land in plansDir
+# (whatever way), `plans list` ignores them and `plans next-prefix` keeps
+# walking the conforming siblings.
 
-Start-Case 'Windows filesystem refuses creating reserved filenames at the .x-plans/ root'
+Start-Case 'plans list ignores reserved-name files at the .x-plans/ root'
 $projRes = New-FreshProject
 Initialize-ProjectScaffold $projRes
 $plansDirRes = Join-Path $projRes $PLANS_DIR
+Write-Plan $plansDirRes '0001-foo.md' 'valid' 'auth'
+# .NET I/O uses \\?\ NT-path prefixing on modern Windows, which bypasses
+# the Win32 reserved-basename block. Track which reserved files we managed
+# to create so the assertion below can't be silently vacuous on a host
+# where every create fails.
+$createdReserved = New-Object System.Collections.Generic.List[string]
 foreach ($reserved in @('CON.md', 'PRN.md', 'AUX.md', 'NUL.md', 'COM1.md', 'LPT1.md')) {
   $target = Join-Path $plansDirRes $reserved
-  $threw = $false
   try {
-    Set-Content -LiteralPath $target -Value 'x' -Encoding ascii -ErrorAction Stop
-  } catch {
-    $threw = $true
-  }
-  # Different Windows builds and PowerShell hosts handle reserved names
-  # differently — some succeed but the file is unreachable, some throw, some
-  # silently create. Treat either "threw" OR "is not a normal readable file"
-  # as the expected outcome.
-  $createdAndReadable = (Test-Path -LiteralPath $target -PathType Leaf) -and (-not $threw)
-  if (-not $createdAndReadable -or $threw) {
-    Write-Pass "filesystem rejected $reserved (threw=$threw)"
-    $Script:PassCount-- # we already counted via Write-Pass; back out doubled count
-    Write-Pass "filesystem rejected $reserved"
-  } else {
-    Write-Fail "filesystem accepted reserved $reserved as a normal file"
-  }
+    [System.IO.File]::WriteAllText($target, 'x')
+    if (Test-Path -LiteralPath $target -PathType Leaf) {
+      [void]$createdReserved.Add($reserved)
+    }
+  } catch {}
+}
+if ($createdReserved.Count -eq 0) {
+  Write-Fail 'no reserved-name files could be created on this host; CLI-tolerance assertion would be vacuous (investigate runner FS / pwsh version)'
+} else {
+  Push-Location $projRes
+  try {
+    Invoke-XX plans list
+    Assert-Eq 'exit 0' $RunRC 0
+    Assert-Eq 'only conforming plan listed' $RunOut "0001-foo`tvalid`tauth"
+    Invoke-XX plans next-prefix
+    Assert-Eq 'next-prefix unaffected by reserved-name files' $RunOut '0002'
+  } finally { Pop-Location }
 }
 
 # ---------- case-insensitive filesystem ----------
@@ -1412,6 +1467,50 @@ try {
   Assert-NotContains  'unrelated gated out before narrow' $RunOut 'unrelated'
   $rowCount = ($RunOut -split "`n").Count
   Assert-Eq 'exactly one match (id ∩ keyword)' $rowCount 1
+} finally { Pop-Location }
+
+Start-Case 'plans list --status + --system + --overflow-keywords narrows status∩system > threshold'
+# Proves --overflow-keywords is the layer that does the work when --status
+# and --system are already applied. Pre-overflow count must exceed the
+# threshold AFTER status+system gating, and the distractors that share
+# status AND system but lack the body keyword can ONLY be eliminated by
+# the overflow narrow. Two further distractors carry the keyword in body
+# but fail one of status / system — they assert layer ordering
+# (status+system run BEFORE overflow, not after).
+$projSSO = New-FreshProject
+Initialize-ProjectScaffold $projSSO
+$plansDirSSO = Join-Path $projSSO $PLANS_DIR
+# Threshold+2 plans, all status=valid + system=payment-service, body
+# WITHOUT the keyword. Two of them (5, 17) get overwritten below with
+# bodies that DO contain "retry".
+$overSSO = $PLANS_LIST_OVERFLOW_THRESHOLD + 2
+for ($i = 1; $i -le $overSSO; $i++) {
+  $nameSSO = '{0:D4}-plan{1:D3}.md' -f $i, $i
+  $bodySSO = "---`nstatus: valid`nsystems: [payment-service]`n---`n$i generic body content"
+  Set-Content -LiteralPath (Join-Path $plansDirSSO $nameSSO) -Value $bodySSO -Encoding ascii
+}
+foreach ($matchN in 5, 17) {
+  $matchName = '{0:D4}-plan{1:D3}.md' -f $matchN, $matchN
+  $matchBody = "---`nstatus: valid`nsystems: [payment-service]`n---`nplan $matchN covers exponential retry backoff"
+  Set-Content -LiteralPath (Join-Path $plansDirSSO $matchName) -Value $matchBody -Encoding ascii
+}
+# Cross-filter distractors: each carries "retry" in body but fails one
+# of --status (deprecated) or --system (other-service). Must be dropped
+# BEFORE the overflow narrow ever runs.
+$ssoWrongStatusBody = "---`nstatus: deprecated`nsystems: [payment-service]`n---`ndeprecated plan that mentions retry"
+Set-Content -LiteralPath (Join-Path $plansDirSSO '0098-wrong-status.md') -Value $ssoWrongStatusBody -Encoding ascii
+$ssoWrongSystemBody = "---`nstatus: valid`nsystems: [other-service]`n---`nother-service plan that mentions retry"
+Set-Content -LiteralPath (Join-Path $plansDirSSO '0099-wrong-system.md') -Value $ssoWrongSystemBody -Encoding ascii
+Push-Location $projSSO
+try {
+  Invoke-XX plans list --status valid --system payment-service --overflow-keywords retry
+  Assert-Eq          'exit 0'                                    $RunRC 0
+  Assert-Contains    'plan005 in match'                          $RunOut 'plan005'
+  Assert-Contains    'plan017 in match'                          $RunOut 'plan017'
+  Assert-NotContains 'wrong-status gated by --status filter'     $RunOut 'wrong-status'
+  Assert-NotContains 'wrong-system gated by --system filter'     $RunOut 'wrong-system'
+  $rowCountSSO = ($RunOut -split "`n").Count
+  Assert-Eq 'exactly two matchers survive (status ∩ system ∩ keyword)' $rowCountSSO 2
 } finally { Pop-Location }
 
 Start-Case 'plans list --order=desc explicit default'
@@ -2657,14 +2756,15 @@ try {
 
 # ---------- Windows-specific: file-attribute / hidden ----------
 
-Start-Case 'plans list ignores hidden files in .x-plans/'
+Start-Case 'plans list does NOT special-case hidden files (returns them in walk output)'
 $projH = New-FreshProject
 Initialize-ProjectScaffold $projH
 $plansDirH = Join-Path $projH $PLANS_DIR
 Write-Plan $plansDirH '0001-keep.md' 'valid' 'auth'
-# Set hidden attribute on a sibling file that matches the pattern — the
-# Go ReadDir + glob walk should still surface it (it's not the OS we're
-# testing, it's whether x-x special-cases hidden). Document the behavior.
+# listPlans walks via os.ReadDir + a filename-regex match; it does not
+# consult the Win32 hidden attribute. A user who hides a plan file for
+# their own organisational reasons should still see it in `plans list`,
+# matching POSIX dotfile-handling semantics elsewhere in the CLI.
 $hidden = Join-Path $plansDirH '0002-hidden.md'
 Write-Plan $plansDirH '0002-hidden.md' 'valid' 'auth'
 (Get-Item -LiteralPath $hidden).Attributes = 'Hidden'
@@ -2673,9 +2773,7 @@ try {
   Invoke-XX plans list
   Assert-Eq        'exit 0' $RunRC 0
   Assert-Contains  'visible plan listed' $RunOut '0001-keep'
-  # The current expected behavior is that hidden files are NOT filtered out;
-  # if we change that in the future, this assertion flips.
-  Assert-Contains  'hidden plan also listed (no special-case)' $RunOut '0002-hidden'
+  Assert-Contains  'hidden plan also listed' $RunOut '0002-hidden'
 } finally { Pop-Location }
 
 # ---------- Windows-specific: read-only files ----------
@@ -2701,10 +2799,13 @@ try {
 
 Start-Case 'init survives in a path created via 8.3 short form (best-effort)'
 Reset-UserHome
-# 8.3 names are auto-generated by NTFS when long names exist. We don't
-# typically see them on PROGRA~1 style paths in GH-Actions runner images,
-# but if a user lands here we want behavior to be stable. Skip silently
-# if we can't produce a short path on this runner.
+# 8.3 names are auto-generated by NTFS when 8dot3 creation is enabled
+# (registry key HKLM\System\CurrentControlSet\Control\FileSystem\
+# NtfsDisable8dot3NameCreation = 0). On a runner with 8dot3 disabled the
+# Scripting.FileSystemObject returns the long path unchanged — in that
+# case the test marks itself as a visible skip so the run summary reports
+# "N skipped" and a config regression that flips this off is impossible
+# to miss.
 $candidate = Join-Path $ProjectsRoot 'a-folder-with-very-long-name-for-8dot3'
 New-Item -ItemType Directory -Force -Path $candidate | Out-Null
 $shortPath = try {
@@ -2720,7 +2821,7 @@ if ($shortPath -and $shortPath -ne $candidate) {
     Assert-IsDir 'install at long-name resolution' (Join-Path $candidate (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
   } finally { Pop-Location }
 } else {
-  Write-Host '  (skipped: 8.3 short paths unavailable on this volume)'
+  Write-Skip '8.3 short-path generation unavailable on this volume (NtfsDisable8dot3NameCreation likely set)'
 }
 
 # ---------- Windows-specific: trailing whitespace + odd characters in args ----------
@@ -2870,17 +2971,23 @@ Assert-Eq 'exit 0' $RunRC 0
 Assert-Contains 'slug starts with lorem' $RunOut 'lorem'
 
 Start-Case 'plans list ignores a filename with a 200-char slug if the prefix shape is right'
-# A 200-char slug exceeds typical filesystem path limits when joined with
-# the install dir; some Windows configurations cap at MAX_PATH=260 unless
-# LongPathsEnabled is set. Generate the file and check x-x's tolerance.
+# A 200-char slug + the sandbox prefix exceeds MAX_PATH=260 on Windows
+# unless LongPathsEnabled is set (registry key HKLM\System\
+# CurrentControlSet\Control\FileSystem\LongPathsEnabled = 1). On a runner
+# without it the Write-Plan call fails; in that case the test marks itself
+# as a visible skip rather than silently passing with no assertion run.
 $projLong = New-FreshProject
 Initialize-ProjectScaffold $projLong
 $plansDirLong = Join-Path $projLong $PLANS_DIR
 $longSlug = 'aaaaaaaaaa' * 20  # 200 chars
 $longName = "0001-$longSlug.md"
 $longFull = Join-Path $plansDirLong $longName
+$wroteLong = $false
 try {
   Write-Plan $plansDirLong $longName 'valid' 'auth'
+  $wroteLong = $true
+} catch {}
+if ($wroteLong) {
   Push-Location $projLong
   try {
     Invoke-XX plans list
@@ -2888,8 +2995,8 @@ try {
     # The long-name row should appear in the output as-is.
     Assert-Contains 'long-slug row present' $RunOut '0001-aaaaaaaaaa'
   } finally { Pop-Location }
-} catch {
-  Write-Host "  (skipped: long path creation failed on this volume — likely needs LongPathsEnabled)"
+} else {
+  Write-Skip 'long-path file creation failed; LongPathsEnabled likely off (registry)'
 }
 
 # ---------- Windows-specific: --version flag is parsed but no different from bare ----------
@@ -2898,7 +3005,7 @@ Start-Case 'x-x --version output matches bare x-x'
 Reset-UserHome
 Invoke-XX
 $bareOut = $RunOut
-Invoke-XXversion
+Invoke-XX --version
 Assert-Eq 'output parity' $RunOut $bareOut
 
 # ==========================================================================
@@ -3230,16 +3337,16 @@ $projDX = New-FreshProject
 Initialize-ProjectScaffold $projDX
 $plansDirDX = Join-Path $projDX $PLANS_DIR
 Write-Plan $plansDirDX '0001-foo.md' 'valid' 'auth'
-# A subdir whose name matches the prefix pattern — must not be counted.
+# A subdir with the prefix shape but no `.md` extension. scanHighestPrefix's
+# regex is `^\d{N}-.+\.md$`, so this directory entry can't match and must be
+# silently ignored. Only 0001-foo.md remains as the recognised plan, so the
+# next prefix is 0002.
 New-Item -ItemType Directory -Force -Path (Join-Path $plansDirDX '0050-bar') | Out-Null
 Push-Location $projDX
 try {
   Invoke-XX plans next-prefix
   Assert-Eq 'exit 0' $RunRC 0
-  # scanHighestPrefix walks entries (not just files), so this assertion
-  # documents the current behavior: a matching directory name does count.
-  # Adjust if scan logic becomes file-only.
-  Assert-Eq 'after directory match' $RunOut '0051'
+  Assert-Eq 'directory ignored, next after 0001-foo.md' $RunOut '0002'
 } finally { Pop-Location }
 
 # ---------- skills remove: idempotency + cross-scope ----------
@@ -3317,7 +3424,10 @@ try {
   try {
     & $Script:BuildBin plans list > $tmpStdout2
     $bytes2 = [System.IO.File]::ReadAllBytes($tmpStdout2)
-    $crCount = ($bytes2 | Where-Object { $_ -eq 0x0D }).Count
+    # Wrap in @(...) so .Count is always defined — pwsh leaves a single-
+    # or zero-element pipeline result as a scalar / $null, on which .Count
+    # would throw ParentContainsErrorRecordException.
+    $crCount = @($bytes2 | Where-Object { $_ -eq 0x0D }).Count
     # Go's fmt.Println always writes \n. On Windows, the runtime does NOT
     # translate to CRLF for binary stdout. Document the contract.
     Assert-Eq 'no CR bytes in stdout' $crCount 0
@@ -3338,7 +3448,7 @@ try {
   try {
     & $Script:BuildBin plans list > $tmpStdout3
     $bytes3 = [System.IO.File]::ReadAllBytes($tmpStdout3)
-    $lfCount = ($bytes3 | Where-Object { $_ -eq 0x0A }).Count
+    $lfCount = @($bytes3 | Where-Object { $_ -eq 0x0A }).Count
     Assert-Eq 'one LF per row (no extras)' $lfCount 2
   } finally {
     Remove-Item -Force -LiteralPath $tmpStdout3 -ErrorAction SilentlyContinue
@@ -3417,7 +3527,7 @@ try {
 # ---------- Windows-specific: --help equivalent forms ----------
 
 Start-Case 'x-x --help renders the same notice as -h'
-Invoke-XXhelp
+Invoke-XX --help
 $helpOut = $RunOut
 Invoke-XX -h
 Assert-Eq 'parity between --help and -h' $RunOut $helpOut
@@ -3440,7 +3550,7 @@ try {
 
 Write-Host ''
 Write-Host ('-' * 40)
-Write-Host ("e2e: {0} passed, {1} failed" -f $PassCount, $FailCount)
+Write-Host ("e2e: {0} passed, {1} failed, {2} skipped" -f $PassCount, $FailCount, $SkipCount)
 
 if ($FailCount -gt 0) {
   exit 1

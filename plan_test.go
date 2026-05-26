@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1502,5 +1503,781 @@ func TestLintPlanFile_SupersedesBidirectionalHappy(t *testing.T) {
 		if strings.Contains(f, "does not list this plan") {
 			t.Fatalf("unexpected bidirectional finding on symmetric supersedes link: %v", findings)
 		}
+	}
+}
+
+// ---------- filterPlanRows (status + system filters extracted from runPlansList) ----------
+
+// TestFilterPlanRows_NoFilters pins the "empty set means pass-through"
+// shorthand: an unset --status / --system flag must not silently drop
+// any row. Both nil and len==0 sets count as "no filter".
+func TestFilterPlanRows_NoFilters(t *testing.T) {
+	rows := []planRow{
+		{slug: "00001-a", status: "valid", systems: []string{"x"}},
+		{slug: "00002-b", status: "deprecated", systems: []string{"y"}},
+	}
+	if got := filterPlanRows(rows, nil, nil); len(got) != 2 {
+		t.Fatalf("nil sets: expected 2 rows, got %v", got)
+	}
+	if got := filterPlanRows(rows, map[string]bool{}, map[string]bool{}); len(got) != 2 {
+		t.Fatalf("empty sets: expected 2 rows, got %v", got)
+	}
+}
+
+// TestFilterPlanRows_StatusOnly verifies the --status path in isolation:
+// only rows whose status is in the set survive; systems are ignored
+// when systemSet is empty.
+func TestFilterPlanRows_StatusOnly(t *testing.T) {
+	rows := []planRow{
+		{slug: "00001-a", status: "valid", systems: []string{"x"}},
+		{slug: "00002-b", status: "deprecated", systems: []string{"y"}},
+		{slug: "00003-c", status: "valid", systems: []string{"z"}},
+	}
+	got := filterPlanRows(rows, map[string]bool{"valid": true}, nil)
+	if len(got) != 2 || got[0].slug != "00001-a" || got[1].slug != "00003-c" {
+		t.Fatalf("status-only filter wrong: %v", got)
+	}
+}
+
+// TestFilterPlanRows_SystemOnly mirrors the status-only case for --system:
+// OR semantics across the systems slice (any element in the set keeps
+// the row), status is ignored when statusSet is empty.
+func TestFilterPlanRows_SystemOnly(t *testing.T) {
+	rows := []planRow{
+		{slug: "00001-a", status: "valid", systems: []string{"x", "auth"}},
+		{slug: "00002-b", status: "deprecated", systems: []string{"y"}},
+		{slug: "00003-c", status: "valid", systems: []string{"auth"}},
+	}
+	got := filterPlanRows(rows, nil, map[string]bool{"auth": true})
+	if len(got) != 2 || got[0].slug != "00001-a" || got[1].slug != "00003-c" {
+		t.Fatalf("system-only filter wrong: %v", got)
+	}
+}
+
+// TestFilterPlanRows_StatusAndSystem pins the intersection: a row must
+// pass BOTH filters when both are set. Catches a regression where the
+// inline loop accidentally turned the AND into an OR.
+func TestFilterPlanRows_StatusAndSystem(t *testing.T) {
+	rows := []planRow{
+		{slug: "00001-a", status: "valid", systems: []string{"auth"}},      // pass
+		{slug: "00002-b", status: "valid", systems: []string{"billing"}},   // fail system
+		{slug: "00003-c", status: "deprecated", systems: []string{"auth"}}, // fail status
+		{slug: "00004-d", status: "valid", systems: []string{"auth"}},      // pass
+	}
+	got := filterPlanRows(rows,
+		map[string]bool{"valid": true},
+		map[string]bool{"auth": true})
+	if len(got) != 2 || got[0].slug != "00001-a" || got[1].slug != "00004-d" {
+		t.Fatalf("intersection filter wrong: %v", got)
+	}
+}
+
+// TestApplyOverflowNarrow_PostStatusSystemKeywordChain is the unit-level
+// analogue of the bash / PS1 e2e case that exercises
+// status+system+overflow-keywords on a status∩system count above the
+// threshold. The status+system filter is applied via filterPlanRows
+// FIRST, so all distractors that share status AND system but lack the
+// body keyword can be eliminated ONLY by the overflow narrow. Cross-
+// filter distractors (different status or different system, but body
+// contains the keyword) are dropped by filterPlanRows before overflow
+// ever sees them.
+func TestApplyOverflowNarrow_PostStatusSystemKeywordChain(t *testing.T) {
+	dir := t.TempDir()
+	threshold := 20
+	// Threshold+2 same-status+same-system rows, body without the keyword.
+	rows := make([]planRow, 0, threshold+4)
+	for i := 1; i <= threshold+2; i++ {
+		name := filenameForPrefix(i, "plan")
+		body := strings.Repeat(" ", 0) + "generic body content " + name
+		rows = append(rows, planRow{
+			slug:    seedBody(t, dir, name, body),
+			status:  "valid",
+			systems: []string{"payment-service"},
+		})
+	}
+	// Overwrite two of them with bodies that DO contain the keyword.
+	// The rows slice already references those slugs; rewriting the file
+	// is enough.
+	for _, n := range []int{5, 17} {
+		name := filenameForPrefix(n, "plan")
+		body := "plan covers exponential retry backoff"
+		_ = seedBody(t, dir, name, body)
+	}
+	// Two cross-filter distractors with keyword in body. These would be
+	// dropped by filterPlanRows BEFORE overflow runs; include them in
+	// the pre-filter input so the test mirrors the runPlansList pipeline
+	// order (filterPlanRows -> applyOverflowNarrow).
+	rows = append(rows,
+		planRow{
+			slug:   seedBody(t, dir, "0098-wrong-status.md", "deprecated plan that mentions retry"),
+			status: "deprecated", systems: []string{"payment-service"},
+		},
+		planRow{
+			slug:   seedBody(t, dir, "0099-wrong-system.md", "other-service plan that mentions retry"),
+			status: "valid", systems: []string{"other-service"},
+		},
+	)
+	pre := filterPlanRows(rows,
+		map[string]bool{"valid": true},
+		map[string]bool{"payment-service": true})
+	if len(pre) != threshold+2 {
+		t.Fatalf("filterPlanRows must drop both cross-filter distractors; got %d rows, want %d", len(pre), threshold+2)
+	}
+	got := applyOverflowNarrow(pre, []string{"retry"}, dir, threshold)
+	if len(got) != 2 {
+		t.Fatalf("overflow narrow must keep exactly the two keyword matchers; got %d rows: %v", len(got), got)
+	}
+	wantSlugs := map[string]bool{
+		filenameForPrefixStem(5, "plan"):  true,
+		filenameForPrefixStem(17, "plan"): true,
+	}
+	for _, r := range got {
+		if !wantSlugs[r.slug] {
+			t.Fatalf("unexpected slug %q in overflow result; want only %v", r.slug, wantSlugs)
+		}
+	}
+}
+
+// filenameForPrefix builds a 4-wide-prefix filename like "0005-plan.md"
+// used by the chain test to seed plan files with predictable slugs.
+func filenameForPrefix(n int, stem string) string {
+	return filenameForPrefixStem(n, stem) + planFileExt
+}
+
+func filenameForPrefixStem(n int, stem string) string {
+	return fmt.Sprintf("%04d-%s", n, stem)
+}
+
+// ---------- direct helper tests (previously only transitively covered) ----------
+
+// TestLintFilename pins the regex shape independently of lintPlanFile,
+// so a filename-only regression doesn't get masked by a co-occurring
+// frontmatter finding in the same per-file invocation.
+func TestLintFilename(t *testing.T) {
+	cases := []struct {
+		name     string
+		width    int
+		wantFind bool
+	}{
+		{"00001-foo.md", 5, false},
+		{"00001-multi-word-slug.md", 5, false},
+		{"0001-foo.md", 4, false},
+		{"00001-foo.md", 4, true},       // prefix width mismatch
+		{"00001-FOO.md", 5, true},       // uppercase slug
+		{"00001foo.md", 5, true},        // missing dash
+		{"00001-.md", 5, true},          // empty slug
+		{"00001-foo", 5, true},          // missing .md
+		{"00001-foo.markdown", 5, true}, // wrong extension
+		{"00001-foo-.md", 5, false},     // trailing dash is allowed by [a-z0-9-]*
+		{"abcde-foo.md", 5, true},       // non-numeric prefix
+	}
+	for _, c := range cases {
+		got := lintFilename(c.name, c.width)
+		if (len(got) > 0) != c.wantFind {
+			t.Fatalf("lintFilename(%q, %d) findings=%v want findings=%v", c.name, c.width, got, c.wantFind)
+		}
+	}
+}
+
+// TestLintLineCount exercises the +1 adjustment for files without a
+// trailing newline so two visually-identical files produce the same
+// count. Also pins the cap boundary (exactly maxLines = no finding).
+func TestLintLineCount(t *testing.T) {
+	cases := []struct {
+		text     string
+		max      int
+		wantFind bool
+	}{
+		{"a\nb\nc\n", 3, false},
+		{"a\nb\nc", 3, false},     // missing trailing newline counts the same
+		{"a\nb\nc\nd\n", 3, true}, // exceeds
+		{"a\nb\nc\nd", 3, true},   // exceeds (no trailing newline)
+		{"", 1, false},            // empty file ≤ cap
+		{"only-one-line", 1, false},
+	}
+	for _, c := range cases {
+		got := lintLineCount(c.text, c.max)
+		if (len(got) > 0) != c.wantFind {
+			t.Fatalf("lintLineCount(%q,%d) = %v; want findings=%v", c.text, c.max, got, c.wantFind)
+		}
+	}
+}
+
+// TestSplitFrontmatter pins the four observable shapes of the YAML
+// frontmatter fence: well-formed, missing, unterminated, and CRLF.
+// CRLF tolerance matters because Windows-edited plan files routinely
+// land with \r\n endings.
+func TestSplitFrontmatter(t *testing.T) {
+	// Well-formed: returns (fm, body, nil, false).
+	fm, body, findings, stop := splitFrontmatter("---\ntitle: a\n---\nbody here\n")
+	if stop || len(findings) > 0 {
+		t.Fatalf("well-formed: stop=%v findings=%v", stop, findings)
+	}
+	if !strings.Contains(fm, "title: a") || !strings.Contains(body, "body here") {
+		t.Fatalf("well-formed: fm=%q body=%q", fm, body)
+	}
+	// Missing leading fence → stop with one finding.
+	_, _, findings, stop = splitFrontmatter("title: a\nbody here\n")
+	if !stop || len(findings) != 1 {
+		t.Fatalf("missing FM: stop=%v findings=%v", stop, findings)
+	}
+	// Unterminated FM → stop with one finding.
+	_, _, findings, stop = splitFrontmatter("---\ntitle: a\nno close\n")
+	if !stop || len(findings) != 1 {
+		t.Fatalf("unterminated FM: stop=%v findings=%v", stop, findings)
+	}
+}
+
+// TestLintStatus walks the four allowed-status outcomes (missing,
+// disallowed, each allowed value) so a future allowlist edit can't
+// silently broaden what `plans lint` accepts.
+func TestLintStatus(t *testing.T) {
+	if got := lintStatus("title: x\n"); len(got) == 0 {
+		t.Fatal("missing status: expected finding")
+	}
+	if got := lintStatus("status: wip\n"); len(got) == 0 {
+		t.Fatal("disallowed status: expected finding")
+	}
+	for _, s := range []string{"valid", "superseded", "deprecated"} {
+		if got := lintStatus("status: " + s + "\n"); len(got) > 0 {
+			t.Fatalf("allowed status %q produced findings: %v", s, got)
+		}
+	}
+}
+
+// TestLintSystems covers the inline-array contract directly: missing,
+// empty array, unknown ids, and the "block form is rejected" rule that
+// keeps the regex tight.
+func TestLintSystems(t *testing.T) {
+	reg := newRegistry("auth", "Auth Service", "billing", "Billing Service")
+	// Missing → one finding.
+	declared, findings := lintSystems("title: x\n", reg, fixtureRegistryPath)
+	if len(declared) != 0 || len(findings) != 1 {
+		t.Fatalf("missing: declared=%v findings=%v", declared, findings)
+	}
+	// Empty array → declared empty + one finding about being empty.
+	declared, findings = lintSystems("systems: []\n", reg, fixtureRegistryPath)
+	if len(declared) != 0 || len(findings) != 1 {
+		t.Fatalf("empty: declared=%v findings=%v", declared, findings)
+	}
+	// Unknown id → finding per unknown.
+	_, findings = lintSystems("systems: [auth, nope, other]\n", reg, fixtureRegistryPath)
+	if len(findings) != 2 {
+		t.Fatalf("two unknowns: %v", findings)
+	}
+	// Block form rejected (regex doesn't match) — treated as missing.
+	declared, findings = lintSystems("systems:\n  - auth\n  - billing\n", reg, fixtureRegistryPath)
+	if len(declared) != 0 || len(findings) != 1 {
+		t.Fatalf("block form: declared=%v findings=%v", declared, findings)
+	}
+}
+
+// TestLintRelationArray covers the shared shape for supersedes /
+// extends / extended_by / superseded_by: self-reference and dangling
+// slug references each produce one finding.
+func TestLintRelationArray(t *testing.T) {
+	known := map[string]bool{"00001-a": true, "00002-b": true}
+	// Field absent → no findings.
+	if got := lintRelationArray("00001-a", "title: x\n", "supersedes", planSupersedesRe, known); len(got) > 0 {
+		t.Fatalf("absent field: %v", got)
+	}
+	// Self-reference → one finding.
+	got := lintRelationArray("00001-a", "supersedes: [00001-a]\n", "supersedes", planSupersedesRe, known)
+	if len(got) != 1 || !strings.Contains(got[0], "cannot reference the plan itself") {
+		t.Fatalf("self-ref: %v", got)
+	}
+	// Dangling sibling → one finding.
+	got = lintRelationArray("00001-a", "supersedes: [00099-missing]\n", "supersedes", planSupersedesRe, known)
+	if len(got) != 1 || !strings.Contains(got[0], "does not match any plan file") {
+		t.Fatalf("dangling: %v", got)
+	}
+}
+
+// TestLintBidirectional covers the symmetric / asymmetric / no-link
+// outcomes of the forward+back-link integrity check, without going
+// through lintPlanFile so a regression here surfaces alone.
+func TestLintBidirectional(t *testing.T) {
+	// Symmetric → no findings.
+	fwd := map[string]map[string]bool{"a": {"b": true}}
+	back := map[string]map[string]bool{"b": {"a": true}}
+	if got := lintBidirectional("a", fwd, back, "extends", "extended_by"); len(got) > 0 {
+		t.Fatalf("symmetric: %v", got)
+	}
+	// Forward present, back missing → one finding.
+	fwd = map[string]map[string]bool{"a": {"b": true}}
+	back = map[string]map[string]bool{}
+	got := lintBidirectional("a", fwd, back, "extends", "extended_by")
+	if len(got) != 1 || !strings.Contains(got[0], "extended_by") {
+		t.Fatalf("fwd-only: %v", got)
+	}
+	// Back present, forward missing → one finding.
+	fwd = map[string]map[string]bool{}
+	back = map[string]map[string]bool{"a": {"b": true}}
+	got = lintBidirectional("a", fwd, back, "extends", "extended_by")
+	if len(got) != 1 || !strings.Contains(got[0], "extends") {
+		t.Fatalf("back-only: %v", got)
+	}
+}
+
+// TestLintTitle pins the parsed-title + finding contract directly:
+// missing → finding, empty quoted → finding, valid quoted → trimmed.
+func TestLintTitle(t *testing.T) {
+	got, findings := lintTitle("status: valid\n")
+	if got != "" || len(findings) != 1 {
+		t.Fatalf("missing: %q %v", got, findings)
+	}
+	got, findings = lintTitle(`title: ""` + "\n")
+	if got != "" || len(findings) != 1 {
+		t.Fatalf("empty quoted: %q %v", got, findings)
+	}
+	got, findings = lintTitle(`title: "Quoted Title"` + "\n")
+	if got != "Quoted Title" || len(findings) > 0 {
+		t.Fatalf("quoted: %q %v", got, findings)
+	}
+	got, findings = lintTitle("title: Bare Title\n")
+	if got != "Bare Title" || len(findings) > 0 {
+		t.Fatalf("bare: %q %v", got, findings)
+	}
+}
+
+// TestLintCreated walks the three shapes the field validator cares
+// about: missing, present-but-malformed, valid ISO-8601-UTC.
+func TestLintCreated(t *testing.T) {
+	if got := lintCreated("title: x\n"); len(got) != 1 {
+		t.Fatalf("missing: %v", got)
+	}
+	if got := lintCreated("created: 2026-05-23\n"); len(got) != 1 {
+		t.Fatalf("date-only malformed: %v", got)
+	}
+	if got := lintCreated("created: 2026-05-23T14:30:00Z\n"); len(got) > 0 {
+		t.Fatalf("valid: %v", got)
+	}
+}
+
+// TestLintFrontmatterOrder covers the "title first, created last"
+// invariant directly so a position-only regression doesn't mix with
+// the content-validity findings tested elsewhere.
+func TestLintFrontmatterOrder(t *testing.T) {
+	good := "title: a\nstatus: valid\nsystems: [a]\ncreated: 2026-05-23T14:30:00Z"
+	if got := lintFrontmatterOrder(good); len(got) > 0 {
+		t.Fatalf("good order: %v", got)
+	}
+	bad := "status: valid\ntitle: a\nsystems: [a]\ncreated: 2026-05-23T14:30:00Z"
+	got := lintFrontmatterOrder(bad)
+	if len(got) != 1 || !strings.Contains(got[0], "title") {
+		t.Fatalf("title not first: %v", got)
+	}
+	bad = "title: a\nstatus: valid\ncreated: 2026-05-23T14:30:00Z\nsystems: [a]"
+	got = lintFrontmatterOrder(bad)
+	if len(got) != 1 || !strings.Contains(got[0], "created") {
+		t.Fatalf("created not last: %v", got)
+	}
+}
+
+// TestLintFilenameMatchesTitle covers the title↔filename drift check
+// and the early-out conditions: empty title (upstream already flagged),
+// non-conforming filename (upstream already flagged), unsluggable title.
+func TestLintFilenameMatchesTitle(t *testing.T) {
+	if got := lintFilenameMatchesTitle("00001-foo.md", 5, ""); len(got) > 0 {
+		t.Fatalf("empty title early-out: %v", got)
+	}
+	if got := lintFilenameMatchesTitle("garbage", 5, "Some Title"); len(got) > 0 {
+		t.Fatalf("non-conforming filename early-out: %v", got)
+	}
+	if got := lintFilenameMatchesTitle("00001-foo.md", 5, "Foo"); len(got) > 0 {
+		t.Fatalf("matching: %v", got)
+	}
+	got := lintFilenameMatchesTitle("00001-foo.md", 5, "Bar")
+	if len(got) != 1 || !strings.Contains(got[0], "does not match") {
+		t.Fatalf("mismatch: %v", got)
+	}
+	got = lintFilenameMatchesTitle("00001-foo.md", 5, "!!!")
+	if len(got) != 1 || !strings.Contains(got[0], "no slug-able") {
+		t.Fatalf("unsluggable title: %v", got)
+	}
+}
+
+// TestLintRequiredSections asserts the presence-only check for the
+// three H2 sections — order and content are out of scope.
+func TestLintRequiredSections(t *testing.T) {
+	body := "## Goal\ng\n## Approach\na\n## Tasks\nt\n"
+	if got := lintRequiredSections(body); len(got) > 0 {
+		t.Fatalf("all present: %v", got)
+	}
+	body = "## Goal\ng\n## Approach\na\n"
+	got := lintRequiredSections(body)
+	if len(got) != 1 || !strings.Contains(got[0], "## Tasks") {
+		t.Fatalf("missing tasks: %v", got)
+	}
+	if got := lintRequiredSections(""); len(got) != 3 {
+		t.Fatalf("empty body: %v", got)
+	}
+}
+
+// TestLintEarsTasks pins the two invariants: every subject must resolve
+// to a registry entry, AND the resolved-id set must equal the declared-
+// systems set. Both directions of the set-equality check (extra vs.
+// missing) are covered.
+func TestLintEarsTasks(t *testing.T) {
+	reg := newRegistry("auth", "Auth Service", "billing", "Billing Service")
+	body := "## Tasks\n- [ ] The Auth Service shall do.\n- [ ] The Billing Service shall do.\n"
+	if got := lintEarsTasks(body, []string{"auth", "billing"}, reg, fixtureRegistryPath); len(got) > 0 {
+		t.Fatalf("symmetric: %v", got)
+	}
+	// Subject unknown → one finding per unknown.
+	body = "## Tasks\n- [ ] The Mystery Service shall do.\n"
+	got := lintEarsTasks(body, []string{"auth"}, reg, fixtureRegistryPath)
+	if len(got) == 0 || !strings.Contains(got[0], "Mystery Service") {
+		t.Fatalf("unknown subject: %v", got)
+	}
+	// Declared system not used in any task → one finding.
+	body = "## Tasks\n- [ ] The Auth Service shall do.\n"
+	got = lintEarsTasks(body, []string{"auth", "billing"}, reg, fixtureRegistryPath)
+	var sawMissing bool
+	for _, f := range got {
+		if strings.Contains(f, "not used in any EARS task") {
+			sawMissing = true
+		}
+	}
+	if !sawMissing {
+		t.Fatalf("declared-not-used: %v", got)
+	}
+}
+
+// TestInlineSlugSet exercises the small helper that backs scanPlansRelations.
+// Empty input must return nil (not an empty map) so a missing field at
+// the call site stays distinguishable from "field present but empty".
+func TestInlineSlugSet(t *testing.T) {
+	if got := inlineSlugSet(""); got != nil {
+		t.Fatalf("empty: %v", got)
+	}
+	got := inlineSlugSet("00001-a, 00002-b, \"00003-c\"")
+	if len(got) != 3 || !got["00001-a"] || !got["00002-b"] || !got["00003-c"] {
+		t.Fatalf("3-element: %v", got)
+	}
+}
+
+// TestSetRegistryField pins the key dispatch (id, name, other-ignored)
+// and the value normalisation (quote-strip + whitespace-trim) that the
+// hand-rolled parser relies on for both single-line and continuation
+// shapes.
+func TestSetRegistryField(t *testing.T) {
+	var id, name string
+	setRegistryField(&id, &name, "id", `"auth-service"`)
+	setRegistryField(&id, &name, "name", `   Auth Service   `)
+	if id != "auth-service" || name != "Auth Service" {
+		t.Fatalf("got id=%q name=%q", id, name)
+	}
+	// Unknown keys are silently dropped.
+	setRegistryField(&id, &name, "brief", "ignored")
+	if id != "auth-service" || name != "Auth Service" {
+		t.Fatalf("unknown-key mutated state: id=%q name=%q", id, name)
+	}
+}
+
+// ---------- runPlans* entry-point helpers (planNextPrefix / planList / planLint / planSlugify) ----------
+//
+// The four plans-subcommand entry points each have a thin os.Exit
+// wrapper around a pure helper. These tests drive the helpers directly
+// against captured stdout/stderr buffers so the full flow — flag-set
+// parsing, project gate, output format, exit code — is unit-covered.
+
+// freshProjectAndChdir seeds an initialised .x-plans/ scaffold inside a
+// temp dir, chdirs into it, and returns the dir. Shared between the four
+// entry-point test groups so each test stays short.
+func freshProjectAndChdir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	seedProject(t, dir)
+	chdir(t, dir)
+	return dir
+}
+
+// seedListPlan writes a plan-shaped file at <dir>/<name> with minimal
+// frontmatter (status + single-system) + a body line. Distinct from the
+// pre-existing writePlanFile helper (which takes a raw frontmatter
+// string for the lint-focused tests) — the entry-point tests just need
+// to list / next-prefix-walk these files, not lint them.
+func seedListPlan(t *testing.T, dir, name, status, system, body string) string {
+	t.Helper()
+	content := fmt.Sprintf("---\nstatus: %s\nsystems: [%s]\n---\n%s\n", status, system, body)
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+		t.Fatalf("write plan %s: %v", name, err)
+	}
+	return strings.TrimSuffix(name, planFileExt)
+}
+
+// ---- planNextPrefix ----
+
+func TestPlanNextPrefix_Happy(t *testing.T) {
+	dir := freshProjectAndChdir(t)
+	plans := filepath.Join(dir, plansDir)
+	seedListPlan(t, plans, "0001-a.md", "valid", "auth", "x")
+	seedListPlan(t, plans, "0003-c.md", "valid", "auth", "x")
+	var out, errb bytes.Buffer
+	if rc := planNextPrefix(nil, plansDir, &out, &errb); rc != 0 {
+		t.Fatalf("rc=%d stderr=%q", rc, errb.String())
+	}
+	if out.String() != "0004\n" {
+		t.Fatalf("stdout = %q, want %q", out.String(), "0004\n")
+	}
+}
+
+func TestPlanNextPrefix_NotProject(t *testing.T) {
+	chdir(t, t.TempDir())
+	var out, errb bytes.Buffer
+	rc := planNextPrefix(nil, plansDir, &out, &errb)
+	if rc != 2 {
+		t.Fatalf("rc=%d, want 2", rc)
+	}
+	if !strings.Contains(errb.String(), "not an x-x project") {
+		t.Fatalf("missing banner in stderr: %q", errb.String())
+	}
+}
+
+func TestPlanNextPrefix_StrayArg(t *testing.T) {
+	freshProjectAndChdir(t)
+	var out, errb bytes.Buffer
+	rc := planNextPrefix([]string{"unexpected"}, plansDir, &out, &errb)
+	if rc != 2 {
+		t.Fatalf("rc=%d, want 2", rc)
+	}
+	if !strings.Contains(errb.String(), "takes no arguments") {
+		t.Fatalf("diagnostic missing: %q", errb.String())
+	}
+}
+
+func TestPlanNextPrefix_RespectsPrefixWidth(t *testing.T) {
+	dir := freshProjectAndChdir(t)
+	// Overwrite the seed-empty lock with a width=6 pin.
+	lock := filepath.Join(dir, plansDir, plansConfigLockFile)
+	if err := os.WriteFile(lock, []byte(`{"prefix_width":6}`), 0o600); err != nil {
+		t.Fatalf("write lock: %v", err)
+	}
+	var out, errb bytes.Buffer
+	if rc := planNextPrefix(nil, plansDir, &out, &errb); rc != 0 {
+		t.Fatalf("rc=%d stderr=%q", rc, errb.String())
+	}
+	if out.String() != "000001\n" {
+		t.Fatalf("stdout = %q, want 000001\\n (6-wide first prefix)", out.String())
+	}
+}
+
+// ---- planList ----
+
+func TestPlanList_HappyPath(t *testing.T) {
+	dir := freshProjectAndChdir(t)
+	plans := filepath.Join(dir, plansDir)
+	seedListPlan(t, plans, "0001-a.md", "valid", "auth", "x")
+	seedListPlan(t, plans, "0002-b.md", "deprecated", "billing", "x")
+	var out, errb bytes.Buffer
+	if rc := planList(nil, plansDir, &out, &errb); rc != 0 {
+		t.Fatalf("rc=%d stderr=%q", rc, errb.String())
+	}
+	// Default --order=desc → 0002 before 0001.
+	want := "0002-b\tdeprecated\tbilling\n0001-a\tvalid\tauth\n"
+	if out.String() != want {
+		t.Fatalf("stdout = %q, want %q", out.String(), want)
+	}
+}
+
+func TestPlanList_NotProject(t *testing.T) {
+	chdir(t, t.TempDir())
+	var out, errb bytes.Buffer
+	rc := planList(nil, plansDir, &out, &errb)
+	if rc != 2 {
+		t.Fatalf("rc=%d, want 2", rc)
+	}
+	if !strings.Contains(errb.String(), "not an x-x project") {
+		t.Fatalf("missing banner: %q", errb.String())
+	}
+}
+
+func TestPlanList_StrayArg(t *testing.T) {
+	freshProjectAndChdir(t)
+	var out, errb bytes.Buffer
+	rc := planList([]string{"unexpected"}, plansDir, &out, &errb)
+	if rc != 2 {
+		t.Fatalf("rc=%d, want 2", rc)
+	}
+	if !strings.Contains(errb.String(), "no positional arguments") {
+		t.Fatalf("diagnostic missing: %q", errb.String())
+	}
+}
+
+func TestPlanList_BadOrder(t *testing.T) {
+	freshProjectAndChdir(t)
+	var out, errb bytes.Buffer
+	rc := planList([]string{"--order", "garbage"}, plansDir, &out, &errb)
+	if rc != 2 {
+		t.Fatalf("rc=%d, want 2", rc)
+	}
+	if !strings.Contains(errb.String(), `--order must be "asc" or "desc"`) {
+		t.Fatalf("diagnostic missing: %q", errb.String())
+	}
+}
+
+func TestPlanList_StatusFilter(t *testing.T) {
+	dir := freshProjectAndChdir(t)
+	plans := filepath.Join(dir, plansDir)
+	seedListPlan(t, plans, "0001-a.md", "valid", "auth", "x")
+	seedListPlan(t, plans, "0002-b.md", "deprecated", "auth", "x")
+	seedListPlan(t, plans, "0003-c.md", "valid", "auth", "x")
+	var out, errb bytes.Buffer
+	if rc := planList([]string{"--status", "valid"}, plansDir, &out, &errb); rc != 0 {
+		t.Fatalf("rc=%d stderr=%q", rc, errb.String())
+	}
+	// Default desc: 0003 then 0001, deprecated 0002 dropped.
+	want := "0003-c\tvalid\tauth\n0001-a\tvalid\tauth\n"
+	if out.String() != want {
+		t.Fatalf("stdout = %q, want %q", out.String(), want)
+	}
+}
+
+// ---- planLint ----
+
+func TestPlanLint_AllPass(t *testing.T) {
+	dir := freshProjectAndChdir(t)
+	plans := filepath.Join(dir, plansDir)
+	// Registry with one system so the EARS-subject check resolves cleanly.
+	if err := os.WriteFile(filepath.Join(plans, plansSystemsFile),
+		[]byte("systems:\n  - id: auth\n    name: Auth Service\n"), 0o600); err != nil {
+		t.Fatalf("write registry: %v", err)
+	}
+	plan := "---\ntitle: a\nstatus: valid\nsystems: [auth]\ncreated: 2026-05-23T14:30:00Z\n---\n\n## Goal\ng\n\n## Approach\nA\n\n## Tasks\n- [ ] The Auth Service shall do.\n"
+	if err := os.WriteFile(filepath.Join(plans, "0001-a.md"), []byte(plan), 0o600); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+	var out, errb bytes.Buffer
+	if rc := planLint(nil, plansDir, &out, &errb); rc != 0 {
+		t.Fatalf("rc=%d stdout=%q stderr=%q", rc, out.String(), errb.String())
+	}
+	if !strings.Contains(out.String(), "0001-a.md: ok") {
+		t.Fatalf("expected per-file ok in stdout: %q", out.String())
+	}
+	if !strings.Contains(errb.String(), "1 ok, 0 failed") {
+		t.Fatalf("summary line missing in stderr: %q", errb.String())
+	}
+}
+
+func TestPlanLint_OneFail(t *testing.T) {
+	dir := freshProjectAndChdir(t)
+	plans := filepath.Join(dir, plansDir)
+	// Plan without frontmatter → splitFrontmatter stops; lintPlanFile
+	// returns ≥1 finding.
+	if err := os.WriteFile(filepath.Join(plans, "0001-broken.md"), []byte("no frontmatter\n"), 0o600); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+	var out, errb bytes.Buffer
+	if rc := planLint(nil, plansDir, &out, &errb); rc != 1 {
+		t.Fatalf("rc=%d, want 1", rc)
+	}
+	if !strings.Contains(out.String(), "0001-broken.md:") {
+		t.Fatalf("expected finding on stdout: %q", out.String())
+	}
+	if !strings.Contains(errb.String(), "0 ok, 1 failed") {
+		t.Fatalf("summary missing in stderr: %q", errb.String())
+	}
+}
+
+func TestPlanLint_EmptyProject(t *testing.T) {
+	freshProjectAndChdir(t)
+	var out, errb bytes.Buffer
+	if rc := planLint(nil, plansDir, &out, &errb); rc != 0 {
+		t.Fatalf("rc=%d, want 0 on empty project", rc)
+	}
+	if !strings.Contains(errb.String(), "0 ok, 0 failed") {
+		t.Fatalf("summary line missing: %q", errb.String())
+	}
+}
+
+func TestPlanLint_NotProject(t *testing.T) {
+	chdir(t, t.TempDir())
+	var out, errb bytes.Buffer
+	rc := planLint(nil, plansDir, &out, &errb)
+	if rc != 2 {
+		t.Fatalf("rc=%d, want 2", rc)
+	}
+	if !strings.Contains(errb.String(), "not an x-x project") {
+		t.Fatalf("missing banner: %q", errb.String())
+	}
+}
+
+func TestPlanLint_StrayArg(t *testing.T) {
+	freshProjectAndChdir(t)
+	var out, errb bytes.Buffer
+	rc := planLint([]string{"unexpected"}, plansDir, &out, &errb)
+	if rc != 2 {
+		t.Fatalf("rc=%d, want 2", rc)
+	}
+	if !strings.Contains(errb.String(), "takes no arguments") {
+		t.Fatalf("diagnostic missing: %q", errb.String())
+	}
+}
+
+// ---- planSlugify ----
+
+func TestPlanSlugify_Happy(t *testing.T) {
+	var out, errb bytes.Buffer
+	if rc := planSlugify([]string{"Hello World"}, &out, &errb); rc != 0 {
+		t.Fatalf("rc=%d", rc)
+	}
+	if out.String() != "hello-world\n" {
+		t.Fatalf("stdout = %q", out.String())
+	}
+}
+
+func TestPlanSlugify_Help(t *testing.T) {
+	for _, flag := range []string{"-h", "--help"} {
+		var out, errb bytes.Buffer
+		if rc := planSlugify([]string{flag}, &out, &errb); rc != 0 {
+			t.Fatalf("%s: rc=%d want 0", flag, rc)
+		}
+		if out.String() != "" {
+			t.Fatalf("%s: stdout = %q, want empty", flag, out.String())
+		}
+		if !strings.Contains(errb.String(), "Usage:") {
+			t.Fatalf("%s: usage missing on stderr: %q", flag, errb.String())
+		}
+	}
+}
+
+func TestPlanSlugify_NoArgs(t *testing.T) {
+	var out, errb bytes.Buffer
+	if rc := planSlugify(nil, &out, &errb); rc != 2 {
+		t.Fatalf("rc=%d, want 2", rc)
+	}
+	if !strings.Contains(errb.String(), "Usage:") {
+		t.Fatalf("usage missing: %q", errb.String())
+	}
+}
+
+func TestPlanSlugify_TooManyArgs(t *testing.T) {
+	var out, errb bytes.Buffer
+	if rc := planSlugify([]string{"one", "two"}, &out, &errb); rc != 2 {
+		t.Fatalf("rc=%d, want 2", rc)
+	}
+}
+
+func TestPlanSlugify_LegacyDoubleDash(t *testing.T) {
+	// `--` is stripped; the next arg becomes the title even if it starts
+	// with dashes — that's the historical separator semantics we keep
+	// working for older scripted callers.
+	var out, errb bytes.Buffer
+	if rc := planSlugify([]string{"--", "--Draft Note"}, &out, &errb); rc != 0 {
+		t.Fatalf("rc=%d stderr=%q", rc, errb.String())
+	}
+	if out.String() != "draft-note\n" {
+		t.Fatalf("stdout = %q", out.String())
+	}
+}
+
+func TestPlanSlugify_Unsluggable(t *testing.T) {
+	var out, errb bytes.Buffer
+	if rc := planSlugify([]string{"!!!"}, &out, &errb); rc != 2 {
+		t.Fatalf("rc=%d, want 2", rc)
+	}
+	if !strings.Contains(errb.String(), "no slug-able characters") {
+		t.Fatalf("diagnostic missing: %q", errb.String())
 	}
 }

@@ -69,12 +69,13 @@ func runInit(args []string) {
 	}
 	_ = flags.Parse(args)
 
-	// Validate integer flags AS PASSED — the zero-value "unset" encoding
-	// would otherwise let `--prefix-width=-1` or `--max-plan-lines=0` slip
-	// through the validator and silently fall back to defaults. flag.Visit
-	// only walks flags that were actually set on the command line, which is
-	// the exact set we want to gate.
-	validateInitIntFlags(flags, prefixWidthFlag, maxPlanLinesFlag)
+	// Validate every flag AS PASSED — the zero-value "unset" encoding would
+	// otherwise let `--prefix-width=-1`, `--max-plan-lines=0`, `--agents=`,
+	// or `--review-per ''` slip through and silently fall back to defaults
+	// (or, worse, re-prompt the user in CI). flag.Visit walks only flags
+	// that were actually set on the command line — exactly the set we want
+	// to gate.
+	validateInitFlagsOrExit(flags, prefixWidthFlag, maxPlanLinesFlag, &agentsFlag, reviewPerFlag)
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -190,25 +191,50 @@ func runInit(args []string) {
 	}
 }
 
-// validateInitIntFlags rejects non-positive --prefix-width / --max-plan-lines
-// values AS PASSED. The zero-value "unset" encoding would otherwise let
-// `--prefix-width=-1` or `--max-plan-lines=0` slip through the validator
-// and silently fall back to defaults. flag.Visit only walks flags that
-// were actually set on the command line, which is the exact set we want
-// to gate.
-func validateInitIntFlags(flags *flag.FlagSet, prefixWidth, maxPlanLines *int) {
+// validateInitFlagsOrExit is the runInit-facing wrapper around
+// validateInitFlags: prints the first violation via exitErr and never
+// returns. Extracted into a one-liner so runInit's body stays under the
+// linter's cyclomatic-complexity ceiling — the actual validation logic
+// (and its testable error-returning shape) lives in validateInitFlags.
+func validateInitFlagsOrExit(flags *flag.FlagSet, prefixWidth, maxPlanLines *int, agents *stringSliceFlag, reviewPer *string) {
+	if err := validateInitFlags(flags, prefixWidth, maxPlanLines, agents, reviewPer); err != nil {
+		exitErr(err)
+	}
+}
+
+// validateInitFlags rejects invalid values for any --init flag the user
+// actually passed (via flag.Visit, which walks only set flags). The
+// zero-value "unset" encoding would otherwise let an empty --agents= or
+// --review-per fall through to f.complete() == false, which silently
+// re-prompts the user — fine for an unset flag, wrong for one the user
+// explicitly passed with an empty value. Returns the first violation as
+// an error so runInit (and unit tests) can drive the failure path.
+func validateInitFlags(flags *flag.FlagSet, prefixWidth, maxPlanLines *int, agents *stringSliceFlag, reviewPer *string) error {
+	var firstErr error
 	flags.Visit(func(fl *flag.Flag) {
+		if firstErr != nil {
+			return
+		}
 		switch fl.Name {
 		case "prefix-width":
 			if *prefixWidth <= 0 {
-				exitErr(fmt.Errorf("--prefix-width must be positive, got %d", *prefixWidth))
+				firstErr = fmt.Errorf("--prefix-width must be positive, got %d", *prefixWidth)
 			}
 		case "max-plan-lines":
 			if *maxPlanLines <= 0 {
-				exitErr(fmt.Errorf("--max-plan-lines must be positive, got %d", *maxPlanLines))
+				firstErr = fmt.Errorf("--max-plan-lines must be positive, got %d", *maxPlanLines)
+			}
+		case "agents":
+			if len(*agents) == 0 {
+				firstErr = fmt.Errorf("--agents: at least one agent required")
+			}
+		case "review-per":
+			if *reviewPer == "" {
+				firstErr = fmt.Errorf("invalid --review-per: %q (expected %s or %s)", *reviewPer, reviewPerTask, reviewPerPlan)
 			}
 		}
 	})
+	return firstErr
 }
 
 // initFlags bundles the raw CLI flag values for `x-x init`. Each field is

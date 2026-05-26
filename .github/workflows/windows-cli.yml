@@ -1,0 +1,234 @@
+name: windows cli smoke
+
+# Windows smoke test, two-job pipeline:
+#
+#   build  (ubuntu-latest, golang container) -> `task build` -> upload bin/
+#   smoke  (windows-latest)                  -> download bin/ ->
+#                                               INSTALL_LOCAL.ps1 -> e2e_test.ps1
+#                                               -> UNINSTALL.ps1 -> assert clean
+#
+# Triggers:
+#   - pull_request against main: every PR gets a Windows smoke check.
+#   - push to main: post-merge sanity; catches commits that land without PR.
+#   - workflow_dispatch: manual re-run with the loud, self-diagnosing log
+#     form (verbose=true by default; ACTIONS_STEP_DEBUG / RUNNER_DEBUG fire
+#     only on this path so PR-trigger logs stay readable).
+
+on:
+  workflow_dispatch:
+    inputs:
+      verbose:
+        description: 'Print per-case stdout/stderr/RC in the e2e harness'
+        type: boolean
+        default: true
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Cancel an in-flight run for the same ref when a new commit lands — PR
+# iterations only need the latest signal. Workflow-scoped key isolates
+# this from any future Windows workflow's concurrency group.
+concurrency:
+  group: windows-cli-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# ACTIONS_STEP_DEBUG / ACTIONS_RUNNER_DEBUG enable GitHub Actions internal
+# debug logging (step annotations, runner traces). Gated on the manual
+# verbose input so PR / push runs stay quiet; a failed PR run can be
+# re-launched via workflow_dispatch with verbose=true for the loud form.
+env:
+  ACTIONS_STEP_DEBUG: ${{ inputs.verbose == true }}
+  ACTIONS_RUNNER_DEBUG: ${{ inputs.verbose == true }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: golang:1.26-bookworm
+    timeout-minutes: 15
+    steps:
+      - name: env dump (pre-checkout)
+        run: |
+          set -x
+          uname -a
+          cat /etc/os-release || true
+          id
+          pwd
+          echo "PATH=$PATH"
+          env | sort
+
+      - uses: actions/checkout@v4
+
+      - name: Trust workspace inside container
+        run: |
+          set -x
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git --version
+          git status
+          git log --oneline -5
+
+      - name: go env
+        run: |
+          set -x
+          go version
+          go env
+
+      - name: install task
+        run: |
+          set -x
+          sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b "$(go env GOPATH)/bin"
+          which task
+          task --version
+
+      - name: task build
+        run: |
+          set -x
+          task --verbose build
+
+      - name: list bin/ artifacts
+        run: |
+          set -x
+          ls -laR bin/
+          file bin/* || true
+          for f in bin/*; do
+            sha256sum "$f" || true
+          done
+
+      - name: upload bin
+        uses: actions/upload-artifact@v4
+        with:
+          name: bin
+          path: bin/
+          if-no-files-found: error
+          retention-days: 7
+
+  smoke:
+    runs-on: windows-latest
+    needs: build
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: env dump (pre-checkout)
+        run: |
+          $VerbosePreference = 'Continue'
+          Write-Host "=== PSVersionTable ==="
+          $PSVersionTable | Format-List
+          Write-Host "=== whoami ==="
+          whoami
+          Write-Host "=== HOST INFO ==="
+          Write-Host "PWD=$PWD"
+          Write-Host "HOME=$HOME"
+          Write-Host "env:USERPROFILE=$env:USERPROFILE"
+          Write-Host "env:HOMEDRIVE=$env:HOMEDRIVE"
+          Write-Host "env:HOMEPATH=$env:HOMEPATH"
+          Write-Host "env:PROCESSOR_ARCHITECTURE=$env:PROCESSOR_ARCHITECTURE"
+          Write-Host "=== ENV (sorted) ==="
+          Get-ChildItem env: | Sort-Object Name | Format-Table -AutoSize
+
+      - uses: actions/checkout@v4
+
+      - name: git state
+        run: |
+          git --version
+          git status
+          git log --oneline -5
+
+      - name: download bin
+        uses: actions/download-artifact@v4
+        with:
+          name: bin
+          path: bin
+
+      - name: list bin/ contents (recursive + hash)
+        run: |
+          Write-Host "=== bin/ tree ==="
+          Get-ChildItem -Recurse -Force -LiteralPath bin |
+            Select-Object FullName, Length, LastWriteTime |
+            Format-Table -AutoSize
+          Write-Host "=== sha256 of each ==="
+          Get-ChildItem -File -Recurse -LiteralPath bin | ForEach-Object {
+            $h = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash
+            Write-Host ("{0}  {1}" -f $h, $_.FullName)
+          }
+
+      - name: install via INSTALL_LOCAL.ps1
+        run: |
+          Write-Host "=== HOME state BEFORE install ==="
+          if (Test-Path -LiteralPath (Join-Path $HOME '.x-x')) {
+            Get-ChildItem -Recurse -Force -LiteralPath (Join-Path $HOME '.x-x') |
+              Select-Object FullName, Length |
+              Format-Table -AutoSize
+          } else { Write-Host "  (no `$HOME/.x-x yet)" }
+          Write-Host ""
+          Write-Host "=== running INSTALL_LOCAL.ps1 ==="
+          .\scripts\INSTALL_LOCAL.ps1 -Verbose
+          if ($LASTEXITCODE -ne 0) { throw "INSTALL_LOCAL.ps1 failed with exit $LASTEXITCODE" }
+          Write-Host ""
+          Write-Host "=== HOME state AFTER install ==="
+          Get-ChildItem -Recurse -Force -LiteralPath (Join-Path $HOME '.x-x') |
+            Select-Object FullName, Length |
+            Format-Table -AutoSize
+          Write-Host "=== ~/.x-x/.config.json contents ==="
+          Get-Content -LiteralPath (Join-Path $HOME '.x-x\.config.json') | Write-Host
+
+      - name: verify installed binary
+        run: |
+          $bin = Join-Path $HOME '.x-x\x-x.exe'
+          Write-Host "Expected binary path: $bin"
+          if (-not (Test-Path -LiteralPath $bin)) { throw "binary not at $bin" }
+          $info = Get-Item -LiteralPath $bin
+          Write-Host "Length: $($info.Length)"
+          Write-Host "LastWriteTime: $($info.LastWriteTime)"
+          Write-Host "Hash: $((Get-FileHash -Algorithm SHA256 -LiteralPath $bin).Hash)"
+          Write-Host ""
+          Write-Host "=== & $bin --version ==="
+          & $bin --version
+          if ($LASTEXITCODE -ne 0) { throw "$bin --version exited $LASTEXITCODE" }
+          Write-Host ""
+          Write-Host "=== & $bin -h ==="
+          & $bin -h
+          if ($LASTEXITCODE -ne 0) { throw "$bin -h exited $LASTEXITCODE" }
+
+      - name: run e2e suite
+        run: |
+          Write-Host "=== invoking e2e_test.ps1 (verbose=${{ inputs.verbose }}) ==="
+          $verboseArg = if ('${{ inputs.verbose }}' -eq 'true') { @('-Verbose') } else { @() }
+          & pwsh -NoLogo -NonInteractive -File .\scripts\e2e_test.ps1 @verboseArg
+          Write-Host "=== e2e exit code: $LASTEXITCODE ==="
+          if ($LASTEXITCODE -ne 0) { throw "e2e_test.ps1 failed with exit $LASTEXITCODE" }
+
+      - name: uninstall via UNINSTALL.ps1
+        if: always()
+        run: |
+          Write-Host "=== HOME state BEFORE uninstall ==="
+          if (Test-Path -LiteralPath (Join-Path $HOME '.x-x')) {
+            Get-ChildItem -Recurse -Force -LiteralPath (Join-Path $HOME '.x-x') |
+              Select-Object FullName |
+              Format-Table -AutoSize
+          } else { Write-Host "  (no `$HOME/.x-x to uninstall)" }
+          Write-Host ""
+          Write-Host "=== running UNINSTALL.ps1 ==="
+          .\scripts\UNINSTALL.ps1
+          if ($LASTEXITCODE -ne 0) { throw "UNINSTALL.ps1 failed with exit $LASTEXITCODE" }
+
+      - name: verify install dir is removed
+        if: always()
+        run: |
+          $xxDir = Join-Path $HOME '.x-x'
+          Write-Host "Checking: $xxDir"
+          if (Test-Path -LiteralPath $xxDir) {
+            $leftovers = Get-ChildItem -Recurse -Force -LiteralPath $xxDir |
+                         Select-Object -ExpandProperty FullName
+            throw "expected $xxDir to be removed; leftovers found"
+          }
+          $bin = Join-Path $HOME '.x-x\x-x.exe'
+          if (Test-Path -LiteralPath $bin) { throw "binary still present: $bin" }
+          Write-Host "clean."
