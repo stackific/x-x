@@ -291,6 +291,16 @@ def compose_skill_prompt(skill_md_path: Path, task: str) -> str:
   exercises the agent's behavior on the skill prompt without depending
   on OpenCode's resolver.
 
+  The leading directive forces non-interactive execution. Empirical
+  observation: `deepseek/deepseek-v4-pro` driven through
+  `opencode run` tends to over-trigger the clarification path in
+  step 2 of `x-plan/SKILL.md` even though that step says "skip by
+  default". When clarification fires there is no operator to answer,
+  the turn ends without a plan file being written, and the auto-yes
+  loop can't help because the question isn't a `reply yes` prompt.
+  The directive below tells the agent it is in CI and must take the
+  default path through every "ask if ambiguous" branch.
+
   Tests call this with a SKILL.md path under
   `<workspace>/.opencode/commands/<skill>/SKILL.md` (the location
   `x-x init --agents opencode` writes to).
@@ -299,13 +309,21 @@ def compose_skill_prompt(skill_md_path: Path, task: str) -> str:
     raise FileNotFoundError(f"skill template not found: {skill_md_path}")
   template = skill_md_path.read_text(encoding="utf-8")
   return (
-    f"You are about to follow the skill instructions below verbatim, "
-    f"as if the user invoked the matching slash command in your TUI. "
-    f"Treat everything in the SKILL TEMPLATE block as the operative "
-    f"prompt; the user's task follows it.\n\n"
+    "You are running inside a non-interactive CI evaluation. There is "
+    "NO operator available to answer questions — anything you ask will "
+    "go unanswered and the run will end without producing the expected "
+    "deliverable. Wherever the SKILL TEMPLATE below offers a "
+    "clarification step (e.g. `x-plan` step 2: \"Clarify only when "
+    "structurally underspecified — skip by default\"), you MUST skip "
+    "that step and proceed directly to the planning / execution work, "
+    "making reasonable default choices for any underspecified detail. "
+    "Treat the user's task as fully specified for evaluation purposes; "
+    "do not ask `AskUserQuestion`-style questions or text-prompt "
+    "clarifications, and do not stop and wait. Follow the SKILL "
+    "TEMPLATE instructions verbatim otherwise.\n\n"
     f"--- SKILL TEMPLATE ({skill_md_path.name}) ---\n"
     f"{template}\n"
-    f"--- END SKILL TEMPLATE ---\n\n"
+    "--- END SKILL TEMPLATE ---\n\n"
     f"User task: {task}"
   )
 
@@ -385,19 +403,25 @@ def _summarize_event(event: dict) -> str:
 
   etype = event.get("type")
   if etype in ("text", "message", "assistant"):
-    text = (
-      event.get("text")
-      or event.get("content")
-      or event.get("message", {}).get("content", "")
-    )
-    if isinstance(text, list):
-      text = " ".join(str(t) for t in text)
-    return f"text={_brief(str(text), 120)}"
+    extracted = _extract_text(event)
+    if extracted:
+      return f"text={_brief(extracted, 120)}"
+    # Extraction came back empty — dump the raw JSON so the wire shape
+    # is visible in CI logs instead of silently swallowing the content.
+    return f"text_empty raw={_brief(json.dumps(event), 240)}"
 
   if etype in ("tool_use", "tool", "tool_call"):
     return (
       f"name={event.get('name') or event.get('tool', '?')} "
       f"input={_brief(json.dumps(event.get('input', {})), 100)}"
+    )
+
+  if etype in ("step_start", "step_finish"):
+    part = event.get("part") or {}
+    return (
+      f"step_id={part.get('id', '?')[:24] if isinstance(part.get('id'), str) else '?'} "
+      f"reason={part.get('reason', '-')} "
+      f"messageID={part.get('messageID', '-')[:24] if isinstance(part.get('messageID'), str) else '-'}"
     )
 
   if etype in ("error", "abort"):
@@ -409,12 +433,29 @@ def _summarize_event(event: dict) -> str:
 def _extract_text(event: dict) -> str:
   """Pull the assistant-visible text from one event, if any.
 
-  We're forgiving here — different event shapes carry text in different
-  fields. Anything we can't recognize returns empty string, which
-  simply means the auto-yes detector doesn't see it for this event.
+  OpenCode wraps event payloads in a `part` envelope; for a `text`
+  event the actual string lives at `event["part"]["text"]`. Earlier
+  iterations of this driver only checked top-level `text` / `content`
+  fields and so always returned empty for opencode's real wire format,
+  which silently broke the auto-yes detector (any clarification
+  prompt would slip through as `_asks_for_confirmation("")`).
+
+  Strategy: check the `part` envelope first, then fall through to the
+  flatter shapes some opencode versions / other backends may use.
   """
   if "_raw" in event:
     return ""
+
+  # Primary: opencode's `part` envelope.
+  part = event.get("part")
+  if isinstance(part, dict):
+    pt = part.get("text")
+    if isinstance(pt, str) and pt:
+      return pt
+    # Some opencode part shapes nest text under `content`.
+    pc = part.get("content")
+    if isinstance(pc, str) and pc:
+      return pc
 
   etype = event.get("type")
   if etype in ("text", "message"):
