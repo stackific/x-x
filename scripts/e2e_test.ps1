@@ -1189,37 +1189,46 @@ try {
 
 # ---------- reserved Windows filenames ----------
 #
-# Windows reserves CON, PRN, AUX, NUL, COM1-9, LPT1-9 — these can't exist as
-# plain files even though POSIX allows them. The x-x lint/list paths don't
-# need to special-case these; the filesystem itself refuses creation. We
-# assert the filesystem behavior so a future change that DOES try to write
-# such files (e.g. an auto-generated plan with a slug that happens to be
-# `con`) fails loudly here rather than at user-report time.
+# Windows reserves CON, PRN, AUX, NUL, COM1-9, LPT1-9 as basenames. Older
+# builds + Win32 APIs refuse creation outright; modern Windows (>=10 1903)
+# accepts the create via .NET / NT-path APIs that bypass the Win32 reserved-
+# name filter. The CLI never produces such names because every plan slug is
+# prefixed with `\d{N}-` (so the basename is `<prefix>-<slug>`, never `CON`),
+# and listPlans / scanHighestPrefix both anchor on that shape via regex.
+# This test verifies that anchor: if reserved-name files land in plansDir
+# (whatever way), `plans list` ignores them and `plans next-prefix` keeps
+# walking the conforming siblings.
 
-Start-Case 'Windows filesystem refuses creating reserved filenames at the .x-plans/ root'
+Start-Case 'plans list ignores reserved-name files at the .x-plans/ root'
 $projRes = New-FreshProject
 Initialize-ProjectScaffold $projRes
 $plansDirRes = Join-Path $projRes $PLANS_DIR
+Write-Plan $plansDirRes '0001-foo.md' 'valid' 'auth'
+# .NET I/O uses \\?\ NT-path prefixing on modern Windows, which bypasses
+# the Win32 reserved-basename block. Track which reserved files we managed
+# to create so the assertion below can't be silently vacuous on a host
+# where every create fails.
+$createdReserved = New-Object System.Collections.Generic.List[string]
 foreach ($reserved in @('CON.md', 'PRN.md', 'AUX.md', 'NUL.md', 'COM1.md', 'LPT1.md')) {
   $target = Join-Path $plansDirRes $reserved
-  $threw = $false
   try {
-    Set-Content -LiteralPath $target -Value 'x' -Encoding ascii -ErrorAction Stop
-  } catch {
-    $threw = $true
-  }
-  # Different Windows builds and PowerShell hosts handle reserved names
-  # differently — some succeed but the file is unreachable, some throw, some
-  # silently create. Treat either "threw" OR "is not a normal readable file"
-  # as the expected outcome.
-  $createdAndReadable = (Test-Path -LiteralPath $target -PathType Leaf) -and (-not $threw)
-  if (-not $createdAndReadable -or $threw) {
-    Write-Pass "filesystem rejected $reserved (threw=$threw)"
-    $Script:PassCount-- # we already counted via Write-Pass; back out doubled count
-    Write-Pass "filesystem rejected $reserved"
-  } else {
-    Write-Fail "filesystem accepted reserved $reserved as a normal file"
-  }
+    [System.IO.File]::WriteAllText($target, 'x')
+    if (Test-Path -LiteralPath $target -PathType Leaf) {
+      [void]$createdReserved.Add($reserved)
+    }
+  } catch {}
+}
+if ($createdReserved.Count -eq 0) {
+  Write-Fail 'no reserved-name files could be created on this host; CLI-tolerance assertion would be vacuous (investigate runner FS / pwsh version)'
+} else {
+  Push-Location $projRes
+  try {
+    Invoke-XX plans list
+    Assert-Eq 'exit 0' $RunRC 0
+    Assert-Eq 'only conforming plan listed' $RunOut "0001-foo`tvalid`tauth"
+    Invoke-XX plans next-prefix
+    Assert-Eq 'next-prefix unaffected by reserved-name files' $RunOut '0002'
+  } finally { Pop-Location }
 }
 
 # ---------- case-insensitive filesystem ----------
@@ -2690,14 +2699,15 @@ try {
 
 # ---------- Windows-specific: file-attribute / hidden ----------
 
-Start-Case 'plans list ignores hidden files in .x-plans/'
+Start-Case 'plans list does NOT special-case hidden files (returns them in walk output)'
 $projH = New-FreshProject
 Initialize-ProjectScaffold $projH
 $plansDirH = Join-Path $projH $PLANS_DIR
 Write-Plan $plansDirH '0001-keep.md' 'valid' 'auth'
-# Set hidden attribute on a sibling file that matches the pattern — the
-# Go ReadDir + glob walk should still surface it (it's not the OS we're
-# testing, it's whether x-x special-cases hidden). Document the behavior.
+# listPlans walks via os.ReadDir + a filename-regex match; it does not
+# consult the Win32 hidden attribute. A user who hides a plan file for
+# their own organisational reasons should still see it in `plans list`,
+# matching POSIX dotfile-handling semantics elsewhere in the CLI.
 $hidden = Join-Path $plansDirH '0002-hidden.md'
 Write-Plan $plansDirH '0002-hidden.md' 'valid' 'auth'
 (Get-Item -LiteralPath $hidden).Attributes = 'Hidden'
@@ -2706,9 +2716,7 @@ try {
   Invoke-XX plans list
   Assert-Eq        'exit 0' $RunRC 0
   Assert-Contains  'visible plan listed' $RunOut '0001-keep'
-  # The current expected behavior is that hidden files are NOT filtered out;
-  # if we change that in the future, this assertion flips.
-  Assert-Contains  'hidden plan also listed (no special-case)' $RunOut '0002-hidden'
+  Assert-Contains  'hidden plan also listed' $RunOut '0002-hidden'
 } finally { Pop-Location }
 
 # ---------- Windows-specific: read-only files ----------
@@ -3263,16 +3271,16 @@ $projDX = New-FreshProject
 Initialize-ProjectScaffold $projDX
 $plansDirDX = Join-Path $projDX $PLANS_DIR
 Write-Plan $plansDirDX '0001-foo.md' 'valid' 'auth'
-# A subdir whose name matches the prefix pattern — must not be counted.
+# A subdir with the prefix shape but no `.md` extension. scanHighestPrefix's
+# regex is `^\d{N}-.+\.md$`, so this directory entry can't match and must be
+# silently ignored. Only 0001-foo.md remains as the recognised plan, so the
+# next prefix is 0002.
 New-Item -ItemType Directory -Force -Path (Join-Path $plansDirDX '0050-bar') | Out-Null
 Push-Location $projDX
 try {
   Invoke-XX plans next-prefix
   Assert-Eq 'exit 0' $RunRC 0
-  # scanHighestPrefix walks entries (not just files), so this assertion
-  # documents the current behavior: a matching directory name does count.
-  # Adjust if scan logic becomes file-only.
-  Assert-Eq 'after directory match' $RunOut '0051'
+  Assert-Eq 'directory ignored, next after 0001-foo.md' $RunOut '0002'
 } finally { Pop-Location }
 
 # ---------- skills remove: idempotency + cross-scope ----------
@@ -3350,7 +3358,10 @@ try {
   try {
     & $Script:BuildBin plans list > $tmpStdout2
     $bytes2 = [System.IO.File]::ReadAllBytes($tmpStdout2)
-    $crCount = ($bytes2 | Where-Object { $_ -eq 0x0D }).Count
+    # Wrap in @(...) so .Count is always defined — pwsh leaves a single-
+    # or zero-element pipeline result as a scalar / $null, on which .Count
+    # would throw ParentContainsErrorRecordException.
+    $crCount = @($bytes2 | Where-Object { $_ -eq 0x0D }).Count
     # Go's fmt.Println always writes \n. On Windows, the runtime does NOT
     # translate to CRLF for binary stdout. Document the contract.
     Assert-Eq 'no CR bytes in stdout' $crCount 0
@@ -3371,7 +3382,7 @@ try {
   try {
     & $Script:BuildBin plans list > $tmpStdout3
     $bytes3 = [System.IO.File]::ReadAllBytes($tmpStdout3)
-    $lfCount = ($bytes3 | Where-Object { $_ -eq 0x0A }).Count
+    $lfCount = @($bytes3 | Where-Object { $_ -eq 0x0A }).Count
     Assert-Eq 'one LF per row (no extras)' $lfCount 2
   } finally {
     Remove-Item -Force -LiteralPath $tmpStdout3 -ErrorAction SilentlyContinue

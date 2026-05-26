@@ -591,7 +591,7 @@ case_start "x-x init --agents=invalid rejects unknown agent"
 reset_user_home
 cd "$(fresh_project)"
 run_capture "" init --agents=workspace --scope=project
-[ "$RUN_RC" != "0" ] && ok "non-zero exit" || fail "non-zero exit"
+assert_eq "exit 1" "$RUN_RC" "1"
 assert_contains "diagnostic" "$RUN_ERR" "unknown agent"
 
 # ---------- init --scope invalid ----------
@@ -600,7 +600,7 @@ case_start "x-x init --scope invalid"
 reset_user_home
 cd "$(fresh_project)"
 run_capture "" init --scope workspace
-[ "$RUN_RC" != "0" ] && ok "non-zero exit" || fail "non-zero exit"
+assert_eq "exit 1" "$RUN_RC" "1"
 assert_contains "diagnostic" "$RUN_ERR" "invalid --scope"
 
 # ---------- init plan-tooling flag twins (--prefix-width / --max-plan-lines / --review-per) ----------
@@ -639,7 +639,7 @@ reset_user_home
 cd "$(fresh_project)"
 run_capture "" init --scope project --agents=claude --prefix-width=4 \
   --max-plan-lines=30 --review-per=commit
-[ "$RUN_RC" != "0" ] && ok "non-zero exit" || fail "non-zero exit"
+assert_eq "exit 1" "$RUN_RC" "1"
 assert_contains "diagnostic" "$RUN_ERR" "invalid --review-per"
 
 case_start "x-x init --prefix-width=-1 rejected"
@@ -647,7 +647,7 @@ reset_user_home
 cd "$(fresh_project)"
 run_capture "" init --scope project --agents=claude --prefix-width=-1 \
   --max-plan-lines=30 --review-per=task
-[ "$RUN_RC" != "0" ] && ok "non-zero exit" || fail "non-zero exit"
+assert_eq "exit 1" "$RUN_RC" "1"
 assert_contains "diagnostic" "$RUN_ERR" "--prefix-width must be positive"
 
 case_start "x-x init --max-plan-lines=0 rejected"
@@ -655,8 +655,24 @@ reset_user_home
 cd "$(fresh_project)"
 run_capture "" init --scope project --agents=claude --prefix-width=4 \
   --max-plan-lines=0 --review-per=task
-[ "$RUN_RC" != "0" ] && ok "non-zero exit" || fail "non-zero exit"
+assert_eq "exit 1" "$RUN_RC" "1"
 assert_contains "diagnostic" "$RUN_ERR" "--max-plan-lines must be positive"
+
+case_start "x-x init --agents= (empty value) rejected"
+reset_user_home
+cd "$(fresh_project)"
+run_capture "" init --scope project --agents= --prefix-width=4 \
+  --max-plan-lines=30 --review-per=task
+assert_eq "exit 1" "$RUN_RC" "1"
+assert_contains "diagnostic" "$RUN_ERR" "--agents"
+
+case_start "x-x init --review-per= (empty value) rejected"
+reset_user_home
+cd "$(fresh_project)"
+run_capture "" init --scope project --agents=claude --prefix-width=4 \
+  --max-plan-lines=30 --review-per=
+assert_eq "exit 1" "$RUN_RC" "1"
+assert_contains "diagnostic" "$RUN_ERR" "invalid --review-per"
 
 # ---------- init overwrites prior content at owned skill names ----------
 
