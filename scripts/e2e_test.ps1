@@ -17,11 +17,27 @@
 #
 #   pwsh -File scripts\e2e_test.ps1
 #
-# Exits 0 on success, 1 on the first assertion failure (each failure prints
-# the offending case + actual/expected so logs are self-diagnosing).
+# Exits 0 on success, 1 on the first assertion failure. Every failure prints
+# the offending case + actual/expected AND the captured stdout/stderr/exit
+# code from the last Invoke-XX call, so the log is self-diagnosing.
+#
+# Pass -Verbose to also print stdout/stderr/RC on EVERY Invoke-XX call (not
+# just failures). Useful when iterating on a test that's mysteriously
+# passing or failing for the wrong reason.
+
+param(
+  [switch]$Verbose
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+# Honor -Verbose at the script level so any nested Write-Verbose calls fire.
+if ($Verbose) { $VerbosePreference = 'Continue' }
+
+# Capture the harness's own -Verbose flag in script scope so helpers can
+# branch on it without re-reading the parameter.
+$Script:VerboseMode = [bool]$Verbose
 
 # ---------- path constants (mirror of constants.go) ----------
 #
@@ -131,6 +147,16 @@ function Write-Fail {
   $Script:FailCount++
   Write-Host "  FAIL $Label" -ForegroundColor Red
   if ($Detail) { Write-Host "       $Detail" -ForegroundColor Red }
+  # Always surface the last Invoke-XX context on a failure. Even when the
+  # assertion didn't directly test stdout/stderr (e.g. it asserted an exit
+  # code), the captured streams are usually the first thing the human needs
+  # to diagnose. Without this, `got=[2] want=[0]` is opaque.
+  if ($Script:LastCmd) {
+    Write-Host ("       last cmd : " + $Script:LastCmd)        -ForegroundColor Yellow
+    Write-Host ("       last rc  : " + $Script:RunRC)          -ForegroundColor Yellow
+    if ($Script:RunOut) { Write-Host ("       last out : " + $Script:RunOut) -ForegroundColor Yellow }
+    if ($Script:RunErr) { Write-Host ("       last err : " + $Script:RunErr) -ForegroundColor Yellow }
+  }
 }
 
 function Assert-Eq {
@@ -275,17 +301,20 @@ $Script:RunOut    = ''
 $Script:RunErr    = ''
 $Script:RunRC     = 0
 $Script:NextStdin = $null
+$Script:LastCmd   = ''  # for Write-Fail diagnostics
 
 function Invoke-XX {
   $tmpOut = [System.IO.Path]::GetTempFileName()
   $tmpErr = [System.IO.Path]::GetTempFileName()
   $stdin  = $Script:NextStdin
   $Script:NextStdin = $null  # one-shot consumption
+  # Snapshot the command line so Write-Fail can include it in diagnostics.
+  $Script:LastCmd = "x-x " + ($args -join ' ')
+  if ($null -ne $stdin -and $stdin -ne '') {
+    $Script:LastCmd += "  (stdin: " + ($stdin -replace '`r', '\\r' -replace '`n', '\\n') + ')'
+  }
   try {
     if ($null -ne $stdin -and $stdin -ne '') {
-      # `$stdin | & $exe @args` pipes the string into the process's stdin
-      # one line per element. We pass the whole string in one go; the exe
-      # sees it as the byte sequence we composed (newlines included).
       $stdin | & $Script:BuildBin @args > $tmpOut 2> $tmpErr
     } else {
       & $Script:BuildBin @args > $tmpOut 2> $tmpErr
@@ -295,13 +324,17 @@ function Invoke-XX {
     $Script:RunErr = Get-Content -Raw -LiteralPath $tmpErr -ErrorAction SilentlyContinue
     if ($null -eq $Script:RunOut) { $Script:RunOut = '' }
     if ($null -eq $Script:RunErr) { $Script:RunErr = '' }
-    # Strip trailing CR/LF so `-ceq` checks aren't tripped by line-ending
-    # appends that Go's fmt.Println produces.
     $Script:RunOut = $Script:RunOut -replace '\r?\n$', ''
     $Script:RunErr = $Script:RunErr -replace '\r?\n$', ''
   } finally {
     Remove-Item -Force -LiteralPath $tmpOut -ErrorAction SilentlyContinue
     Remove-Item -Force -LiteralPath $tmpErr -ErrorAction SilentlyContinue
+  }
+  if ($Script:VerboseMode) {
+    Write-Host ("  [verbose] cmd : " + $Script:LastCmd)
+    Write-Host ("  [verbose] rc  : " + $Script:RunRC)
+    if ($Script:RunOut) { Write-Host ("  [verbose] out : " + $Script:RunOut) }
+    if ($Script:RunErr) { Write-Host ("  [verbose] err : " + $Script:RunErr) }
   }
 }
 
@@ -475,7 +508,7 @@ $secondMtime = (Get-Item -LiteralPath $sentinel).LastWriteTimeUtc
 Assert-Eq 'mtime unchanged across runs' $firstMtime $secondMtime
 
 Start-Case 'x-x --version prints the notice'
-Invoke-XXversion
+Invoke-XX --version
 Assert-Eq       'exit 0'        $RunRC 0
 Assert-Contains 'version line'  $RunOut 'x-x by Stackific'
 Assert-Contains 'version stamp' $RunOut $E2E_VERSION
@@ -2898,7 +2931,7 @@ Start-Case 'x-x --version output matches bare x-x'
 Reset-UserHome
 Invoke-XX
 $bareOut = $RunOut
-Invoke-XXversion
+Invoke-XX --version
 Assert-Eq 'output parity' $RunOut $bareOut
 
 # ==========================================================================
@@ -3417,7 +3450,7 @@ try {
 # ---------- Windows-specific: --help equivalent forms ----------
 
 Start-Case 'x-x --help renders the same notice as -h'
-Invoke-XXhelp
+Invoke-XX --help
 $helpOut = $RunOut
 Invoke-XX -h
 Assert-Eq 'parity between --help and -h' $RunOut $helpOut
