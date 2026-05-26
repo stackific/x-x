@@ -1,0 +1,186 @@
+name: manual / codex cli <- llm judge
+
+# Manually-triggered experiment from the agent-eval lineage. Mirror of
+# manual-claude-judge.yml against the OpenAI Codex CLI. The loop:
+#
+#   1. Install Codex CLI (npm) on the runner; install x-x to PATH.
+#   2. Install + start a local LiteLLM proxy as a sidecar. The proxy
+#      exposes /v1/responses on localhost and bridges Responses API
+#      requests to DeepSeek's chat-completions endpoint. Required
+#      because Codex's custom providers speak OpenAI Responses protocol
+#      (wire_api is responses-only per the OpenAI Codex config
+#      reference) while DeepSeek's native API speaks Chat Completions —
+#      direct routing is incompatible. A local bridge keeps everything
+#      on DEEPSEEK_API_KEY; no new provider secret is introduced.
+#   3. Write ~/.codex/config.toml pointing codex at the local proxy.
+#   4. Sync the uv-managed skills-evals project.
+#   5. Run `uv run pytest` against the codex test files. The tests:
+#        a. Spawn `codex exec --json` against the local proxy.
+#        b. Drive `/x-plan` and `/x-x` with an auto-yes loop
+#           (skills-evals/src/skills_evals/codex_driver.py) using
+#           `codex exec resume <session-id>` for multi-turn.
+#        c. Score the plan and the produced artifacts with two DeepEval
+#           `GEval` metrics backed by DeepSeek (the judge LLM is direct,
+#           independent of the codex routing path).
+#   6. Upload the pytest tmp directory on failure for offline inspection.
+#
+# Secret requirements: only DEEPSEEK_API_KEY (already configured for the
+# Claude workflow). No new secrets.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    # One scenario (TODO app) takes 5–15 min: planner + executor + two
+    # judge LLM calls. 60-minute cap leaves headroom for proxy +
+    # DeepSeek latency without rewarding a stuck agent.
+    timeout-minutes: 60
+
+    env:
+      # Active agent for the conftest. Selects which backend the driver
+      # spawns, which env-defaults dict gets applied, and which CLI
+      # presence is required.
+      X_X_AGENT: codex
+
+      # Single source of truth for the DeepSeek API key. Used by:
+      #   - The DeepEval judges (DeepSeek direct, OpenAI-compatible).
+      #   - The LiteLLM proxy (upstream call to DeepSeek).
+      #   - Codex itself (passed as bearer to the local proxy via
+      #     env_key in ~/.codex/config.toml; LiteLLM ignores it).
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # `go install .` lands a release-flavored x-x in $(go env GOPATH)/bin.
+      # The setup-go action puts that directory on PATH.
+      - name: install x-x to PATH
+        run: |
+          go install .
+          x-x --version
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      # Codex CLI's `exec --json` wire shape is documented at
+      # developers.openai.com/codex/noninteractive but has drifted across
+      # minor releases. Prefer pinning once a known-good version is
+      # confirmed; `@latest` is fragile when the event shape moves.
+      - name: install codex cli
+        run: |
+          npm install -g @openai/codex@latest
+          codex --version
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      # LiteLLM proxy is the local bridge: codex (Responses API client)
+      # → http://localhost:4000/v1/responses (LiteLLM) → DeepSeek
+      # (Chat Completions). Pin litellm to keep the proxy semantics
+      # stable; bump intentionally after re-running the smoke test.
+      - name: install litellm proxy
+        run: pip install 'litellm[proxy]'
+
+      - name: start litellm proxy (background)
+        run: |
+          mkdir -p /tmp/litellm
+          cat > /tmp/litellm/config.yaml <<'EOF'
+          model_list:
+            - model_name: deepseek-v4-pro
+              litellm_params:
+                model: deepseek/deepseek-v4-pro
+                api_key: os.environ/DEEPSEEK_API_KEY
+            - model_name: deepseek-v4-flash
+              litellm_params:
+                model: deepseek/deepseek-v4-flash
+                api_key: os.environ/DEEPSEEK_API_KEY
+          EOF
+          echo "--- /tmp/litellm/config.yaml ---"
+          cat /tmp/litellm/config.yaml
+          nohup litellm --config /tmp/litellm/config.yaml --port 4000 \
+            > /tmp/litellm/proxy.log 2>&1 &
+          echo "litellm pid=$!"
+          # Poll /health until ready (LiteLLM cold start is ~5-10s).
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:4000/health/liveliness > /dev/null 2>&1 \
+               || curl -sf http://localhost:4000/health > /dev/null 2>&1; then
+              echo "litellm proxy ready after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          # Fail loudly if the proxy never came up.
+          curl -sS http://localhost:4000/health/liveliness 2>&1 \
+            || curl -sS http://localhost:4000/health 2>&1 \
+            || (echo "--- proxy.log ---"; cat /tmp/litellm/proxy.log; exit 1)
+
+      # Codex talks to the local proxy as a custom Responses-protocol
+      # provider. The env_key=DEEPSEEK_API_KEY makes codex pass the
+      # DeepSeek bearer to LiteLLM (LiteLLM ignores it; uses its own
+      # config-driven key for the upstream call). Top-level `model` and
+      # `model_provider` make these the defaults, so `codex exec` uses
+      # them without per-invocation flags.
+      - name: configure codex for local proxy
+        run: |
+          mkdir -p ~/.codex
+          cat > ~/.codex/config.toml <<'EOF'
+          model = "deepseek-v4-pro"
+          model_provider = "deepseek-local"
+
+          [model_providers.deepseek-local]
+          name = "DeepSeek via local LiteLLM"
+          base_url = "http://localhost:4000/v1"
+          env_key = "DEEPSEEK_API_KEY"
+          EOF
+          echo "--- ~/.codex/config.toml ---"
+          cat ~/.codex/config.toml
+
+      # setup-uv no longer publishes moving major tags (@v8), so pin to a
+      # specific version. Bump intentionally after checking release notes.
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - name: install skills-evals deps
+        working-directory: skills-evals
+        run: uv sync --frozen || uv sync
+
+      # File-scoped pytest run so a Claude regression on this PR doesn't
+      # masquerade as a Codex failure (and vice versa). The codex smoke
+      # test is alphabetically first within the file list; conftest's
+      # smoke-first reordering keeps it that way regardless.
+      - name: run pytest (codex suite)
+        working-directory: skills-evals
+        run: |
+          uv run pytest \
+            tests/test_codex_smoke.py \
+            tests/test_codex_todo.py \
+            tests/test_codex_plan_extends.py \
+            tests/test_codex_reminders_supersedes_todo.py
+
+      - name: dump litellm proxy log on failure
+        if: failure()
+        run: |
+          echo "--- /tmp/litellm/proxy.log ---"
+          cat /tmp/litellm/proxy.log || true
+
+      - name: upload pytest tmp on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: pytest-tmp-${{ github.run_id }}
+          path: /tmp/pytest-of-runner/
+          if-no-files-found: warn
+          retention-days: 14

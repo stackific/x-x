@@ -1,0 +1,136 @@
+name: manual / codex cli <- llm judge (user scope)
+
+# Manually-triggered experiment from the agent-eval lineage. User-scope
+# variant of manual-codex-judge.yml — same agent (Codex CLI), same
+# routing (local LiteLLM proxy bridging Responses → DeepSeek chat-
+# completions), same scenarios, but X_X_INSTALL_SCOPE=user so
+# `x-x init` installs skills into the user tree instead of the per-
+# workspace tree. Exercises the user-scope branch of `x-x init` against
+# the Codex backend.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      # Identical to manual-codex-judge.yml EXCEPT for X_X_INSTALL_SCOPE.
+      # The pytest fixture (skills-evals/tests/conftest.py) reads
+      # X_X_INSTALL_SCOPE and passes it to `x-x init --scope <value>`.
+      X_X_INSTALL_SCOPE: user
+
+      X_X_AGENT: codex
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: install x-x to PATH
+        run: |
+          go install .
+          x-x --version
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: install codex cli
+        run: |
+          npm install -g @openai/codex@latest
+          codex --version
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: install litellm proxy
+        run: pip install 'litellm[proxy]'
+
+      - name: start litellm proxy (background)
+        run: |
+          mkdir -p /tmp/litellm
+          cat > /tmp/litellm/config.yaml <<'EOF'
+          model_list:
+            - model_name: deepseek-v4-pro
+              litellm_params:
+                model: deepseek/deepseek-v4-pro
+                api_key: os.environ/DEEPSEEK_API_KEY
+            - model_name: deepseek-v4-flash
+              litellm_params:
+                model: deepseek/deepseek-v4-flash
+                api_key: os.environ/DEEPSEEK_API_KEY
+          EOF
+          echo "--- /tmp/litellm/config.yaml ---"
+          cat /tmp/litellm/config.yaml
+          nohup litellm --config /tmp/litellm/config.yaml --port 4000 \
+            > /tmp/litellm/proxy.log 2>&1 &
+          echo "litellm pid=$!"
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:4000/health/liveliness > /dev/null 2>&1 \
+               || curl -sf http://localhost:4000/health > /dev/null 2>&1; then
+              echo "litellm proxy ready after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          curl -sS http://localhost:4000/health/liveliness 2>&1 \
+            || curl -sS http://localhost:4000/health 2>&1 \
+            || (echo "--- proxy.log ---"; cat /tmp/litellm/proxy.log; exit 1)
+
+      - name: configure codex for local proxy
+        run: |
+          mkdir -p ~/.codex
+          cat > ~/.codex/config.toml <<'EOF'
+          model = "deepseek-v4-pro"
+          model_provider = "deepseek-local"
+
+          [model_providers.deepseek-local]
+          name = "DeepSeek via local LiteLLM"
+          base_url = "http://localhost:4000/v1"
+          env_key = "DEEPSEEK_API_KEY"
+          EOF
+          echo "--- ~/.codex/config.toml ---"
+          cat ~/.codex/config.toml
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - name: install skills-evals deps
+        working-directory: skills-evals
+        run: uv sync --frozen || uv sync
+
+      - name: run pytest (codex suite, user scope)
+        working-directory: skills-evals
+        run: |
+          uv run pytest \
+            tests/test_codex_smoke.py \
+            tests/test_codex_todo.py \
+            tests/test_codex_plan_extends.py \
+            tests/test_codex_reminders_supersedes_todo.py
+
+      - name: dump litellm proxy log on failure
+        if: failure()
+        run: |
+          echo "--- /tmp/litellm/proxy.log ---"
+          cat /tmp/litellm/proxy.log || true
+
+      - name: upload pytest tmp on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: pytest-tmp-${{ github.run_id }}
+          path: /tmp/pytest-of-runner/
+          if-no-files-found: warn
+          retention-days: 14
