@@ -1974,3 +1974,310 @@ func TestSetRegistryField(t *testing.T) {
 		t.Fatalf("unknown-key mutated state: id=%q name=%q", id, name)
 	}
 }
+
+// ---------- runPlans* entry-point helpers (planNextPrefix / planList / planLint / planSlugify) ----------
+//
+// The four plans-subcommand entry points each have a thin os.Exit
+// wrapper around a pure helper. These tests drive the helpers directly
+// against captured stdout/stderr buffers so the full flow — flag-set
+// parsing, project gate, output format, exit code — is unit-covered.
+
+// freshProjectAndChdir seeds an initialised .x-plans/ scaffold inside a
+// temp dir, chdirs into it, and returns the dir. Shared between the four
+// entry-point test groups so each test stays short.
+func freshProjectAndChdir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	seedProject(t, dir)
+	chdir(t, dir)
+	return dir
+}
+
+// seedListPlan writes a plan-shaped file at <dir>/<name> with minimal
+// frontmatter (status + single-system) + a body line. Distinct from the
+// pre-existing writePlanFile helper (which takes a raw frontmatter
+// string for the lint-focused tests) — the entry-point tests just need
+// to list / next-prefix-walk these files, not lint them.
+func seedListPlan(t *testing.T, dir, name, status, system, body string) string {
+	t.Helper()
+	content := fmt.Sprintf("---\nstatus: %s\nsystems: [%s]\n---\n%s\n", status, system, body)
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+		t.Fatalf("write plan %s: %v", name, err)
+	}
+	return strings.TrimSuffix(name, planFileExt)
+}
+
+// ---- planNextPrefix ----
+
+func TestPlanNextPrefix_Happy(t *testing.T) {
+	dir := freshProjectAndChdir(t)
+	plans := filepath.Join(dir, plansDir)
+	seedListPlan(t, plans, "0001-a.md", "valid", "auth", "x")
+	seedListPlan(t, plans, "0003-c.md", "valid", "auth", "x")
+	var out, errb bytes.Buffer
+	if rc := planNextPrefix(nil, plansDir, &out, &errb); rc != 0 {
+		t.Fatalf("rc=%d stderr=%q", rc, errb.String())
+	}
+	if out.String() != "0004\n" {
+		t.Fatalf("stdout = %q, want %q", out.String(), "0004\n")
+	}
+}
+
+func TestPlanNextPrefix_NotProject(t *testing.T) {
+	chdir(t, t.TempDir())
+	var out, errb bytes.Buffer
+	rc := planNextPrefix(nil, plansDir, &out, &errb)
+	if rc != 2 {
+		t.Fatalf("rc=%d, want 2", rc)
+	}
+	if !strings.Contains(errb.String(), "not an x-x project") {
+		t.Fatalf("missing banner in stderr: %q", errb.String())
+	}
+}
+
+func TestPlanNextPrefix_StrayArg(t *testing.T) {
+	freshProjectAndChdir(t)
+	var out, errb bytes.Buffer
+	rc := planNextPrefix([]string{"unexpected"}, plansDir, &out, &errb)
+	if rc != 2 {
+		t.Fatalf("rc=%d, want 2", rc)
+	}
+	if !strings.Contains(errb.String(), "takes no arguments") {
+		t.Fatalf("diagnostic missing: %q", errb.String())
+	}
+}
+
+func TestPlanNextPrefix_RespectsPrefixWidth(t *testing.T) {
+	dir := freshProjectAndChdir(t)
+	// Overwrite the seed-empty lock with a width=6 pin.
+	lock := filepath.Join(dir, plansDir, plansConfigLockFile)
+	if err := os.WriteFile(lock, []byte(`{"prefix_width":6}`), 0o600); err != nil {
+		t.Fatalf("write lock: %v", err)
+	}
+	var out, errb bytes.Buffer
+	if rc := planNextPrefix(nil, plansDir, &out, &errb); rc != 0 {
+		t.Fatalf("rc=%d stderr=%q", rc, errb.String())
+	}
+	if out.String() != "000001\n" {
+		t.Fatalf("stdout = %q, want 000001\\n (6-wide first prefix)", out.String())
+	}
+}
+
+// ---- planList ----
+
+func TestPlanList_HappyPath(t *testing.T) {
+	dir := freshProjectAndChdir(t)
+	plans := filepath.Join(dir, plansDir)
+	seedListPlan(t, plans, "0001-a.md", "valid", "auth", "x")
+	seedListPlan(t, plans, "0002-b.md", "deprecated", "billing", "x")
+	var out, errb bytes.Buffer
+	if rc := planList(nil, plansDir, &out, &errb); rc != 0 {
+		t.Fatalf("rc=%d stderr=%q", rc, errb.String())
+	}
+	// Default --order=desc → 0002 before 0001.
+	want := "0002-b\tdeprecated\tbilling\n0001-a\tvalid\tauth\n"
+	if out.String() != want {
+		t.Fatalf("stdout = %q, want %q", out.String(), want)
+	}
+}
+
+func TestPlanList_NotProject(t *testing.T) {
+	chdir(t, t.TempDir())
+	var out, errb bytes.Buffer
+	rc := planList(nil, plansDir, &out, &errb)
+	if rc != 2 {
+		t.Fatalf("rc=%d, want 2", rc)
+	}
+	if !strings.Contains(errb.String(), "not an x-x project") {
+		t.Fatalf("missing banner: %q", errb.String())
+	}
+}
+
+func TestPlanList_StrayArg(t *testing.T) {
+	freshProjectAndChdir(t)
+	var out, errb bytes.Buffer
+	rc := planList([]string{"unexpected"}, plansDir, &out, &errb)
+	if rc != 2 {
+		t.Fatalf("rc=%d, want 2", rc)
+	}
+	if !strings.Contains(errb.String(), "no positional arguments") {
+		t.Fatalf("diagnostic missing: %q", errb.String())
+	}
+}
+
+func TestPlanList_BadOrder(t *testing.T) {
+	freshProjectAndChdir(t)
+	var out, errb bytes.Buffer
+	rc := planList([]string{"--order", "garbage"}, plansDir, &out, &errb)
+	if rc != 2 {
+		t.Fatalf("rc=%d, want 2", rc)
+	}
+	if !strings.Contains(errb.String(), `--order must be "asc" or "desc"`) {
+		t.Fatalf("diagnostic missing: %q", errb.String())
+	}
+}
+
+func TestPlanList_StatusFilter(t *testing.T) {
+	dir := freshProjectAndChdir(t)
+	plans := filepath.Join(dir, plansDir)
+	seedListPlan(t, plans, "0001-a.md", "valid", "auth", "x")
+	seedListPlan(t, plans, "0002-b.md", "deprecated", "auth", "x")
+	seedListPlan(t, plans, "0003-c.md", "valid", "auth", "x")
+	var out, errb bytes.Buffer
+	if rc := planList([]string{"--status", "valid"}, plansDir, &out, &errb); rc != 0 {
+		t.Fatalf("rc=%d stderr=%q", rc, errb.String())
+	}
+	// Default desc: 0003 then 0001, deprecated 0002 dropped.
+	want := "0003-c\tvalid\tauth\n0001-a\tvalid\tauth\n"
+	if out.String() != want {
+		t.Fatalf("stdout = %q, want %q", out.String(), want)
+	}
+}
+
+// ---- planLint ----
+
+func TestPlanLint_AllPass(t *testing.T) {
+	dir := freshProjectAndChdir(t)
+	plans := filepath.Join(dir, plansDir)
+	// Registry with one system so the EARS-subject check resolves cleanly.
+	if err := os.WriteFile(filepath.Join(plans, plansSystemsFile),
+		[]byte("systems:\n  - id: auth\n    name: Auth Service\n"), 0o600); err != nil {
+		t.Fatalf("write registry: %v", err)
+	}
+	plan := "---\ntitle: a\nstatus: valid\nsystems: [auth]\ncreated: 2026-05-23T14:30:00Z\n---\n\n## Goal\ng\n\n## Approach\nA\n\n## Tasks\n- [ ] The Auth Service shall do.\n"
+	if err := os.WriteFile(filepath.Join(plans, "0001-a.md"), []byte(plan), 0o600); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+	var out, errb bytes.Buffer
+	if rc := planLint(nil, plansDir, &out, &errb); rc != 0 {
+		t.Fatalf("rc=%d stdout=%q stderr=%q", rc, out.String(), errb.String())
+	}
+	if !strings.Contains(out.String(), "0001-a.md: ok") {
+		t.Fatalf("expected per-file ok in stdout: %q", out.String())
+	}
+	if !strings.Contains(errb.String(), "1 ok, 0 failed") {
+		t.Fatalf("summary line missing in stderr: %q", errb.String())
+	}
+}
+
+func TestPlanLint_OneFail(t *testing.T) {
+	dir := freshProjectAndChdir(t)
+	plans := filepath.Join(dir, plansDir)
+	// Plan without frontmatter → splitFrontmatter stops; lintPlanFile
+	// returns ≥1 finding.
+	if err := os.WriteFile(filepath.Join(plans, "0001-broken.md"), []byte("no frontmatter\n"), 0o600); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+	var out, errb bytes.Buffer
+	if rc := planLint(nil, plansDir, &out, &errb); rc != 1 {
+		t.Fatalf("rc=%d, want 1", rc)
+	}
+	if !strings.Contains(out.String(), "0001-broken.md:") {
+		t.Fatalf("expected finding on stdout: %q", out.String())
+	}
+	if !strings.Contains(errb.String(), "0 ok, 1 failed") {
+		t.Fatalf("summary missing in stderr: %q", errb.String())
+	}
+}
+
+func TestPlanLint_EmptyProject(t *testing.T) {
+	freshProjectAndChdir(t)
+	var out, errb bytes.Buffer
+	if rc := planLint(nil, plansDir, &out, &errb); rc != 0 {
+		t.Fatalf("rc=%d, want 0 on empty project", rc)
+	}
+	if !strings.Contains(errb.String(), "0 ok, 0 failed") {
+		t.Fatalf("summary line missing: %q", errb.String())
+	}
+}
+
+func TestPlanLint_NotProject(t *testing.T) {
+	chdir(t, t.TempDir())
+	var out, errb bytes.Buffer
+	rc := planLint(nil, plansDir, &out, &errb)
+	if rc != 2 {
+		t.Fatalf("rc=%d, want 2", rc)
+	}
+	if !strings.Contains(errb.String(), "not an x-x project") {
+		t.Fatalf("missing banner: %q", errb.String())
+	}
+}
+
+func TestPlanLint_StrayArg(t *testing.T) {
+	freshProjectAndChdir(t)
+	var out, errb bytes.Buffer
+	rc := planLint([]string{"unexpected"}, plansDir, &out, &errb)
+	if rc != 2 {
+		t.Fatalf("rc=%d, want 2", rc)
+	}
+	if !strings.Contains(errb.String(), "takes no arguments") {
+		t.Fatalf("diagnostic missing: %q", errb.String())
+	}
+}
+
+// ---- planSlugify ----
+
+func TestPlanSlugify_Happy(t *testing.T) {
+	var out, errb bytes.Buffer
+	if rc := planSlugify([]string{"Hello World"}, &out, &errb); rc != 0 {
+		t.Fatalf("rc=%d", rc)
+	}
+	if out.String() != "hello-world\n" {
+		t.Fatalf("stdout = %q", out.String())
+	}
+}
+
+func TestPlanSlugify_Help(t *testing.T) {
+	for _, flag := range []string{"-h", "--help"} {
+		var out, errb bytes.Buffer
+		if rc := planSlugify([]string{flag}, &out, &errb); rc != 0 {
+			t.Fatalf("%s: rc=%d want 0", flag, rc)
+		}
+		if out.String() != "" {
+			t.Fatalf("%s: stdout = %q, want empty", flag, out.String())
+		}
+		if !strings.Contains(errb.String(), "Usage:") {
+			t.Fatalf("%s: usage missing on stderr: %q", flag, errb.String())
+		}
+	}
+}
+
+func TestPlanSlugify_NoArgs(t *testing.T) {
+	var out, errb bytes.Buffer
+	if rc := planSlugify(nil, &out, &errb); rc != 2 {
+		t.Fatalf("rc=%d, want 2", rc)
+	}
+	if !strings.Contains(errb.String(), "Usage:") {
+		t.Fatalf("usage missing: %q", errb.String())
+	}
+}
+
+func TestPlanSlugify_TooManyArgs(t *testing.T) {
+	var out, errb bytes.Buffer
+	if rc := planSlugify([]string{"one", "two"}, &out, &errb); rc != 2 {
+		t.Fatalf("rc=%d, want 2", rc)
+	}
+}
+
+func TestPlanSlugify_LegacyDoubleDash(t *testing.T) {
+	// `--` is stripped; the next arg becomes the title even if it starts
+	// with dashes — that's the historical separator semantics we keep
+	// working for older scripted callers.
+	var out, errb bytes.Buffer
+	if rc := planSlugify([]string{"--", "--Draft Note"}, &out, &errb); rc != 0 {
+		t.Fatalf("rc=%d stderr=%q", rc, errb.String())
+	}
+	if out.String() != "draft-note\n" {
+		t.Fatalf("stdout = %q", out.String())
+	}
+}
+
+func TestPlanSlugify_Unsluggable(t *testing.T) {
+	var out, errb bytes.Buffer
+	if rc := planSlugify([]string{"!!!"}, &out, &errb); rc != 2 {
+		t.Fatalf("rc=%d, want 2", rc)
+	}
+	if !strings.Contains(errb.String(), "no slug-able characters") {
+		t.Fatalf("diagnostic missing: %q", errb.String())
+	}
+}

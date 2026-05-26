@@ -63,20 +63,35 @@ func printPlansUsage(w io.Writer) {
 // Missing plansDir is treated as empty (next prefix = 1), so the command is
 // safe to run before `x-x init` has seeded the scaffold.
 func runPlansNextPrefix(args []string) {
-	fs := flag.NewFlagSet("plans next-prefix", flag.ExitOnError)
-	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: x-x plans next-prefix")
-	}
-	_ = fs.Parse(args)
-	if fs.NArg() > 0 {
-		fmt.Fprintf(os.Stderr, "x-x plans next-prefix takes no arguments (got %q)\n", fs.Arg(0))
-		os.Exit(2)
-	}
-	requireProject()
+	os.Exit(planNextPrefix(args, plansDir, os.Stdout, os.Stderr))
+}
 
+// planNextPrefix is the testable body of runPlansNextPrefix: flag-set
+// parsing, project gate, format, write — all without touching os.Exit
+// directly. Returns the desired exit code (0 happy, 2 usage error /
+// not-a-project). Pulled out so unit tests can drive the full flow
+// (argument rejection, project-gate banner, zero-pad shape) without
+// shelling out a subprocess.
+func planNextPrefix(args []string, plansDir string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("plans next-prefix", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.Usage = func() {
+		_, _ = fmt.Fprintln(stderr, "Usage: x-x plans next-prefix")
+	}
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() > 0 {
+		_, _ = fmt.Fprintf(stderr, "x-x plans next-prefix takes no arguments (got %q)\n", fs.Arg(0))
+		return 2
+	}
+	if err := checkProject(); err != nil {
+		_, _ = fmt.Fprintln(stderr, notProjectBanner)
+		return 2
+	}
 	width := loadPrefixWidth(plansDir)
-	highest := scanHighestPrefix(plansDir, width)
-	fmt.Printf("%0*d\n", width, highest+1)
+	_, _ = fmt.Fprintf(stdout, "%0*d\n", width, scanHighestPrefix(plansDir, width)+1)
+	return 0
 }
 
 // loadPrefixWidth reads prefix_width from <plansDir>/<plansConfigLockFile>.
@@ -145,49 +160,63 @@ func scanHighestPrefix(plansDir string, width int) int {
 // is treated as empty (no rows, no error) so the command is safe to run
 // before `x-x init` has seeded the scaffold.
 func runPlansList(args []string) {
-	fs := flag.NewFlagSet("plans list", flag.ExitOnError)
+	os.Exit(planList(args, plansDir, os.Stdout, os.Stderr))
+}
+
+// planList is the testable body of runPlansList. Same exit-code contract
+// as the wrapper (0 happy, 1 listPlans IO error, 2 usage / not-a-project
+// / bad --order). Pulled out so the filter chain + sort + overflow path
+// can be exercised end-to-end at unit level — the e2e suites cover the
+// same shape but a unit test fails faster on a contract regression.
+func planList(args []string, plansDir string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("plans list", flag.ContinueOnError)
+	fs.SetOutput(stderr)
 	var statusFlag, systemFlag, keywordsFlag stringSliceFlag
 	orderFlag := fs.String("order", "desc", "sort by prefix: asc|desc (default desc = latest first)")
 	fs.Var(&statusFlag, "status", "keep only plans whose status matches (repeatable, comma-separated)")
 	fs.Var(&systemFlag, "system", "keep only plans whose systems contain this id (repeatable; OR semantics; matches the kebab `id:` from _data_systems.yaml)")
 	fs.Var(&keywordsFlag, "overflow-keywords", "case-insensitive substring(s) narrowing the output when the post-filter count exceeds plansListOverflowThreshold (repeatable; OR semantics; matched against plan body only)")
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: x-x plans list [--status NAME[,NAME...]] [--system ID] [--order asc|desc] [--overflow-keywords PATTERN[,PATTERN...]]")
+		_, _ = fmt.Fprintln(stderr, "Usage: x-x plans list [--status NAME[,NAME...]] [--system ID] [--order asc|desc] [--overflow-keywords PATTERN[,PATTERN...]]")
 	}
-	_ = fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
 	if fs.NArg() > 0 {
-		fmt.Fprintf(os.Stderr, "x-x plans list takes no positional arguments (got %q)\n", fs.Arg(0))
-		os.Exit(2)
+		_, _ = fmt.Fprintf(stderr, "x-x plans list takes no positional arguments (got %q)\n", fs.Arg(0))
+		return 2
 	}
-	requireProject()
+	if err := checkProject(); err != nil {
+		_, _ = fmt.Fprintln(stderr, notProjectBanner)
+		return 2
+	}
 
 	order, err := parseOrder(*orderFlag)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "x-x plans list: %v\n", err)
-		os.Exit(2)
+		_, _ = fmt.Fprintf(stderr, "x-x plans list: %v\n", err)
+		return 2
 	}
 	keywords := normalizeKeywords(keywordsFlag)
-
 	statusSet := toFilterSet(statusFlag)
 	systemSet := toFilterSet(systemFlag)
 
 	width := loadPrefixWidth(plansDir)
-	rows, err := listPlans(plansDir, width, os.Stderr)
+	rows, err := listPlans(plansDir, width, stderr)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "x-x plans list: %v\n", err)
-		os.Exit(1)
+		_, _ = fmt.Fprintf(stderr, "x-x plans list: %v\n", err)
+		return 1
 	}
 
 	// Apply --status / --system filters first so the overflow trigger
 	// keys off the post-filter count (matching the user-visible result).
 	filtered := filterPlanRows(rows, statusSet, systemSet)
-
 	sortPlanRows(filtered, order)
 	filtered = applyOverflowNarrow(filtered, keywords, plansDir, plansListOverflowThreshold)
 
 	for _, r := range filtered {
-		fmt.Printf("%s\t%s\t%s\n", r.slug, r.status, strings.Join(r.systems, ","))
+		_, _ = fmt.Fprintf(stdout, "%s\t%s\t%s\n", r.slug, r.status, strings.Join(r.systems, ","))
 	}
+	return 0
 }
 
 // plansListOrder enumerates the two values --order accepts. Defined as a
@@ -568,41 +597,44 @@ func loadMaxPlanLines(plansDir string) int {
 //   - Missing plansDir → 0 plans, exit 0.
 //   - Exit 0 if every file passed, exit 1 if any failed.
 func runPlansLint(args []string) {
-	fs := flag.NewFlagSet("plans lint", flag.ExitOnError)
+	os.Exit(planLint(args, plansDir, os.Stdout, os.Stderr))
+}
+
+// planLint is the testable body of runPlansLint. Exit-code contract:
+// 0 every file passed (or zero files), 1 at least one failed, 2 usage
+// error or not-an-x-x-project. Pulled out so unit tests can drive the
+// per-file loop + summary line + exit-on-fail counter without
+// shelling out a subprocess.
+func planLint(args []string, plansDir string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("plans lint", flag.ContinueOnError)
+	fs.SetOutput(stderr)
 	fs.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: x-x plans lint")
+		_, _ = fmt.Fprintln(stderr, "Usage: x-x plans lint")
 	}
-	_ = fs.Parse(args)
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
 	if fs.NArg() > 0 {
-		fmt.Fprintf(os.Stderr, "x-x plans lint takes no arguments (got %q)\n", fs.Arg(0))
-		os.Exit(2)
+		_, _ = fmt.Fprintf(stderr, "x-x plans lint takes no arguments (got %q)\n", fs.Arg(0))
+		return 2
 	}
-	requireProject()
+	if err := checkProject(); err != nil {
+		_, _ = fmt.Fprintln(stderr, notProjectBanner)
+		return 2
+	}
 
 	width := loadPrefixWidth(plansDir)
 	maxLines := loadMaxPlanLines(plansDir)
 	registryPath := filepath.Join(plansDir, plansSystemsFile)
 	reg := parseRegistry(registryPath)
-	// No pre-flight warning when the registry is empty or missing: the
-	// project gate now keys solely on the lock file, so a project where
-	// the user never created (or has since removed) _data_systems.yaml is
-	// still legitimate. parseRegistry returns an empty registry in that
-	// case; plan files that reference a system will surface their own
-	// per-file finding via lintPlanFile.
 
 	// Glob only errors on bad pattern; ours is fixed. Missing plansDir → empty.
 	files, _ := filepath.Glob(filepath.Join(plansDir, "*"+planFileExt))
 	sort.Strings(files)
-
-	// Pre-compute slugs so per-file supersedes checks are O(1).
 	knownSlugs := make(map[string]bool, len(files))
 	for _, f := range files {
 		knownSlugs[strings.TrimSuffix(filepath.Base(f), planFileExt)] = true
 	}
-
-	// Pre-compute the forward/back-link adjacency maps so the per-file
-	// bidirectional check can verify symmetry without re-reading sibling
-	// files. Covers both supersedes/superseded_by and extends/extended_by.
 	relations := scanPlansRelations(files)
 
 	okCount, failCount := 0, 0
@@ -611,17 +643,18 @@ func runPlansLint(args []string) {
 		if len(findings) > 0 {
 			failCount++
 			for _, f := range findings {
-				fmt.Printf("%s: %s\n", path, f)
+				_, _ = fmt.Fprintf(stdout, "%s: %s\n", path, f)
 			}
 		} else {
 			okCount++
-			fmt.Printf("%s: ok\n", path)
+			_, _ = fmt.Fprintf(stdout, "%s: ok\n", path)
 		}
 	}
-	fmt.Fprintf(os.Stderr, "\n%d ok, %d failed\n", okCount, failCount)
+	_, _ = fmt.Fprintf(stderr, "\n%d ok, %d failed\n", okCount, failCount)
 	if failCount > 0 {
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 // registry pairs the two lookup directions parseRegistry produces:
@@ -1174,32 +1207,35 @@ func slugify(title string) string {
 // about manually: `-h`/`--help` print usage, `--` is a legacy separator
 // stripped if present, and everything else is treated as the title.
 func runPlansSlugify(args []string) {
-	// Help short-circuit. flag.Parse would do this for us, but we don't
-	// use flag.Parse — handle it explicitly so users still get usage on
-	// `x-x plans slugify -h`.
+	os.Exit(planSlugify(args, os.Stdout, os.Stderr))
+}
+
+// planSlugify is the testable body of runPlansSlugify. Exit-code
+// contract: 0 happy (or -h/--help), 2 usage error (missing/extra args
+// or unsluggable title). No plansDir argument because slugify is a pure
+// transform — useful before `x-x init`, so it deliberately skips the
+// project gate.
+func planSlugify(args []string, stdout, stderr io.Writer) int {
 	if len(args) >= 1 {
 		switch args[0] {
 		case "-h", "--help":
-			fmt.Fprintln(os.Stderr, `Usage: x-x plans slugify "<title>"`)
-			return
+			_, _ = fmt.Fprintln(stderr, `Usage: x-x plans slugify "<title>"`)
+			return 0
 		case "--":
-			// Legacy end-of-flags marker — the historical (flag.Parse-based)
-			// CLI required `--` before a leading-dash title. Strip and
-			// continue so existing scripts keep working; new callers don't
-			// need it.
 			args = args[1:]
 		}
 	}
 	if len(args) != 1 {
-		fmt.Fprintln(os.Stderr, `Usage: x-x plans slugify "<title>"`)
-		fmt.Fprintln(os.Stderr, `x-x plans slugify takes exactly one positional argument: the title (quote it)`)
-		os.Exit(2)
+		_, _ = fmt.Fprintln(stderr, `Usage: x-x plans slugify "<title>"`)
+		_, _ = fmt.Fprintln(stderr, `x-x plans slugify takes exactly one positional argument: the title (quote it)`)
+		return 2
 	}
 	title := args[0]
 	slug := slugify(title)
 	if slug == "" {
-		fmt.Fprintf(os.Stderr, "x-x plans slugify: title %q has no slug-able characters\n", title)
-		os.Exit(2)
+		_, _ = fmt.Fprintf(stderr, "x-x plans slugify: title %q has no slug-able characters\n", title)
+		return 2
 	}
-	fmt.Println(slug)
+	_, _ = fmt.Fprintln(stdout, slug)
+	return 0
 }
