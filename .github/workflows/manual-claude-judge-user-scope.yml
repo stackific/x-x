@@ -102,7 +102,11 @@ jobs:
       # a full planner+executor cycle on the real scenario.
       - name: run pytest
         working-directory: skills-evals
-        run: uv run pytest
+        # Scope to the Claude tests + the (claude-specific) stream-json
+        # smoke. Other agent backends ship their own test_<agent>_*.py
+        # files driven from their own workflows; collecting them here
+        # would spawn a CLI that isn't on this runner's PATH.
+        run: uv run pytest tests/test_stream_json_smoke.py tests/test_claude_todo.py tests/test_claude_plan_extends.py tests/test_claude_reminders_supersedes_todo.py
 
       # Pytest writes transcripts and per-test workspaces under tmp_path
       # (`/tmp/pytest-of-runner/...`). Uploading on failure gives us the

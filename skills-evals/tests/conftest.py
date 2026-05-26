@@ -3,16 +3,21 @@
 """Shared pytest fixtures for the skills evals.
 
 1. Load `.env` (from skills-evals/ or any parent) so DEEPSEEK_API_KEY
-   reaches both the judge LLM (DeepSeek directly) and the Claude Code
-   backend (DeepSeek via Anthropic-compatible env vars).
+   reaches the judge LLM (DeepSeek directly) AND every supported agent:
+   - Claude Code via the Anthropic-compatible endpoint (env vars).
+   - Kilo Code via the openai-compatible endpoint (per-workspace
+     `kilo.json` with `{env:DEEPSEEK_API_KEY}` substitution).
 2. Provide a fresh, isolated `workspace` directory per test — `x-x init`
-   runs in it before any skill is invoked.
+   runs in it with `--agents <X_X_AGENT_UNDER_TEST>` (default "claude").
+   For Kilo, the fixture additionally writes a `kilo.json` pointing at
+   DeepSeek's openai-compatible endpoint.
 
 Everything logs verbosely. Silence is a bug.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -35,13 +40,53 @@ CLAUDE_ENV_DEFAULTS = {
   "CLAUDE_CODE_EFFORT_LEVEL": "max",
 }
 
+# Kilo's CLI routes via a config file rather than environment alone for
+# custom OpenAI-compatible endpoints; these env vars cover the cases where
+# kilo bypasses the config (org selection, model override). The real
+# routing lives in KILO_WORKSPACE_CONFIG below. Names per
+# https://kilo.ai/docs/code-with-ai/platforms/cli.
+KILO_ENV_DEFAULTS = {
+  "KILO_PROVIDER": "openai-compatible",
+  "KILOCODE_MODEL": "openai-compatible/deepseek-v4-pro",
+}
+
+# Provider stanza written into each Kilo test workspace. The `{env:...}`
+# substitution is the documented Kilo pattern for keeping secrets out of
+# config; `apiKey` resolves at agent startup against the live process env.
+KILO_WORKSPACE_CONFIG = {
+  "$schema": "https://app.kilo.ai/config.json",
+  "model": "openai-compatible/deepseek-v4-pro",
+  "provider": {
+    "openai-compatible": {
+      "options": {
+        "apiKey": "{env:DEEPSEEK_API_KEY}",
+        "baseURL": "https://api.deepseek.com/v1",
+      },
+      "models": {
+        "deepseek-v4-pro": {
+          "name": "DeepSeek V4 Pro",
+          "tool_call": True,
+          "limit": {"context": 128000, "output": 8192},
+        },
+      },
+    },
+  },
+}
+
 # Which `x-x init --scope` value to use when bootstrapping each test's
-# workspace. Default `project` installs skills into <workspace>/.claude/skills/
+# workspace. Default `project` installs skills into <workspace>/<agent>/skills/
 # so each test gets a hermetic skill tree. Set X_X_INSTALL_SCOPE=user (e.g.
-# from manual-claude-judge-user-scope.yml) to install skills into
-# ~/.claude/skills/ once on the runner and reuse across every test in the
-# session — exercises the user-scope path of `x-x init`.
+# from manual-*-judge-user-scope.yml) to install skills into the user-home
+# tree once on the runner and reuse across every test in the session —
+# exercises the user-scope path of `x-x init`.
 VALID_SCOPES = ("project", "user")
+
+# Which agent CLI the workspace is configured for. The kilo workflow sets
+# X_X_AGENT_UNDER_TEST=kilo; the claude workflow leaves it at the default.
+# Drives the `--agents` flag passed to `x-x init` and whether a per-workspace
+# kilo.json is written. Tests stay agnostic — each imports its backend's
+# driver explicitly.
+VALID_AGENTS_UNDER_TEST = ("claude", "kilo")
 
 
 def pytest_collection_modifyitems(items: list[Item]) -> None:
@@ -62,8 +107,13 @@ def pytest_collection_modifyitems(items: list[Item]) -> None:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _load_dotenv_and_route_claude() -> None:
-  """Load .env and point Claude Code at DeepSeek before any test runs."""
+def _load_dotenv_and_route_agents() -> None:
+  """Load .env and point every supported agent at DeepSeek before tests run.
+
+  Sets defaults for both the Claude and the Kilo routing surfaces — the
+  vars for the agent that isn't under test are harmless to set (each CLI
+  ignores the other's namespace).
+  """
   log("conftest", f"python={sys.version.split()[0]} platform={sys.platform}")
 
   env_path = find_dotenv(usecwd=True)
@@ -77,8 +127,8 @@ def _load_dotenv_and_route_claude() -> None:
     log("conftest", "DEEPSEEK_API_KEY MISSING — aborting")
     pytest.fail(
       "DEEPSEEK_API_KEY not set. Add it to skills-evals/.env or export it "
-      "before running pytest — it powers both the judge LLM and the "
-      "Claude Code backend.",
+      "before running pytest — it powers both the judge LLM and every "
+      "supported agent backend.",
       pytrace=False,
     )
   log(
@@ -92,6 +142,16 @@ def _load_dotenv_and_route_claude() -> None:
   else:
     log("conftest", "ANTHROPIC_AUTH_TOKEN already set; leaving as-is")
 
+  # Kilo doesn't read DEEPSEEK_API_KEY itself; the workspace kilo.json
+  # substitutes `{env:DEEPSEEK_API_KEY}` at agent startup, but we ALSO
+  # mirror it into KILO_API_KEY as a belt-and-suspenders for the generic
+  # provider field documented at kilo.ai/docs/code-with-ai/platforms/cli.
+  if not os.environ.get("KILO_API_KEY"):
+    os.environ["KILO_API_KEY"] = api_key
+    log("conftest", "mirrored DEEPSEEK_API_KEY into KILO_API_KEY")
+  else:
+    log("conftest", "KILO_API_KEY already set; leaving as-is")
+
   for k, v in CLAUDE_ENV_DEFAULTS.items():
     if k in os.environ:
       log("conftest", f"env {k} already set: {os.environ[k]}")
@@ -99,7 +159,15 @@ def _load_dotenv_and_route_claude() -> None:
       os.environ[k] = v
       log("conftest", f"env {k}={v} (default)")
 
+  for k, v in KILO_ENV_DEFAULTS.items():
+    if k in os.environ:
+      log("conftest", f"env {k} already set: {os.environ[k]}")
+    else:
+      os.environ[k] = v
+      log("conftest", f"env {k}={v} (default)")
+
   log("conftest", f"claude on PATH: {shutil.which('claude')}")
+  log("conftest", f"kilo on PATH: {shutil.which('kilo')}")
   log("conftest", f"x-x on PATH: {shutil.which('x-x')}")
 
 
@@ -107,17 +175,30 @@ def _load_dotenv_and_route_claude() -> None:
 def workspace(tmp_path: Path) -> Path:
   """A throwaway directory with `x-x init` already run inside it.
 
-  The init scope is read from X_X_INSTALL_SCOPE (default "project") so
-  the same test suite can be driven against both
-  `x-x init --scope project` (skills land under <ws>/.claude/skills/)
-  and `x-x init --scope user` (skills land under ~/.claude/skills/).
-  Both workflows in .github/workflows/manual-claude-*judge.yml share
-  these tests; only the env value differs.
+  The init scope is read from X_X_INSTALL_SCOPE (default "project"). The
+  agent under test is read from X_X_AGENT_UNDER_TEST (default "claude").
+  Together they let the same test suite drive any supported backend at
+  either scope without code changes — workflows set the env vars; the
+  fixture does the rest.
+
+  For Kilo, the fixture additionally writes a `kilo.json` into the
+  workspace declaring an openai-compatible provider pointing at
+  api.deepseek.com/v1 with `{env:DEEPSEEK_API_KEY}` substitution. Without
+  this file, kilo has no documented way to route at a custom OpenAI-compat
+  endpoint from env vars alone.
   """
   if shutil.which("x-x") is None:
     pytest.skip("`x-x` not on PATH — install it with `go install .` from repo root")
-  if shutil.which("claude") is None:
-    pytest.skip("`claude` not on PATH — install Claude Code first")
+
+  agent = os.environ.get("X_X_AGENT_UNDER_TEST", "claude")
+  if agent not in VALID_AGENTS_UNDER_TEST:
+    pytest.fail(
+      f"X_X_AGENT_UNDER_TEST={agent!r} is not one of {VALID_AGENTS_UNDER_TEST}",
+      pytrace=False,
+    )
+  if shutil.which(agent) is None:
+    pytest.skip(f"`{agent}` not on PATH — install the {agent} CLI first")
+  log("conftest", f"x-x init agent: {agent} (from X_X_AGENT_UNDER_TEST)")
 
   scope = os.environ.get("X_X_INSTALL_SCOPE", "project")
   if scope not in VALID_SCOPES:
@@ -138,7 +219,7 @@ def workspace(tmp_path: Path) -> Path:
     [
       "x-x", "init",
       "--scope", scope,
-      "--agents", "claude",
+      "--agents", agent,
       "--prefix-width", "4",
       "--max-plan-lines", "30",
       "--review-per", "plan",
@@ -159,16 +240,25 @@ def workspace(tmp_path: Path) -> Path:
         pytrace=False,
       )
 
+  if agent == "kilo":
+    kilo_config_path = ws / "kilo.json"
+    kilo_config_path.write_text(json.dumps(KILO_WORKSPACE_CONFIG, indent=2))
+    log("conftest", f"wrote {kilo_config_path} (DeepSeek via openai-compatible)")
+
   log("conftest", f"workspace ready: {sorted(p.name for p in ws.iterdir())}")
   if scope == "user":
     home = Path.home()
-    user_skills = home / ".claude" / "skills"
-    if user_skills.is_dir():
+    skills_dirs = {
+      "claude": home / ".claude" / "skills",
+      "kilo": home / ".kilo" / "skills",
+    }
+    user_skills = skills_dirs.get(agent)
+    if user_skills is not None and user_skills.is_dir():
       log(
         "conftest",
         f"user-scope skills present at {user_skills}: "
         f"{sorted(p.name for p in user_skills.iterdir())}",
       )
-    else:
+    elif user_skills is not None:
       log("conftest", f"user-scope skills NOT found at {user_skills}")
   return ws
