@@ -1899,6 +1899,68 @@ assert_eq "exit 0" "$RUN_RC" "0"
 n="$(printf '%s\n' "$RUN_OUT" | grep -c '^.')"
 assert_eq "both rows pass through (threshold not exceeded)" "$n" "2"
 
+case_start "x-x plans list --status + --system + --overflow-keywords narrows status∩system > threshold"
+# The only test in the suite that proves --overflow-keywords actually does
+# the work when both --status and --system are already applied. Pre-overflow
+# count must exceed threshold AFTER status+system gating; the distractors
+# that share status AND system but lack the body keyword can ONLY be
+# eliminated by the overflow narrow. Two further distractors carry the
+# keyword in body but fail one of status / system — they assert the layer
+# ordering (status+system run BEFORE overflow, not after).
+PROJ_SSO="$(fresh_project)"
+seed_project_scaffold "$PROJ_SSO"
+# Threshold+2 plans, all status=valid + system=payment-service, body
+# WITHOUT the keyword. Two of them (5, 17) get overwritten below with
+# bodies that DO contain "retry".
+over=$((PLANS_LIST_OVERFLOW_THRESHOLD + 2))
+for ((i=1; i<=over; i++)); do
+  pad="$(printf '%03d' "$i")"
+  name="$(prefix "$DEFAULT_PREFIX_WIDTH" "$i")-plan${pad}.md"
+  cat > "$PROJ_SSO/${PLANS_DIR}/$name" <<EOF
+---
+status: valid
+systems: [payment-service]
+---
+${i} generic body content
+EOF
+done
+for n in 5 17; do
+  pad="$(printf '%03d' "$n")"
+  cat > "$PROJ_SSO/${PLANS_DIR}/$(prefix "$DEFAULT_PREFIX_WIDTH" "$n")-plan${pad}.md" <<EOF
+---
+status: valid
+systems: [payment-service]
+---
+plan ${n} covers exponential retry backoff
+EOF
+done
+# Cross-filter distractors: each carries "retry" in body but fails one
+# of --status (deprecated) or --system (other-service). Must be dropped
+# BEFORE the overflow narrow ever runs.
+cat > "$PROJ_SSO/${PLANS_DIR}/$(prefix "$DEFAULT_PREFIX_WIDTH" 98)-wrong-status.md" <<EOF
+---
+status: deprecated
+systems: [payment-service]
+---
+deprecated plan that mentions retry
+EOF
+cat > "$PROJ_SSO/${PLANS_DIR}/$(prefix "$DEFAULT_PREFIX_WIDTH" 99)-wrong-system.md" <<EOF
+---
+status: valid
+systems: [other-service]
+---
+other-service plan that mentions retry
+EOF
+cd "$PROJ_SSO"
+run_capture "" plans list --status valid --system payment-service --overflow-keywords retry
+assert_eq           "exit 0"                                $RUN_RC "0"
+assert_contains     "plan005 in match"                      "$RUN_OUT" "plan005"
+assert_contains     "plan017 in match"                      "$RUN_OUT" "plan017"
+assert_not_contains "wrong-status gated by --status filter" "$RUN_OUT" "wrong-status"
+assert_not_contains "wrong-system gated by --system filter" "$RUN_OUT" "wrong-system"
+n="$(printf '%s\n' "$RUN_OUT" | grep -c '^.')"
+assert_eq "exactly two matchers survive (status ∩ system ∩ keyword)" "$n" "2"
+
 # ---------- plan list: --overflow-keywords + threshold behavior ----------
 #
 # Contract:

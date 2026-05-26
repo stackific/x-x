@@ -1469,6 +1469,50 @@ try {
   Assert-Eq 'exactly one match (id ∩ keyword)' $rowCount 1
 } finally { Pop-Location }
 
+Start-Case 'plans list --status + --system + --overflow-keywords narrows status∩system > threshold'
+# Proves --overflow-keywords is the layer that does the work when --status
+# and --system are already applied. Pre-overflow count must exceed the
+# threshold AFTER status+system gating, and the distractors that share
+# status AND system but lack the body keyword can ONLY be eliminated by
+# the overflow narrow. Two further distractors carry the keyword in body
+# but fail one of status / system — they assert layer ordering
+# (status+system run BEFORE overflow, not after).
+$projSSO = New-FreshProject
+Initialize-ProjectScaffold $projSSO
+$plansDirSSO = Join-Path $projSSO $PLANS_DIR
+# Threshold+2 plans, all status=valid + system=payment-service, body
+# WITHOUT the keyword. Two of them (5, 17) get overwritten below with
+# bodies that DO contain "retry".
+$overSSO = $PLANS_LIST_OVERFLOW_THRESHOLD + 2
+for ($i = 1; $i -le $overSSO; $i++) {
+  $nameSSO = '{0:D4}-plan{1:D3}.md' -f $i, $i
+  $bodySSO = "---`nstatus: valid`nsystems: [payment-service]`n---`n$i generic body content"
+  Set-Content -LiteralPath (Join-Path $plansDirSSO $nameSSO) -Value $bodySSO -Encoding ascii
+}
+foreach ($matchN in 5, 17) {
+  $matchName = '{0:D4}-plan{1:D3}.md' -f $matchN, $matchN
+  $matchBody = "---`nstatus: valid`nsystems: [payment-service]`n---`nplan $matchN covers exponential retry backoff"
+  Set-Content -LiteralPath (Join-Path $plansDirSSO $matchName) -Value $matchBody -Encoding ascii
+}
+# Cross-filter distractors: each carries "retry" in body but fails one
+# of --status (deprecated) or --system (other-service). Must be dropped
+# BEFORE the overflow narrow ever runs.
+$ssoWrongStatusBody = "---`nstatus: deprecated`nsystems: [payment-service]`n---`ndeprecated plan that mentions retry"
+Set-Content -LiteralPath (Join-Path $plansDirSSO '0098-wrong-status.md') -Value $ssoWrongStatusBody -Encoding ascii
+$ssoWrongSystemBody = "---`nstatus: valid`nsystems: [other-service]`n---`nother-service plan that mentions retry"
+Set-Content -LiteralPath (Join-Path $plansDirSSO '0099-wrong-system.md') -Value $ssoWrongSystemBody -Encoding ascii
+Push-Location $projSSO
+try {
+  Invoke-XX plans list --status valid --system payment-service --overflow-keywords retry
+  Assert-Eq          'exit 0'                                    $RunRC 0
+  Assert-Contains    'plan005 in match'                          $RunOut 'plan005'
+  Assert-Contains    'plan017 in match'                          $RunOut 'plan017'
+  Assert-NotContains 'wrong-status gated by --status filter'     $RunOut 'wrong-status'
+  Assert-NotContains 'wrong-system gated by --system filter'     $RunOut 'wrong-system'
+  $rowCountSSO = ($RunOut -split "`n").Count
+  Assert-Eq 'exactly two matchers survive (status ∩ system ∩ keyword)' $rowCountSSO 2
+} finally { Pop-Location }
+
 Start-Case 'plans list --order=desc explicit default'
 $projOK8 = New-FreshProject
 Initialize-ProjectScaffold $projOK8

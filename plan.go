@@ -180,16 +180,7 @@ func runPlansList(args []string) {
 
 	// Apply --status / --system filters first so the overflow trigger
 	// keys off the post-filter count (matching the user-visible result).
-	filtered := make([]planRow, 0, len(rows))
-	for _, r := range rows {
-		if len(statusSet) > 0 && !statusSet[r.status] {
-			continue
-		}
-		if len(systemSet) > 0 && !anySystemMatches(r.systems, systemSet) {
-			continue
-		}
-		filtered = append(filtered, r)
-	}
+	filtered := filterPlanRows(rows, statusSet, systemSet)
 
 	sortPlanRows(filtered, order)
 	filtered = applyOverflowNarrow(filtered, keywords, plansDir, plansListOverflowThreshold)
@@ -355,6 +346,27 @@ func anySystemMatches(haystack []string, needles map[string]bool) bool {
 		}
 	}
 	return false
+}
+
+// filterPlanRows keeps only rows whose status is in statusSet AND whose
+// systems intersect systemSet. Either filter is treated as "no filter"
+// when its set is empty (len==0 OR nil), matching the CLI semantics where
+// an absent --status / --system flag means "all". Pulled out of
+// runPlansList so the filter chain is unit-testable on its own — without
+// this helper the only path through status+system filtering was via the
+// e2e harness.
+func filterPlanRows(rows []planRow, statusSet, systemSet map[string]bool) []planRow {
+	filtered := make([]planRow, 0, len(rows))
+	for _, r := range rows {
+		if len(statusSet) > 0 && !statusSet[r.status] {
+			continue
+		}
+		if len(systemSet) > 0 && !anySystemMatches(r.systems, systemSet) {
+			continue
+		}
+		filtered = append(filtered, r)
+	}
+	return filtered
 }
 
 // planRow is one parsed plan file ready for emission.
