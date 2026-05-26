@@ -82,16 +82,21 @@ jobs:
           npm install -g @openai/codex@latest
           codex --version
 
-      - uses: actions/setup-python@v6
+      # setup-uv no longer publishes moving major tags (@v8), so pin to a
+      # specific version. Bump intentionally after checking release notes.
+      # Moved above the litellm step so `uv tool` is the install path —
+      # the rest of skills-evals is uv-managed, no reason for the proxy
+      # to be the lone pip+system-python user.
+      - uses: astral-sh/setup-uv@v8.1.0
         with:
-          python-version: '3.12'
+          enable-cache: true
 
       # LiteLLM proxy is the local bridge: codex (Responses API client)
       # → http://localhost:4000/v1/responses (LiteLLM) → DeepSeek
-      # (Chat Completions). Pin litellm to keep the proxy semantics
-      # stable; bump intentionally after re-running the smoke test.
+      # (Chat Completions). `uv tool install` lands it in an isolated
+      # venv with its own python; no global pip pollution.
       - name: install litellm proxy
-        run: pip install 'litellm[proxy]'
+        run: uv tool install 'litellm[proxy]'
 
       - name: start litellm proxy (background)
         run: |
@@ -115,11 +120,14 @@ jobs:
           EOF
           echo "--- /tmp/litellm/config.yaml ---"
           cat /tmp/litellm/config.yaml
-          # PYTHONPATH lets the proxy import the loose hook module from
-          # the repo without `pip install`-ing it.
-          PYTHONPATH=$GITHUB_WORKSPACE/skills-evals \
-            nohup litellm --config /tmp/litellm/config.yaml --port 4000 \
-              > /tmp/litellm/proxy.log 2>&1 &
+          # LiteLLM resolves callback modules relative to the config file's
+          # directory (litellm.proxy.types_utils.get_instance_fn does
+          # `<config_dir>/<module>.py`), so PYTHONPATH does NOT help. Copy
+          # the hook next to the config so the import resolves.
+          cp $GITHUB_WORKSPACE/skills-evals/litellm_proxy_hooks.py /tmp/litellm/
+          nohup uv tool run --from 'litellm[proxy]' litellm \
+              --config /tmp/litellm/config.yaml --port 4000 \
+            > /tmp/litellm/proxy.log 2>&1 &
           echo "litellm pid=$!"
           # Poll /health until ready (LiteLLM cold start is ~5-10s).
           for i in $(seq 1 30); do
@@ -156,12 +164,6 @@ jobs:
           EOF
           echo "--- ~/.codex/config.toml ---"
           cat ~/.codex/config.toml
-
-      # setup-uv no longer publishes moving major tags (@v8), so pin to a
-      # specific version. Bump intentionally after checking release notes.
-      - uses: astral-sh/setup-uv@v8.1.0
-        with:
-          enable-cache: true
 
       - name: install skills-evals deps
         working-directory: skills-evals
