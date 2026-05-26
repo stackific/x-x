@@ -64,14 +64,19 @@ Set-Variable -Option Constant -Name SKILL_MANIFEST_FILE -Value 'SKILL.md'
 
 Set-Variable -Option Constant -Name OWNED_SKILLS -Value @($SKILL_X_PLAN_DIR, $SKILL_X_X_DIR)
 
-# agentTargets in constants.go — index 0 = Claude Code, 1 = Codex CLI,
-# 2 = OpenCode. OpenCode ships no per-agent config today (configRel is "")
-# so there is no OPENCODE_CONFIG_REL mirror.
-Set-Variable -Option Constant -Name CLAUDE_SKILLS_REL   -Value '.claude\skills'
-Set-Variable -Option Constant -Name CLAUDE_CONFIG_REL   -Value '.claude'
-Set-Variable -Option Constant -Name CODEX_SKILLS_REL    -Value '.agents\skills'
-Set-Variable -Option Constant -Name CODEX_CONFIG_REL    -Value '.codex'
-Set-Variable -Option Constant -Name OPENCODE_SKILLS_REL -Value '.opencode\commands'
+# 2 = OpenCode, 3 = GitHub Copilot CLI (copilot added in this branch;
+# constants.go registration follows in a sibling commit). Copilot is the
+# first agent with a per-scope skill path: project reuses Codex's
+# `.agents/skills` (cross-agent open spec, idempotent install), user
+# scope uses Copilot-native `.copilot/skills`. OpenCode ships no per-agent
+# config today (configRel is "") so there is no OPENCODE_CONFIG_REL mirror.
+Set-Variable -Option Constant -Name CLAUDE_SKILLS_REL       -Value '.claude\skills'
+Set-Variable -Option Constant -Name CLAUDE_CONFIG_REL       -Value '.claude'
+Set-Variable -Option Constant -Name CODEX_SKILLS_REL        -Value '.agents\skills'
+Set-Variable -Option Constant -Name CODEX_CONFIG_REL        -Value '.codex'
+Set-Variable -Option Constant -Name OPENCODE_SKILLS_REL     -Value '.opencode\commands'
+Set-Variable -Option Constant -Name COPILOT_SKILLS_REL      -Value '.agents\skills'
+Set-Variable -Option Constant -Name COPILOT_USER_SKILLS_REL -Value '.copilot\skills'
 
 # Bundled config filenames (not constants in Go; pinned here for assertions).
 Set-Variable -Option Constant -Name CLAUDE_SETTINGS_FILE -Value 'settings.json'
@@ -2372,6 +2377,38 @@ try {
   Assert-IsDir     'opencode skills present'    (Join-Path $projF2o (Join-Path $OPENCODE_SKILLS_REL $SKILL_X_X_DIR))
   Assert-NotExists 'claude skills NOT present'  (Join-Path $projF2o (Join-Path $CLAUDE_SKILLS_REL   $SKILL_X_X_DIR))
   Assert-NotExists 'codex skills NOT present'   (Join-Path $projF2o (Join-Path $CODEX_SKILLS_REL    $SKILL_X_X_DIR))
+} finally { Pop-Location }
+
+Start-Case 'init --agents=copilot project-scope install'
+Reset-UserHome
+$projCP1 = New-FreshProject
+Push-Location $projCP1
+try {
+  Invoke-XX init --scope project --agents=copilot `
+                    --prefix-width 4 --max-plan-lines 30 --review-per task
+  Assert-Eq    'exit 0' $RunRC 0
+  # Project scope: same `.agents/skills` path Codex uses.
+  Assert-IsDir 'copilot project skills present' `
+    (Join-Path $projCP1 (Join-Path $COPILOT_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'claude skills NOT present' `
+    (Join-Path $projCP1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+} finally { Pop-Location }
+
+Start-Case 'init --agents=copilot --scope=user lands at ~/.copilot/skills'
+Reset-UserHome
+$projCP2 = New-FreshProject
+Push-Location $projCP2
+try {
+  Invoke-XX init --scope user --agents=copilot `
+                    --prefix-width 4 --max-plan-lines 30 --review-per task
+  Assert-Eq    'exit 0' $RunRC 0
+  # User scope: copilot diverges from `.agents/skills` and lands at
+  # `.copilot/skills` under USERPROFILE. Codex's user dir must NOT be
+  # created when only copilot is selected.
+  Assert-IsDir 'copilot user-scope skills landed' `
+    (Join-Path $env:USERPROFILE (Join-Path $COPILOT_USER_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'codex user-scope dir NOT created' `
+    (Join-Path $env:USERPROFILE $CODEX_SKILLS_REL)
 } finally { Pop-Location }
 
 Start-Case 'init --prefix-width=6 seeds the lock with 6'

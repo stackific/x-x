@@ -131,11 +131,18 @@ func runSkillsRemove(args []string) {
 	if agentsErr != nil {
 		fmt.Fprintf(os.Stderr, "warning: %v (skipping hook un-merge)\n", agentsErr)
 	}
+	// Match init's encoding: scope is initScope here so t.skillsRelFor picks
+	// the right path for agents whose project- and user-scope skill paths
+	// differ (e.g. Copilot CLI).
+	removeScope := scopeProject
+	if *userScope {
+		removeScope = scopeUser
+	}
 	for _, t := range agentTargets {
-		// Each agent's skills live at <scopeRoot>/<t.skillsRel> (e.g.
+		// Each agent's skills live at <scopeRoot>/<t.skillsRelFor(scope)> (e.g.
 		// $HOME/.claude/skills). The per-agent helper handles missing
 		// directories gracefully.
-		r, s := removeOurSkillsIn(filepath.Join(scopeRoot, t.skillsRel), t.name, owned)
+		r, s := removeOurSkillsIn(filepath.Join(scopeRoot, t.skillsRelFor(removeScope)), t.name, owned)
 		removed += r
 		skipped += s
 		// Hook un-merge: walk the bundled per-agent config dir and

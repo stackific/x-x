@@ -80,27 +80,46 @@ const (
 //
 // Field roles:
 //
-//	key       — short, stable CLI identifier (e.g. "claude", "codex").
-//	            Surfaced through `--agents claude,codex` and the
-//	            interactive multi-select. Must be lowercase, no spaces.
-//	name      — human-readable label printed in the progress log and in
-//	            the interactive agent picker.
-//	skillsRel — destination for agents/skills/*; relative to scope root
-//	            ($HOME for user scope, cwd for project scope). The string
-//	            is identical for both scopes today, but the field is named
-//	            "Rel" to make that explicit.
-//	configSrc — subdir under ~/.x-x/agents/ holding agent-specific files
-//	            (e.g. "claude" for agents/claude/settings.json). Empty
-//	            means this agent has no per-agent config to install.
-//	configRel — destination for the configSrc files, relative to scope root
-//	            (e.g. ".claude" so that agents/claude/settings.json lands
-//	            at <root>/.claude/settings.json).
+//	key           — short, stable CLI identifier (e.g. "claude", "codex").
+//	                Surfaced through `--agents claude,codex` and the
+//	                interactive multi-select. Must be lowercase, no spaces.
+//	name          — human-readable label printed in the progress log and in
+//	                the interactive agent picker.
+//	skillsRel     — destination for agents/skills/*; relative to scope root.
+//	                Used for BOTH scopes by default. For agents whose CLI
+//	                reads from different paths at project vs user scope
+//	                (e.g. GitHub Copilot CLI: `.agents/skills` at project,
+//	                `~/.copilot/skills` at user), populate userSkillsRel too.
+//	userSkillsRel — optional override for user scope ($HOME-relative). When
+//	                empty the install/remove code falls back to skillsRel
+//	                in both scopes. When set, project scope still uses
+//	                skillsRel and user scope uses this field.
+//	configSrc     — subdir under ~/.x-x/agents/ holding agent-specific files
+//	                (e.g. "claude" for agents/claude/settings.json). Empty
+//	                means this agent has no per-agent config to install.
+//	configRel     — destination for the configSrc files, relative to scope root
+//	                (e.g. ".claude" so that agents/claude/settings.json lands
+//	                at <root>/.claude/settings.json).
 type agentTarget struct {
-	key       string
-	name      string
-	skillsRel string
-	configSrc string
-	configRel string
+	key           string
+	name          string
+	skillsRel     string
+	userSkillsRel string
+	configSrc     string
+	configRel     string
+}
+
+// skillsRelFor returns the scope-correct skill install path for one agent.
+// project scope always uses skillsRel; user scope prefers userSkillsRel when
+// set, falling back to skillsRel otherwise. Centralized so install AND
+// remove paths can't diverge. Pointer receiver because agentTarget hit
+// gocritic's hugeParam threshold (96 bytes) after the userSkillsRel field
+// was added.
+func (t *agentTarget) skillsRelFor(scope initScope) string {
+	if scope == scopeUser && t.userSkillsRel != "" {
+		return t.userSkillsRel
+	}
+	return t.skillsRel
 }
 
 // agentTargets is the registry consulted by `x-x init` and `x-x skills
@@ -112,14 +131,14 @@ type agentTarget struct {
 // the interactive multi-select picker — keep it short, lowercase, and
 // unique across the registry.
 var agentTargets = []agentTarget{
-	{"claude", "Claude Code", ".claude/skills", "claude", ".claude"},
+	{"claude", "Claude Code", ".claude/skills", "", "claude", ".claude"},
 	// Codex CLI scans .agents/skills/ at every level (cwd → repo root → $HOME),
 	// per the cross-agent SKILL.md open standard. The legacy ~/.codex/skills
 	// is also recognized at user scope but not at project scope, so .agents
 	// is the one path that works in both modes. Per-agent config (hooks.json,
 	// config.toml, etc.) still lives under .codex/ — see Codex docs:
 	// https://developers.openai.com/codex/hooks for the lookup order.
-	{"codex", "Codex CLI", ".agents/skills", "codex", ".codex"},
+	{"codex", "Codex CLI", ".agents/skills", "", "codex", ".codex"},
 	// OpenCode resolves slash commands from `.opencode/{command,commands}/**/*.md`
 	// at project scope and `~/.config/opencode/commands/` at user scope.
 	// The lookup keys off the file's frontmatter `name:` (the path-derived
@@ -131,7 +150,18 @@ var agentTargets = []agentTarget{
 	// flat `<command>.md`) matches Claude/Codex for parity across agents.
 	// No per-agent config is bundled for OpenCode yet (auth + provider
 	// routing live outside the install scope, in `~/.local/share/opencode/`).
-	{"opencode", "OpenCode", ".opencode/commands", "", ""},
+	{"opencode", "OpenCode", ".opencode/commands", "", "", ""},
+	// GitHub Copilot CLI reads skills from `.agents/skills/`, `.claude/skills/`,
+	// or `.github/skills/` at project scope, and `~/.copilot/skills/` or
+	// `~/.agents/skills/` at user scope. We pick `.agents/skills` for project
+	// (cross-agent open spec, already populated by codex when both are picked
+	// — install is idempotent) and `~/.copilot/skills` for user (the Copilot-
+	// native path, distinct from codex's `~/.agents/skills`). Skills-only for
+	// now — no settings.json / hooks file shipped yet; that's a follow-up
+	// once the manual eval workflow tells us which Copilot CLI lifecycle
+	// hooks make sense to register. Official path docs:
+	// docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills.
+	{"copilot", "GitHub Copilot CLI", ".agents/skills", ".copilot/skills", "", ""},
 }
 
 // skillsSubdir is the directory inside ~/.x-x/agents/ that holds the

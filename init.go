@@ -155,7 +155,7 @@ func runInit(args []string) {
 	// picker (or omitted from --agents) are silently skipped — their
 	// install dirs are left untouched.
 	for i := range cfg.agents {
-		installForTarget(&cfg.agents[i], skills, scopeRoot, skillsSource, agentsRoot, useSymlink)
+		installForTarget(&cfg.agents[i], skills, scopeRoot, skillsSource, agentsRoot, useSymlink, cfg.scope)
 	}
 
 	// `.x-plans/` scaffold lives in cwd regardless of scope. Scope only
@@ -561,9 +561,13 @@ func writeIfAbsent(path string, content []byte) error {
 // The function takes everything it needs as arguments (no global state)
 // so it can be reasoned about and tested in isolation if a test ever
 // gets written.
-func installForTarget(t *agentTarget, skills []string, scopeRoot, skillsSource, agentsRoot string, useSymlink bool) {
+//
+// `scope` is consulted via t.skillsRelFor so agents with a per-scope
+// skill path (e.g. Copilot CLI: `.agents/skills` at project,
+// `~/.copilot/skills` at user) land in the right directory.
+func installForTarget(t *agentTarget, skills []string, scopeRoot, skillsSource, agentsRoot string, useSymlink bool, scope initScope) {
 	// Pass 1: skills. Each skill lives at <scopeRoot>/<skillsRel>/<skill>/.
-	skillsDir := filepath.Join(scopeRoot, t.skillsRel)
+	skillsDir := filepath.Join(scopeRoot, t.skillsRelFor(scope))
 	if err := os.MkdirAll(skillsDir, 0o700); err != nil {
 		// Can't even create the parent skills dir for this agent.
 		// Log + skip — other agents may still succeed.

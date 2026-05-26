@@ -1387,14 +1387,17 @@ func TestRunInit_ProjectScope_EndToEnd(t *testing.T) {
 	chdir(t, projectDir)
 	runInit([]string{"--scope", "project"})
 
-	// Bundled skills must land under every agent target's skillsRel. Source
-	// the destinations from the registry to honor the "no inline path
-	// literals" rule from AGENTS.md.
+	// Bundled skills must land under every agent target's project-scope
+	// skill path. Source the destinations from the registry via
+	// skillsRelFor(scopeProject) to honor the "no inline path literals"
+	// rule from AGENTS.md AND the per-scope path override (e.g. Copilot
+	// CLI uses different paths at project vs user scope).
 	for _, target := range agentTargets {
+		projectPath := target.skillsRelFor(scopeProject)
 		for _, name := range ownedSkills {
-			p := filepath.Join(projectDir, target.skillsRel, name)
+			p := filepath.Join(projectDir, projectPath, name)
 			if _, err := os.Stat(p); err != nil {
-				t.Fatalf("missing %s: %v", p, err)
+				t.Fatalf("missing %s for %s: %v", p, target.key, err)
 			}
 		}
 	}
@@ -1451,16 +1454,20 @@ func TestRunInit_UserScope_EndToEnd(t *testing.T) {
 
 	// User-scope on POSIX uses symlinks; on Windows it falls back to copy.
 	// Walk the registry rather than hard-coding the per-agent skill dirs.
+	// `skillsRelFor(scopeUser)` honors per-agent overrides like Copilot CLI's
+	// `~/.copilot/skills` distinction from its project-scope `.agents/skills`.
 	for _, target := range agentTargets {
+		userPath := target.skillsRelFor(scopeUser)
 		for _, name := range ownedSkills {
-			p := filepath.Join(home, target.skillsRel, name)
+			p := filepath.Join(home, userPath, name)
 			info, err := os.Lstat(p)
 			if err != nil {
-				t.Fatalf("missing %s: %v", p, err)
+				t.Fatalf("missing %s for %s: %v", p, target.key, err)
 			}
 			if runtime.GOOS != "windows" {
 				if info.Mode()&os.ModeSymlink == 0 {
-					t.Fatalf("expected symlink at %s, got mode %v", p, info.Mode())
+					t.Fatalf("expected symlink at %s (%s), got mode %v",
+						p, target.key, info.Mode())
 				}
 			}
 		}
