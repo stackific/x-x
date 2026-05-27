@@ -318,6 +318,11 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
   log("conftest", f"workspace ready: {sorted(p.name for p in ws.iterdir())}")
   if scope == "user":
+    # Log every user-scope skill destination an agent might read from, so
+    # a missing install is immediately visible regardless of which agent
+    # the test is exercising. Claude reads `~/.claude/skills/`; Codex and
+    # Copilot read `~/.agents/skills/`; the legacy `~/.copilot/skills/`
+    # is also on Copilot CLI's official list and is checked for parity.
     home = Path.home()
     # Mirror the on-disk path each agent's skills install to so the
     # post-install log shows what landed.

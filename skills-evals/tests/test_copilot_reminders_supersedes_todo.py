@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from skills_evals.copilot_driver import drive_skill
+from skills_evals.copilot_driver import DEFAULT_MAX_TURNS, drive_skill
 from skills_evals.judges import ArtifactJudge
 from skills_evals.workspace import load_all_plans
 
@@ -61,6 +61,10 @@ def test_copilot_reminders_supersedes_todo(
     f"timed_out={todo_run.timed_out}; stderr:\n{todo_run.stderr_tail}"
   )
   assert todo_run.completed
+  assert todo_run.turns < DEFAULT_MAX_TURNS, (
+    f"/x-plan todo hit max_turns cap ({DEFAULT_MAX_TURNS}). Inspect "
+    f"{transcripts / 'x-plan-todo.txt'}."
+  )
 
   # --- Plan 2: reminders (supersedes todo) ---
   reminders_run = drive_skill(
@@ -73,6 +77,10 @@ def test_copilot_reminders_supersedes_todo(
     f"timed_out={reminders_run.timed_out}; stderr:\n{reminders_run.stderr_tail}"
   )
   assert reminders_run.completed
+  assert reminders_run.turns < DEFAULT_MAX_TURNS, (
+    f"/x-plan reminders hit max_turns cap ({DEFAULT_MAX_TURNS}). Inspect "
+    f"{transcripts / 'x-plan-reminders.txt'}."
+  )
 
   # --- Execute ---
   exec_run = drive_skill(
@@ -85,6 +93,10 @@ def test_copilot_reminders_supersedes_todo(
     f"timed_out={exec_run.timed_out}; stderr:\n{exec_run.stderr_tail}"
   )
   assert exec_run.completed
+  assert exec_run.turns < DEFAULT_MAX_TURNS, (
+    f"/x-x hit max_turns cap ({DEFAULT_MAX_TURNS}) — supersede flip may "
+    f"not have completed. Inspect {transcripts / 'x-x.txt'}."
+  )
 
   # --- Plan mechanics ---
   plans = load_all_plans(copilot_workspace)

@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from skills_evals.copilot_driver import drive_skill
+from skills_evals.copilot_driver import DEFAULT_MAX_TURNS, drive_skill
 from skills_evals.judges import ArtifactJudge, PlanJudge
 
 TASK = "build me a single HTML and localStorage-based todo list app"
@@ -37,6 +37,11 @@ def test_copilot_builds_todo_app(copilot_workspace: Path, tmp_path: Path) -> Non
     f"/x-plan did not complete cleanly: lines={plan_run.events_received} "
     f"timed_out={plan_run.timed_out}"
   )
+  assert plan_run.turns < DEFAULT_MAX_TURNS, (
+    f"/x-plan hit the max_turns cap ({DEFAULT_MAX_TURNS}) — the planner "
+    f"kept gating on 'Reply yes' past what we expected. Inspect "
+    f"{transcripts / 'x-plan.txt'} to see what it was asking."
+  )
 
   plan_judgment = PlanJudge().evaluate(TASK, copilot_workspace)
   print(f"\n[plan] score={plan_judgment.score:.2f} reason={plan_judgment.reason}")
@@ -58,6 +63,11 @@ def test_copilot_builds_todo_app(copilot_workspace: Path, tmp_path: Path) -> Non
   assert exec_run.completed, (
     f"/x-x did not complete cleanly: lines={exec_run.events_received} "
     f"timed_out={exec_run.timed_out}"
+  )
+  assert exec_run.turns < DEFAULT_MAX_TURNS, (
+    f"/x-x hit the max_turns cap ({DEFAULT_MAX_TURNS}) — the executor "
+    f"kept gating on 'Reply yes' past what we expected. Inspect "
+    f"{transcripts / 'x-x.txt'} to see what it was asking."
   )
 
   artifact_judgment = ArtifactJudge().evaluate(TASK, copilot_workspace)

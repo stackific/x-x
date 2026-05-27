@@ -30,7 +30,17 @@ safe here because the eval suite runs sequentially.
 
 Flags exercised (all documented in the reference above):
   -p <prompt>          Run the prompt non-interactively and exit.
+  -s                   Silent: suppress session metadata, output only the
+                       agent's response. Without -s, Copilot prints stats
+                       and decoration to stdout that pollute the
+                       "Reply yes" pattern match and the smoke test's
+                       events_received count.
   --continue           Resume the most recently closed local session.
+  -C <dir>             Override the session's saved working directory on
+                       --continue. Per the May 2026 release notes,
+                       --continue now resumes in the session's saved cwd
+                       by default; -C makes the intended cwd explicit
+                       and avoids relying on the resume default.
   --allow-all-tools    Skip per-tool permission prompts.
   --no-ask-user        Prevent the agent from asking clarifying questions
                        (best-effort — see note above).
@@ -234,9 +244,13 @@ def _run_one_turn(
   """
   cmd = ["copilot"]
   if use_continue:
-    cmd.append("--continue")
+    # -C pins the resumed session's working directory to our workspace.
+    # Without it, --continue's "resume in saved cwd" default applies and
+    # can land in whatever dir the original session was spawned from.
+    cmd.extend(["--continue", "-C", str(workspace)])
   cmd.extend([
     "-p", prompt,
+    "-s",
     "--allow-all-tools",
     "--no-ask-user",
     "--add-dir", str(workspace),

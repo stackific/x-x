@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from skills_evals.copilot_driver import drive_skill
+from skills_evals.copilot_driver import DEFAULT_MAX_TURNS, drive_skill
 from skills_evals.workspace import load_all_plans
 
 BASE_TASK = "build a single HTML and localStorage-based todo list app"
@@ -44,6 +44,10 @@ def test_copilot_plan_extends(copilot_workspace: Path, tmp_path: Path) -> None:
     f"/x-plan A did not complete cleanly: lines={a_run.events_received} "
     f"timed_out={a_run.timed_out}"
   )
+  assert a_run.turns < DEFAULT_MAX_TURNS, (
+    f"/x-plan A hit the max_turns cap ({DEFAULT_MAX_TURNS}) — gate kept "
+    f"firing. Inspect {transcripts / 'x-plan-a.txt'}."
+  )
 
   # --- Plan B: extension of plan A ---
   b_run = drive_skill(
@@ -58,6 +62,10 @@ def test_copilot_plan_extends(copilot_workspace: Path, tmp_path: Path) -> None:
   assert b_run.completed, (
     f"/x-plan B did not complete cleanly: lines={b_run.events_received} "
     f"timed_out={b_run.timed_out}"
+  )
+  assert b_run.turns < DEFAULT_MAX_TURNS, (
+    f"/x-plan B hit the max_turns cap ({DEFAULT_MAX_TURNS}) — gate kept "
+    f"firing. Inspect {transcripts / 'x-plan-b.txt'}."
   )
 
   # --- Verify plan mechanics ---

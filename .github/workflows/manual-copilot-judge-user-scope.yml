@@ -2,12 +2,20 @@ name: manual / github copilot cli <- llm judge (user scope)
 
 # Manually-triggered experiment from the agent-eval lineage. Mirrors
 # manual-copilot-judge.yml but installs skills at user scope
-# (~/.copilot/skills/) rather than project scope (`.agents/skills/`).
-# This exercises the agentTargets userSkillsRel branch that diverges
-# from skillsRel for Copilot CLI — verifying the user-scope path on a
-# real Linux runner. See docs/internal/adding-agent-eval-backend.md for
-# the agent-eval recipe and docs/internal/manually-triggered-workflows.md
-# for the workflow conventions.
+# (~/.agents/skills/) rather than project scope (`.agents/skills/`).
+# `~/.agents/skills/` is on Copilot CLI's official user-scope list per
+# docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills,
+# and reusing the cross-agent open spec path here lets the bundled
+# SKILL.md content (which only resolves `.claude/skills/` and
+# `.agents/skills/`) discover the shared docs correctly.
+#
+# Copilot's agentTargets row has an empty userSkillsRel, so the user
+# scope path takes the fall-back branch in skillsRelFor and reuses
+# skillsRel (`.agents/skills`) — the same string the project-scope
+# install uses, just rooted at $HOME instead of cwd. See
+# docs/internal/adding-agent-eval-backend.md for the agent-eval recipe
+# and docs/internal/manually-triggered-workflows.md for the workflow
+# conventions.
 
 on:
   workflow_dispatch:
