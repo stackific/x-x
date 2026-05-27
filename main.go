@@ -83,8 +83,8 @@ func runDefault(args []string) {
 	// the bare invocation anymore. Kept on the FlagSet so the flag is still
 	// listed in `-h` output and existing scripts that pass it keep working.
 	_ = fs.Bool("version", false, "print version and exit")
-	// Wiring printAbout as the FlagSet's Usage means `x-x -h` shows the
-	// same banner you'd see by running `x-x` with no args — one canonical
+	// Setting printAbout as the FlagSet's Usage means `x-x -h` shows the
+	// same banner you'd see by running `x-x` with no args — one standard
 	// help output for the default path.
 	fs.Usage = printAbout
 	// ExitOnError + ignoring Parse's return is intentional: Parse calls
@@ -114,7 +114,7 @@ func runDefault(args []string) {
 // It deliberately does NOT include the usage block — printAbout adds that
 // for the bare-invocation path. The first line's last whitespace token is
 // the version string; the POSIX/PowerShell installers parse it that way to
-// seed ~/.x-x/.config.json, so don't change the line shape without also
+// seed ~/.x-x/.config.json, so don't change the line format without also
 // updating scripts/INSTALL.sh and scripts/INSTALL.ps1.
 func printNotice() {
 	// Version banner — includes the vendor so the binary identifies itself
@@ -134,7 +134,7 @@ func printNotice() {
 // printAbout is the `-h` / `--help` panel: the notice followed by the
 // usage block. Bare `x-x` and `x-x --version` deliberately do NOT call
 // this — they only print the generic notice via printNotice so the
-// default output stays terse. printAbout is wired as the FlagSet.Usage
+// default output stays terse. printAbout is set as the FlagSet.Usage
 // callback so users who explicitly ask for help still see the full table.
 func printAbout() {
 	// Notice block (version + copyright + SPDX) — single source of truth

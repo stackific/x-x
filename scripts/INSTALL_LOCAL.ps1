@@ -55,7 +55,7 @@ $configDir = Join-Path $HOME '.x-x'
 New-Item -ItemType Directory -Force -Path $configDir | Out-Null
 
 # Seed the update-check config so the first post-install invocation does
-# not probe the network. Mirrors INSTALL.ps1 exactly — same JSON shape,
+# not probe the network. Mirrors INSTALL.ps1 exactly — same JSON structure,
 # same version-string parse (last whitespace-separated token on the first
 # `--version` line).
 $installedVersion = try {

@@ -26,15 +26,15 @@ commit-msg:
 pre-push:
   parallel: true
   commands:
-    # -race wires in the data-race detector; -count=1 busts Go's test cache so
-    # source-clean re-runs still execute every test (the previous shape just
+    # -race enables the data-race detector; -count=1 busts Go's test cache so
+    # source-clean re-runs still execute every test (the previous form just
     # printed "(cached)" on most invocations).
     test:
       run: go test -race -count=1 ./...
     # End-to-end CLI tests — builds x-x into a sandbox and drives every
     # subcommand. Runs in parallel with the Go unit tests above (no shared
     # state: the e2e script provisions its own sandbox HOME and binary).
-    # Caught release-blocking bugs that unit tests alone missed, so it gates
+    # Caught release-blocking bugs that unit tests alone missed, so it guards
     # pushes the same way `test` does.
     e2e:
       run: ./scripts/e2e_test.sh
@@ -42,7 +42,7 @@ pre-push:
       run: go vet ./...
     # Tree-wide lint complements pre-commit (which only sees staged files):
     # commits made with --no-verify or rebased history can otherwise smuggle
-    # issues past the gate.
+    # issues past the check.
     lint:
       run: golangci-lint run ./...
     govulncheck:

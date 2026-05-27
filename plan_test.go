@@ -144,7 +144,7 @@ func TestScanHighestPrefix_IgnoresNonNumericPrefixes(t *testing.T) {
 // configured width (5 digits when width=4) must not be counted. Earlier
 // the scan used `^(\d{width})` which would greedily read the first
 // `width` digits of `00099-extra.md` as prefix 9 — but listPlans / lint
-// require `^\d{width}-` to recognise a plan file, so next-prefix would
+// require `^\d{width}-` to recognize a plan file, so next-prefix would
 // hand out numbers based on files list/lint silently ignore. Anchoring
 // the scan on the trailing `-` and `.md` plugs that gap.
 func TestScanHighestPrefix_IgnoresWiderPrefix(t *testing.T) {
@@ -181,7 +181,7 @@ func TestScanHighestPrefix_RespectsCustomWidth(t *testing.T) {
 // TestStringSliceFlag_AppendsAndSplits pins the dual semantics: each
 // `--<flag> X` call appends, and X is itself comma-split with
 // whitespace trimming. The flag.Var-driven --agents and --status / --system
-// flags all rely on this exact shape.
+// flags all rely on this exact form.
 func TestStringSliceFlag_AppendsAndSplits(t *testing.T) {
 	var s stringSliceFlag
 	if err := s.Set("a"); err != nil {
@@ -204,7 +204,7 @@ func TestStringSliceFlag_AppendsAndSplits(t *testing.T) {
 }
 
 // TestToFilterSet covers both the nil-input shortcut (returns nil to
-// signal "no filter") and the populated-set membership shape used by
+// signal "no filter") and the populated-set membership form used by
 // the --status / --system filters in `plan list`.
 func TestToFilterSet(t *testing.T) {
 	if toFilterSet(nil) != nil {
@@ -257,7 +257,7 @@ func TestParseInlineSystems(t *testing.T) {
 	}
 }
 
-// writePlanFile is a test helper that writes a plan-shaped file with the
+// writePlanFile is a test helper that writes a plan-format file with the
 // given frontmatter body and (optional) body content.
 func writePlanFile(t *testing.T, dir, name, fm, body string) string {
 	t.Helper()
@@ -342,7 +342,7 @@ func TestParsePlan_MissingStatus(t *testing.T) {
 }
 
 // TestParsePlan_MissingSystems: frontmatter without `systems:` is
-// rejected too. systems is the load-bearing field — both `plan list`'s
+// rejected too. systems is the critical field — both `plan list`'s
 // --system filter and `plan lint`'s registry check depend on it.
 func TestParsePlan_MissingSystems(t *testing.T) {
 	dir := t.TempDir()
@@ -369,7 +369,7 @@ func TestParsePlan_RejectsBlockSystems(t *testing.T) {
 }
 
 // TestListPlans_MissingDirIsEmpty: missing plansDir → empty slice, no
-// error. The CLI gate (requireProject) catches genuine missing-project
+// error. The CLI check (requireProject) catches genuine missing-project
 // states, so the inner helper just needs graceful no-data behavior.
 func TestListPlans_MissingDirIsEmpty(t *testing.T) {
 	var warn bytes.Buffer
@@ -556,7 +556,7 @@ func TestNormalizeKeywords(t *testing.T) {
 	}
 }
 
-// seedBody is a test helper that writes a plan-shaped file whose body
+// seedBody is a test helper that writes a plan-format file whose body
 // contains text. Returns the slug (filename minus extension).
 func seedBody(t *testing.T, dir, name, body string) string {
 	t.Helper()
@@ -775,7 +775,7 @@ func TestParseRegistry_MissingFileReturnsEmpty(t *testing.T) {
 }
 
 // TestParseRegistry_HappyPath covers the realistic _data_systems.yaml
-// shape: each entry carries id + name + brief, the id is kebab-case, and
+// structure: each entry carries id + name + brief, the id is kebab-case, and
 // entries living under sibling top-level keys (`other:` below) are
 // ignored. Both lookup directions are populated symmetrically.
 func TestParseRegistry_HappyPath(t *testing.T) {
@@ -811,7 +811,7 @@ other:
 
 // TestParseRegistry_SkipsPartialEntries: an entry with only `id:` or only
 // `name:` is dropped silently — lint surfaces the gap when a plan
-// references the half-defined slug, so the parser doesn't need to fail
+// references the partially defined slug, so the parser doesn't need to fail
 // here. Whole entries on either side of the bad one must still land.
 func TestParseRegistry_SkipsPartialEntries(t *testing.T) {
 	dir := t.TempDir()
@@ -844,7 +844,7 @@ func TestParseRegistry_SkipsPartialEntries(t *testing.T) {
 
 // TestParseRegistry_MultilineEntries pins that an item's `id:` and
 // `name:` can live on the same line as `- ` or on indented continuation
-// lines — both shapes appear in the wild because _systems.md shows the
+// lines — both forms appear in the wild because _systems.md shows the
 // continuation form but a hand-edit may collapse onto one line.
 func TestParseRegistry_MultilineEntries(t *testing.T) {
 	dir := t.TempDir()
@@ -879,7 +879,7 @@ func TestSetDifference(t *testing.T) {
 	}
 }
 
-// validPlanFM is the canonical passing frontmatter+body used by lint tests.
+// validPlanFM is the standard passing frontmatter+body used by lint tests.
 // Defined once so per-failure cases can override one field at a time. The
 // title must slugify to "foo" so the filename "00001-foo.md" matches.
 const (
@@ -887,7 +887,7 @@ const (
 	validPlanBody = "## Goal\nDo a thing.\n\n## Approach\n- A\n\n## Tasks\n- [ ] The Auth Service shall do a thing.\n"
 )
 
-// fixturePlanName is the canonical plan filename used by every lint test
+// fixturePlanName is the standard plan filename used by every lint test
 // case. Single source of truth so the extension (planFileExt) doesn't get
 // duplicated as `fixturePlanName` across call sites — AGENTS.md hard rule.
 var fixturePlanName = "00001-foo" + planFileExt
@@ -1013,7 +1013,7 @@ func TestLintPlanFile_EARSSubjectMismatch(t *testing.T) {
 }
 
 // TestLintPlanFile_FrontmatterIDNotInRegistry covers the id-membership
-// half of the new id-based contract: an inline `systems:` entry that
+// part of the new id-based contract: an inline `systems:` entry that
 // isn't a key in the registry's id index must surface a finding even
 // though the EARS body might still resolve cleanly through a different
 // registered name.
@@ -1036,7 +1036,7 @@ func TestLintPlanFile_FrontmatterIDNotInRegistry(t *testing.T) {
 // TestLintPlanFile_EARSSubjectUnknownName: an EARS subject (display name
 // in the body text) that has no registry entry surfaces the new
 // "EARS subject is not in <registry>" finding. The subject-name → id
-// resolution is the load-bearing part of the new id-aware lint.
+// resolution is the critical part of the new id-aware lint.
 func TestLintPlanFile_EARSSubjectUnknownName(t *testing.T) {
 	dir := t.TempDir()
 	body := "## Goal\n## Approach\n## Tasks\n- [ ] The Phantom Service shall haunt.\n"
@@ -1259,7 +1259,7 @@ func TestLintPlanFile_FilenameDoesNotMatchTitle(t *testing.T) {
 
 // TestLintPlanFile_DanglingExtends: a slug in `extends:` that doesn't
 // resolve to a sibling plan must be reported. Mirrors the supersedes
-// finding shape so the user message is consistent across all three
+// finding format so the user message is consistent across all three
 // cross-plan reference fields.
 func TestLintPlanFile_DanglingExtends(t *testing.T) {
 	dir := t.TempDir()
@@ -1650,7 +1650,7 @@ func filenameForPrefixStem(n int, stem string) string {
 
 // ---------- direct helper tests (previously only transitively covered) ----------
 
-// TestLintFilename pins the regex shape independently of lintPlanFile,
+// TestLintFilename pins the regex form independently of lintPlanFile,
 // so a filename-only regression doesn't get masked by a co-occurring
 // frontmatter finding in the same per-file invocation.
 func TestLintFilename(t *testing.T) {
@@ -1703,7 +1703,7 @@ func TestLintLineCount(t *testing.T) {
 	}
 }
 
-// TestSplitFrontmatter pins the four observable shapes of the YAML
+// TestSplitFrontmatter pins the four observable forms of the YAML
 // frontmatter fence: well-formed, missing, unterminated, and CRLF.
 // CRLF tolerance matters because Windows-edited plan files routinely
 // land with \r\n endings.
@@ -1772,7 +1772,7 @@ func TestLintSystems(t *testing.T) {
 	}
 }
 
-// TestLintRelationArray covers the shared shape for supersedes /
+// TestLintRelationArray covers the shared form for supersedes /
 // extends / extended_by / superseded_by: self-reference and dangling
 // slug references each produce one finding.
 func TestLintRelationArray(t *testing.T) {
@@ -1840,7 +1840,7 @@ func TestLintTitle(t *testing.T) {
 	}
 }
 
-// TestLintCreated walks the three shapes the field validator cares
+// TestLintCreated walks the three forms the field validator cares
 // about: missing, present-but-malformed, valid ISO-8601-UTC.
 func TestLintCreated(t *testing.T) {
 	if got := lintCreated("title: x\n"); len(got) != 1 {
@@ -1958,9 +1958,9 @@ func TestInlineSlugSet(t *testing.T) {
 }
 
 // TestSetRegistryField pins the key dispatch (id, name, other-ignored)
-// and the value normalisation (quote-strip + whitespace-trim) that the
+// and the value normalization (quote-strip + whitespace-trim) that the
 // hand-rolled parser relies on for both single-line and continuation
-// shapes.
+// forms.
 func TestSetRegistryField(t *testing.T) {
 	var id, name string
 	setRegistryField(&id, &name, "id", `"auth-service"`)
@@ -1980,9 +1980,9 @@ func TestSetRegistryField(t *testing.T) {
 // The four plans-subcommand entry points each have a thin os.Exit
 // wrapper around a pure helper. These tests drive the helpers directly
 // against captured stdout/stderr buffers so the full flow — flag-set
-// parsing, project gate, output format, exit code — is unit-covered.
+// parsing, project marker check, output format, exit code — is unit-covered.
 
-// freshProjectAndChdir seeds an initialised .x-plans/ scaffold inside a
+// freshProjectAndChdir seeds an initialized .x-plans/ scaffold inside a
 // temp dir, chdirs into it, and returns the dir. Shared between the four
 // entry-point test groups so each test stays short.
 func freshProjectAndChdir(t *testing.T) string {
@@ -1993,7 +1993,7 @@ func freshProjectAndChdir(t *testing.T) string {
 	return dir
 }
 
-// seedListPlan writes a plan-shaped file at <dir>/<name> with minimal
+// seedListPlan writes a plan-format file at <dir>/<name> with minimal
 // frontmatter (status + single-system) + a body line. Distinct from the
 // pre-existing writePlanFile helper (which takes a raw frontmatter
 // string for the lint-focused tests) — the entry-point tests just need

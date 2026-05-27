@@ -16,14 +16,14 @@ turn cap is hit, the session-end `result` event arrives, or stdout closes.
 Stream-json is one process for the whole session — no `--resume` round
 trips, no context reload per turn.
 
-Wire format notes (the `--input-format stream-json` protocol is
+Protocol format notes (the `--input-format stream-json` protocol is
 reverse-engineered — see github.com/anthropics/claude-code/issues/24594):
 - `--verbose` is required when `--output-format stream-json` is set;
   without it the CLI errors out or emits nothing on recent versions.
 - The agent signals "this turn is done, your move" via a `result` event,
   one per user-message→agent-response cycle. The community docs that
   claim `result` fires only once at session end are wrong (or wrong for
-  the DeepSeek-on-Anthropic-wire compat shim we route through here).
+  the DeepSeek-on-Anthropic-compatible compat shim we route through here).
   Verified empirically across 36+25 event runs: every `assistant` event
   has `stop_reason: None`, every user→agent cycle ends with a `result`.
 - User-message envelope on stdin matches the Agent SDK examples at
@@ -177,8 +177,8 @@ def drive_skill(
         # Accumulate text from this assistant message. We log every
         # assistant event's stop_reason for diagnostic purposes (it is
         # always None when routed through DeepSeek's compat shim — see
-        # wire format notes at top of file) but do NOT key off it.
-        # The turn-end signal in this wire is the `result` event below.
+        # protocol format notes at top of file) but do NOT key off it.
+        # The turn-end signal in this protocol is the `result` event below.
         for block in message.get("content", []) or []:
           if isinstance(block, dict) and block.get("type") == "text":
             last_assistant_text = block.get("text", "")
@@ -229,7 +229,7 @@ def drive_skill(
             "driver",
             "stdin pipe closed before 'yes' could be sent; agent exited "
             "after result. multi-turn auto-yes not supported on this "
-            "Claude Code version / wire combination.",
+            "Claude Code version / protocol combination.",
           )
           break
         run.yes_replies += 1

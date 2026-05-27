@@ -4,7 +4,7 @@
 
 DeepEval ships with first-class OpenAI/Anthropic support but no DeepSeek
 backend. We subclass DeepEvalBaseLLM and point the OpenAI SDK at
-api.deepseek.com — that endpoint is OpenAI-wire-compatible (see
+api.deepseek.com — that endpoint is OpenAI-protocol-compatible (see
 docs/internal/manually-triggered-workflows.md).
 """
 

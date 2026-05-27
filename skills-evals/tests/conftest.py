@@ -48,7 +48,7 @@ def pytest_collection_modifyitems(items: list[Item]) -> None:
   """Run smoke tests before scenario tests.
 
   A scenario test costs 5–15 min of real DeepSeek + Claude time. The
-  smoke test costs seconds. Running smoke first means a wire-format /
+  smoke test costs seconds. Running smoke first means a protocol-format /
   install / env regression fails fast instead of being masked by a
   scenario timeout.
   """

@@ -67,7 +67,7 @@ readonly CODEX_HOOKS_FILE="hooks.json"
 # skipFromEmbed entry — the one file the embed walk omits.
 readonly EMBED_README="README.md"
 
-# Build stamp consumed by version-shape assertions.
+# Build stamp consumed by version-format assertions.
 readonly E2E_VERSION="v0.0.0-e2e"
 
 # Compositions so call sites read as plain English.
@@ -163,7 +163,7 @@ fresh_project() {
 }
 
 # reset_user_home — wipe the configured-agent dirs and ~/${XX_HOME_DIR}
-# between cases so the next case starts from a known shape. Uses the
+# between cases so the next case starts from a known state. Uses the
 # constants block so adding a new agentTarget only requires updating that
 # block.
 reset_user_home() {
@@ -174,12 +174,12 @@ reset_user_home() {
 }
 
 # seed_project_scaffold <dir> — creates the minimal "fully initialized x-x
-# project" shape that `checkProject` requires: the planDir directory plus
+# project" structure that `checkProject` requires: the planDir directory plus
 # the two scaffold files (`_data_systems.yaml`, `_config.lock`) that
 # `x-x init` would write. Used by every `plan *` / `skill remove --project`
-# case that exercises the gate's happy path without running `x-x init`
-# itself. The two files are zero-byte placeholders — exactly what an
-# empty fresh project looks like — so individual cases can overwrite
+# case that exercises the project-marker check's happy path without running
+# `x-x init` itself. The two files are zero-byte placeholders — exactly what
+# an empty fresh project looks like — so individual cases can overwrite
 # them with case-specific content (e.g. a custom prefix_width lock).
 seed_project_scaffold() {
   mkdir -p "$1/${PLANS_DIR}"
@@ -303,7 +303,7 @@ write_registry() {
 case_start "build x-x"
 (
   cd "$REPO_ROOT"
-  # -ldflags stamps a recognizable version so installer-shape assertions
+  # -ldflags stamps a recognizable version so installer-format assertions
   # can verify the last whitespace token on line 1 of --version.
   #
   # -buildvcs=false disables Go's automatic embedding of VCS metadata into
@@ -440,16 +440,14 @@ for base in "${CLAUDE_SKILLS_REL}" "${CODEX_SKILLS_REL}"; do
     esac
   done
 done
-# User-scope MUST NOT drop the project-scoped ${PLANS_DIR}/ scaffold into
-# the user's terminal cwd. Earlier the scaffold write was unconditional;
-# that polluted unrelated working directories and tripped the project
-# gate on every subsequent x-x invocation in the same shell.
-if [ -e "${USER_INIT_CWD}/${PLANS_DIR}" ]; then
-  fail "user-scope init must not leak ${PLANS_DIR}/ into cwd" \
-       "found: ${USER_INIT_CWD}/${PLANS_DIR}"
-else
-  ok "user-scope init leaves cwd's ${PLANS_DIR} untouched"
-fi
+# User-scope MUST also drop the ${PLANS_DIR}/ scaffold into cwd. Scope
+# only decides where SKILLS land (project tree vs \$HOME); the project
+# marker check keyed on <cwd>/${PLANS_LOCK_PATH} is what makes cwd usable
+# with `/x-plan`, `/x-x`, and the `x-x plans *` CLI subcommands.
+assert_is_file "user-scope seeds ${PLANS_LOCK_PATH} in cwd" \
+  "${USER_INIT_CWD}/${PLANS_LOCK_PATH}"
+assert_is_file "user-scope seeds ${PLANS_SYSTEMS_PATH} in cwd" \
+  "${USER_INIT_CWD}/${PLANS_SYSTEMS_PATH}"
 
 # ---------- init interactive prompts ----------
 #
@@ -607,7 +605,7 @@ assert_contains "diagnostic" "$RUN_ERR" "invalid --scope"
 #
 # All five prompts have flag twins; passing every flag drives runInit
 # end-to-end without ever touching stdin (true non-interactive). Each
-# case below pins the wire-format of `_config.lock` so any drift between
+# case below pins the protocol-format of `_config.lock` so any drift between
 # the flag values and what lands on disk fails loud.
 
 case_start "x-x init --prefix-width / --max-plan-lines / --review-per (all flags)"
@@ -804,8 +802,8 @@ run_capture "" init --scope project
 # (fastMode for Claude, hooks for both) must land alongside.
 echo '{"USER": "EDIT", "model": "sonnet"}' > "$PROJ_RE/${CLAUDE_SETTINGS_PATH}"
 echo '{"USER": "EDIT"}'                    > "$PROJ_RE/${CODEX_HOOKS_PATH}"
-# Documented re-init flow: delete the lock to unblock the project-gate
-# refusal. The lock will be re-written by init from the wizard/flag
+# Documented re-init flow: delete the lock to unblock the project-marker
+# check's refusal. The lock will be re-written by init from the wizard/flag
 # choices for this run.
 rm "$PROJ_RE/${PLANS_LOCK_PATH}"
 run_capture "" init --scope project
@@ -828,8 +826,9 @@ cd "$PROJ_IDEM_JSON"
 run_capture "" init --scope project
 echo '{"model": "sonnet"}' > "$PROJ_IDEM_JSON/${CLAUDE_SETTINGS_PATH}"
 echo '{"model": "sonnet"}' > "$PROJ_IDEM_JSON/${CODEX_HOOKS_PATH}"
-# First re-run materializes the merged shape. Lock-delete is the
-# documented gate-bypass; init recreates it from this run's choices.
+# First re-run materializes the merged form. Lock-delete is the
+# documented project-marker-check bypass; init recreates it from this
+# run's choices.
 rm "$PROJ_IDEM_JSON/${PLANS_LOCK_PATH}"
 run_capture "" init --scope project
 SNAP_CLAUDE_1="$(cat "$PROJ_IDEM_JSON/${CLAUDE_SETTINGS_PATH}")"
@@ -845,7 +844,7 @@ assert_eq "${CODEX_HOOKS_FILE} idempotent"     "$SNAP_CODEX_1"  "$SNAP_CODEX_2"
 
 # ---------- merge: user scalar wins on a conflict ----------
 #
-# `fastMode: false` is the canonical "I opted OUT" choice. A bundled
+# `fastMode: false` is the standard "I opted OUT" choice. A bundled
 # `fastMode: true` must NEVER flip the user's explicit `false`. Bundled
 # object keys missing from the existing file still land (the `hooks`
 # object below) — only the conflicting scalar is left alone.
@@ -868,7 +867,7 @@ assert_contains    "bundled hooks still added"       "$SCALAR_BODY" 'x-x plans l
 # A user-authored hook entry (matcher: Read, calling their own tool) must
 # survive AND our bundled Write|Edit|MultiEdit entry must land alongside.
 # Both should be present in the resulting PostToolUse array. This is the
-# load-bearing case for the merge being additive on arrays.
+# critical case for the merge being additive on arrays.
 
 case_start "init re-run merge: hook arrays are unioned"
 reset_user_home
@@ -994,7 +993,7 @@ done
 #
 # The seeded files below mirror the bundled records in agents/claude/
 # settings.json and agents/codex/hooks.json. If those embed files change
-# shape, update this fixture in lockstep — drift surfaces as an assertion
+# form, update this fixture in lockstep — drift surfaces as an assertion
 # failure here because the un-merge stops removing the now-stale records.
 
 case_start "skill remove --project un-merges bundled hook records"
@@ -1173,7 +1172,7 @@ run_capture "" init --scope user
 echo '{"USER": "EDIT"}' > "$HOME/${CLAUDE_SETTINGS_PATH}"
 echo '{"USER": "EDIT"}' > "$HOME/${CODEX_HOOKS_PATH}"
 # Even under --scope user, init writes .x-plans/ into cwd — the project
-# gate is keyed on the cwd-local lock regardless of skill scope.
+# marker check is keyed on the cwd-local lock regardless of skill scope.
 rm "$PROJ_USER_MERGE/${PLANS_LOCK_PATH}"
 run_capture "" init --scope user
 assert_eq "exit 0" "$RUN_RC" "0"
@@ -1565,7 +1564,7 @@ assert_eq "exit 0" "$RUN_RC" "0"
 assert_eq "non-matching ignored" "$RUN_OUT" "$(prefix "$DEFAULT_PREFIX_WIDTH" 8)"
 
 case_start "x-x plans next-prefix ignores prefixes WIDER than the configured width"
-# scanHighestPrefix anchors on `<width digits>-` (same shape listPlans uses)
+# scanHighestPrefix anchors on `<width digits>-` (same format listPlans uses)
 # so a 5-digit-prefixed file at width=4 is invisible — otherwise next-prefix
 # would hand out numbers based on files list / lint silently ignore.
 PROJ_NP_WIDE="$(fresh_project)"
@@ -1776,7 +1775,7 @@ assert_eq "exit 0" "$RUN_RC" "0"
 assert_eq "no rows for unknown id" "$RUN_OUT" ""
 [ -z "$RUN_ERR" ] && ok "no stderr noise for unknown id" || fail "no stderr noise for unknown id" "got: $RUN_ERR"
 
-case_start "x-x plans list --system <id> doesn't match display name even when shaped similarly"
+case_start "x-x plans list --system <id> doesn't match display name even when formed similarly"
 # Plan frontmatter id is `checkout-service`; passing the display name
 # `Checkout Service` (with space + capitals) must not match. Pins that
 # the filter is a literal id string-compare, not a slugify-and-compare.
@@ -1870,7 +1869,7 @@ systems: [payment-service]
 this one is about exponential retry backoff
 EOF
 # An unrelated plan on a different system; same keyword in body — must be
-# gated out by --system before the overflow narrow sees it.
+# filtered out by --system before the overflow narrow sees it.
 cat > "$PROJ_PSI6/${PLANS_DIR}/$(prefix "$DEFAULT_PREFIX_WIDTH" 99)-unrelated.md" <<EOF
 ---
 status: valid
@@ -1882,7 +1881,7 @@ cd "$PROJ_PSI6"
 run_capture "" plans list --system payment-service --overflow-keywords retry
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_contains "plan007 in match"      "$RUN_OUT" "plan007"
-assert_not_contains "unrelated gated out before narrow" "$RUN_OUT" "unrelated"
+assert_not_contains "unrelated filtered out before narrow" "$RUN_OUT" "unrelated"
 n="$(printf '%s\n' "$RUN_OUT" | grep -c '^.')"
 assert_eq "exactly one match (id ∩ keyword)" "$n" "1"
 
@@ -1902,7 +1901,7 @@ assert_eq "both rows pass through (threshold not exceeded)" "$n" "2"
 case_start "x-x plans list --status + --system + --overflow-keywords narrows status∩system > threshold"
 # The only test in the suite that proves --overflow-keywords actually does
 # the work when both --status and --system are already applied. Pre-overflow
-# count must exceed threshold AFTER status+system gating; the distractors
+# count must exceed threshold AFTER status+system filtering; the distractors
 # that share status AND system but lack the body keyword can ONLY be
 # eliminated by the overflow narrow. Two further distractors carry the
 # keyword in body but fail one of status / system — they assert the layer
@@ -1956,8 +1955,8 @@ run_capture "" plans list --status valid --system payment-service --overflow-key
 assert_eq           "exit 0"                                $RUN_RC "0"
 assert_contains     "plan005 in match"                      "$RUN_OUT" "plan005"
 assert_contains     "plan017 in match"                      "$RUN_OUT" "plan017"
-assert_not_contains "wrong-status gated by --status filter" "$RUN_OUT" "wrong-status"
-assert_not_contains "wrong-system gated by --system filter" "$RUN_OUT" "wrong-system"
+assert_not_contains "wrong-status filtered by --status filter" "$RUN_OUT" "wrong-status"
+assert_not_contains "wrong-system filtered by --system filter" "$RUN_OUT" "wrong-system"
 n="$(printf '%s\n' "$RUN_OUT" | grep -c '^.')"
 assert_eq "exactly two matchers survive (status ∩ system ∩ keyword)" "$n" "2"
 
@@ -2144,7 +2143,7 @@ case_start "x-x plans list overflow + match count above threshold returned in fu
 PROJ_OK12="$(fresh_project)"
 seed_project_scaffold "$PROJ_OK12"
 # 25 plans, ALL match the keyword. The narrow returns 25 (matches are
-# not re-truncated — the threshold gates entry to the narrow, not the
+# not re-truncated — the threshold restricts entry to the narrow, not the
 # output size).
 seed_many_plans "$PROJ_OK12/${PLANS_DIR}" 25 "matches every plan"
 cd "$PROJ_OK12"
@@ -2342,7 +2341,7 @@ EOF
 cd "$PROJ_LN_CD"
 run_capture "" plans lint
 assert_eq "exit 1"                  "$RUN_RC" "1"
-assert_contains "shape finding"     "$RUN_OUT" "is not an ISO 8601 UTC timestamp"
+assert_contains "format finding"    "$RUN_OUT" "is not an ISO 8601 UTC timestamp"
 
 case_start "x-x plans lint flags date-only created (regression for YYYY-MM-DD)"
 PROJ_LN_DO="$(fresh_project)"
@@ -2427,7 +2426,7 @@ assert_contains "filename↔title"    "$RUN_OUT" "does not match slugify(title)"
 #
 # Partial registry entries (missing `id:` OR missing `name:`) are dropped
 # silently by parseRegistry — the per-file lint surfaces them at the
-# point a plan tries to reference the half-defined entry.
+# point a plan tries to reference the partially defined entry.
 
 case_start "lint passes: id frontmatter + display-name EARS subject resolves cleanly"
 PROJ_ID_HP="$(fresh_project)"
@@ -2834,7 +2833,7 @@ assert_eq "lint exit 0 multi-element symmetric" "$RUN_RC" "0"
 
 case_start "lint flags only the asymmetric pair in a multi-element extends"
 # C extends [A, B]. A has the back link; B does not. Lint must catch the
-# B half without false-flagging A.
+# B side without false-flagging A.
 PROJ_REL_PA="$(fresh_project)"
 seed_project_scaffold "$PROJ_REL_PA"
 write_registry "$PROJ_REL_PA/${PLANS_DIR}" "Auth Service"
@@ -2844,8 +2843,8 @@ write_relation_plan "$PROJ_REL_PA/${PLANS_DIR}" "${rel_b}.md" "valid" ""
 cd "$PROJ_REL_PA"
 run_capture "" plans lint
 assert_eq "exit 1"                                  "$RUN_RC" "1"
-assert_contains "asymmetric half flagged"           "$RUN_OUT" "extends \"${rel_b}\" but \"${rel_b}\" does not list this plan in its \`extended_by:\` array"
-assert_not_contains "symmetric half not flagged"    "$RUN_OUT" "extends \"${rel_a}\" but \"${rel_a}\" does not list"
+assert_contains "asymmetric side flagged"           "$RUN_OUT" "extends \"${rel_b}\" but \"${rel_b}\" does not list this plan in its \`extended_by:\` array"
+assert_not_contains "symmetric side not flagged"    "$RUN_OUT" "extends \"${rel_a}\" but \"${rel_a}\" does not list"
 
 # ---------- plan slugify ----------
 
@@ -2918,7 +2917,7 @@ assert_eq "exit 0"           "$RUN_RC" "0"
 assert_eq "ws-collapsed slug" "$RUN_OUT" "foo-bar-baz"
 
 case_start "x-x plans slugify works outside an x-x project"
-# Pure transform; no project gate. Run from a directory with no .x-plans/
+# Pure transform; no project-marker check. Run from a directory with no .x-plans/
 # to pin that contract.
 PROJ_SG="$(fresh_project)"
 cd "$PROJ_SG"

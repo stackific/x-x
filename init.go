@@ -74,7 +74,7 @@ func runInit(args []string) {
 	// or `--review-per ''` slip through and silently fall back to defaults
 	// (or, worse, re-prompt the user in CI). flag.Visit walks only flags
 	// that were actually set on the command line — exactly the set we want
-	// to gate.
+	// to check.
 	validateInitFlagsOrExit(flags, prefixWidthFlag, maxPlanLinesFlag, &agentsFlag, reviewPerFlag)
 
 	cwd, err := os.Getwd()
@@ -84,11 +84,11 @@ func runInit(args []string) {
 		exitErr(err)
 	}
 	// Refuse re-init on a fully-initialized project. checkProject is the
-	// same gate `requireProject` uses, so a directory that passes the
-	// project-scope gate elsewhere triggers this refusal here. Re-running
+	// same check `requireProject` uses, so a directory that passes the
+	// project-scope marker check elsewhere triggers this refusal here. Re-running
 	// init on a fresh / partially-initialized directory still works,
 	// which is what writePlansScaffold's writeIfAbsent semantics rely on.
-	// Gate runs AFTER flag validation so a real usage error (bad flag,
+	// The check runs AFTER flag validation so a real usage error (bad flag,
 	// stray positional) still wins the diagnostic.
 	if checkProject() == nil {
 		fmt.Fprintln(os.Stderr, projectAlreadyInitBanner)
@@ -158,44 +158,34 @@ func runInit(args []string) {
 		installForTarget(&cfg.agents[i], skills, scopeRoot, skillsSource, agentsRoot, useSymlink)
 	}
 
-	// .x-plans/ scaffold is project-scoped — it pins per-project plan
-	// tooling defaults and seeds the systems registry that THIS project's
-	// plans reference. User-scope install is about cross-project skill
-	// installation (~/.claude/skills, ~/.agents/skills); it has no business
-	// dropping a plans scaffold into whatever cwd happens to be the user's
-	// terminal pwd. docs/public/reference.md describes user-scope as
-	// $HOME-only for that reason.
+	// `.x-plans/` scaffold lives in cwd regardless of scope. Scope only
+	// decides where SKILLS land (project tree vs $HOME); the project marker
+	// check keyed on `<cwd>/.x-plans/_config.lock` is what makes cwd usable
+	// with `/x-plan`, `/x-x`, and the `x-x plans *` CLI subcommands. A
+	// user-scope install that left cwd un-scaffolded produced skills with
+	// nowhere to anchor plans — every subsequent command tripped the
+	// `not an x-x project` check. Writing the scaffold under both scopes
+	// keeps cwd a real x-x project either way.
 	//
-	// Gating on scope keeps `x-x init --scope user` from polluting an
-	// unrelated directory with `.x-plans/_config.lock`, which the project
-	// gate would then mistake for an initialized project on every
-	// subsequent invocation.
-	if cfg.scope == scopeProject {
-		// Failures here are non-fatal — they downgrade to a warning because
-		// the skill install (the primary purpose) already succeeded.
-		if err := writePlansScaffold(cwd, cfg); err != nil {
-			fmt.Fprintf(os.Stderr, "warning: %v\n", err)
-		}
+	// Failures here are non-fatal — they downgrade to a warning because
+	// the skill install (the primary purpose) already succeeded.
+	if err := writePlansScaffold(cwd, cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
 	}
 
 	fmt.Println("\nDone.")
-	// Tip is project-scoped too: a user-scope install hasn't created any
-	// plan files for the user to commit.
-	if cfg.scope == scopeProject {
-		// Plan files are first-class repo content (frontmatter + EARS
-		// tasks), not local state. Nudge the user to commit them so the
-		// team shares the same plan history. Phrased as a tip rather than
-		// auto-editing .gitignore so we never touch git config behind the
-		// user's back.
-		fmt.Printf("\nTip: commit %s/ to git so your team shares plan history.\n", plansDir)
-	}
+	// Plan files are first-class repo content (frontmatter + EARS tasks),
+	// not local state. Nudge the user to commit them so the team shares
+	// the same plan history. Phrased as a tip rather than auto-editing
+	// .gitignore so we never touch git config behind the user's back.
+	fmt.Printf("\nTip: commit %s/ to git so your team shares plan history.\n", plansDir)
 }
 
 // validateInitFlagsOrExit is the runInit-facing wrapper around
 // validateInitFlags: prints the first violation via exitErr and never
 // returns. Extracted into a one-liner so runInit's body stays under the
 // linter's cyclomatic-complexity ceiling — the actual validation logic
-// (and its testable error-returning shape) lives in validateInitFlags.
+// (and its testable error-returning form) lives in validateInitFlags.
 func validateInitFlagsOrExit(flags *flag.FlagSet, prefixWidth, maxPlanLines *int, agents *stringSliceFlag, reviewPer *string) {
 	if err := validateInitFlags(flags, prefixWidth, maxPlanLines, agents, reviewPer); err != nil {
 		exitErr(err)
@@ -533,7 +523,7 @@ func writePlansScaffold(cwd string, cfg initConfig) error {
 	if err := writeIfAbsent(filepath.Join(dir, plansSystemsFile), nil); err != nil {
 		return err
 	}
-	// Inline anonymous struct: the lock file is JSON-shaped, but the only
+	// Inline anonymous struct: the lock file is JSON-formatted, but the only
 	// place we materialize it is here, so a dedicated type would be overkill.
 	lock := struct {
 		PrefixWidth  int    `json:"prefix_width"`
@@ -620,7 +610,7 @@ func resolveScope(flagValue string, in io.Reader) (initScope, error) {
 	return parseScope(flagValue)
 }
 
-// parseScope is the canonical string → initScope mapper. Used by both
+// parseScope is the standard string → initScope mapper. Used by both
 // resolveScope (legacy flag path) and initFlags.toConfig (all-flags
 // non-interactive path) so the accepted vocabulary lives in one place.
 func parseScope(s string) (initScope, error) {
@@ -634,7 +624,7 @@ func parseScope(s string) (initScope, error) {
 	}
 }
 
-// parseReviewPer is the canonical validator for the review_per
+// parseReviewPer is the standard validator for the review_per
 // value, accepted by both --review-per and the line prompt. Returning
 // the input unchanged on success keeps callers honest that the only thing
 // the value passes through is the allowlist check.
@@ -905,7 +895,7 @@ func listSkills(source string) ([]string, error) {
 // installSkill installs one skill at one destination using the chosen
 // strategy (symlink or copy). Re-runs always overwrite: skills are pure
 // repo-shipped content, ownership of the destination is not tracked, and
-// the `ownedSkills` allowlist already gates `skill remove` so user-authored
+// the `ownedSkills` allowlist already restricts `skill remove` so user-authored
 // dirs with foreign names are never touched on the way out.
 func installSkill(src, dest string, useSymlink bool) error {
 	// Clean any prior install (or stray content) at dest. RemoveAll on a
@@ -976,7 +966,7 @@ func copyFile(src, dest string) (retErr error) {
 	}
 	defer func() {
 		// Promote close error if we don't already have a copy error.
-		// This is the canonical "Close-on-defer for writers" idiom.
+		// This is the standard "Close-on-defer for writers" idiom.
 		if cerr := out.Close(); retErr == nil {
 			retErr = cerr
 		}
@@ -994,7 +984,7 @@ func exitErr(err error) {
 }
 
 // notProjectBanner is the user-facing diagnostic shared by every project
-// gate. Deliberately does NOT name any of the on-disk files we check for:
+// marker check. Deliberately does NOT name any of the on-disk files we check for:
 // users only need to know the directory isn't initialized and that
 // `x-x init` is the fix. Keeping the message uniform across every
 // command means the failure mode is instantly recognizable.
@@ -1012,14 +1002,14 @@ const projectAlreadyInitBanner = "error: x-x project already initialized in this
 //	plansDir/plansConfigLockFile (the plan-tooling lock pin)
 //
 // Missing → not an initialized project. Other files under plansDir
-// (the systems registry, plan files) are not required by the gate.
+// (the systems registry, plan files) are not required by the check.
 // Keying solely on the lock file is what makes the documented "delete
 // the lock file to re-init" flow work: the user can opt back into a
 // fresh init without losing plans or the systems registry. The function
 // deliberately returns a generic `not an x-x project` error rather than
 // naming the missing file so the diagnostic stays uniform with the
 // banner requireProject prints. Separated from requireProject so unit
-// tests can exercise the gate without exiting the process.
+// tests can exercise the check without exiting the process.
 func checkProject() error {
 	if _, err := os.Stat(filepath.Join(plansDir, plansConfigLockFile)); err != nil {
 		return fmt.Errorf("not an x-x project")
@@ -1027,7 +1017,7 @@ func checkProject() error {
 	return nil
 }
 
-// requireProject is the CLI gate that every project-level subcommand
+// requireProject is the CLI check that every project-level subcommand
 // (`plans *`, `skills remove --project`) calls before doing real work.
 // When checkProject fails it prints the shared banner and exits 2 — the
 // same code used for usage errors, since "wrong directory" is a usage

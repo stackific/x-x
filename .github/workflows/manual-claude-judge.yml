@@ -39,7 +39,7 @@ jobs:
       # Documented in docs/internal/manually-triggered-workflows.md. The
       # pytest fixture mirrors DEEPSEEK_API_KEY into ANTHROPIC_AUTH_TOKEN
       # so the judge (DeepSeek direct) and the agent (DeepSeek via
-      # Anthropic-compatible wire) share one secret.
+      # Anthropic-compatible endpoint) share one secret.
       ANTHROPIC_BASE_URL: https://api.deepseek.com/anthropic
       ANTHROPIC_AUTH_TOKEN: ${{ secrets.DEEPSEEK_API_KEY }}
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
@@ -70,7 +70,7 @@ jobs:
           node-version: '22'
 
       # Claude Code's `--input-format stream-json` is reverse-engineered
-      # (see github.com/anthropics/claude-code/issues/24594). The wire
+      # (see github.com/anthropics/claude-code/issues/24594). The protocol
       # format can change between versions, so pinning is preferable to
       # @latest. Bump intentionally after verifying the smoke test still
       # passes against the new version.
@@ -90,7 +90,7 @@ jobs:
         run: uv sync --frozen || uv sync
 
       # `test_stream_json_smoke.py` runs first (alphabetical pytest order)
-      # — a wire-format / env / version failure fails it without burning
+      # — a protocol-format / env / version failure fails it without burning
       # a full planner+executor cycle on the real scenario.
       - name: run pytest
         working-directory: skills-evals

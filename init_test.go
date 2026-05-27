@@ -29,7 +29,7 @@ func chdir(t *testing.T, dir string) {
 	t.Cleanup(func() { _ = os.Chdir(orig) })
 }
 
-// TestPromptScope_Project covers the canonical "1" → scopeProject mapping.
+// TestPromptScope_Project covers the standard "1" → scopeProject mapping.
 // The numeric encoding is part of the user contract (printed in the prompt),
 // so any silent renumber would break scripted installs piping "1\n".
 func TestPromptScope_Project(t *testing.T) {
@@ -71,7 +71,7 @@ func TestPromptScope_TrimsWhitespace(t *testing.T) {
 // TestPromptScope_NoTrailingNewline covers the io.EOF-after-content case:
 // ReadString returns "2", io.EOF together when stdin closes without a
 // final newline. We must honor the choice instead of erroring — heredoc
-// callers and `printf` (without -n) routinely hit this shape.
+// callers and `printf` (without -n) routinely hit this pattern.
 func TestPromptScope_NoTrailingNewline(t *testing.T) {
 	// ReadString returns the line + io.EOF when the input has no newline;
 	// promptScope is expected to honor the choice in that case.
@@ -102,11 +102,11 @@ func TestPromptScope_Empty(t *testing.T) {
 	}
 }
 
-// ---------- project gate ----------
+// ---------- project marker check ----------
 
 // seedProject creates a fully initialized x-x project scaffold inside
 // dir (plansDir/, the empty systems registry, and the config lock) so
-// checkProject() returns nil. Used by every test that needs the gate
+// checkProject() returns nil. Used by every test that needs the check
 // to pass without invoking the full runInit flow.
 func seedProject(t *testing.T, dir string) {
 	t.Helper()
@@ -121,7 +121,7 @@ func seedProject(t *testing.T, dir string) {
 }
 
 // TestCheckProject_FullyInitialized is the happy path: with plansDir AND
-// both scaffold files present, the gate passes and project-level
+// both scaffold files present, the check passes and project-level
 // subcommands proceed.
 func TestCheckProject_FullyInitialized(t *testing.T) {
 	dir := t.TempDir()
@@ -151,7 +151,7 @@ func TestCheckProject_MissingDir(t *testing.T) {
 	}
 }
 
-// TestCheckProject_PlanIsFileNotDir hardens the gate against the
+// TestCheckProject_PlanIsFileNotDir hardens the check against the
 // pathological case where `.x-plans` exists but as a regular file — must
 // still fail, since `os.ReadDir` on a file would crash the downstream
 // plan-list / next-prefix logic.
@@ -166,10 +166,10 @@ func TestCheckProject_PlanIsFileNotDir(t *testing.T) {
 	}
 }
 
-// TestCheckProject_SystemsFileNotRequired pins the gate's lock-file-only
+// TestCheckProject_SystemsFileNotRequired pins the check's lock-file-only
 // contract: removing `_data_systems.yaml` (user deleted it, or never
 // populated it) does NOT downgrade the directory to "uninitialized".
-// The lock file is the canonical project marker — deleting it (and only
+// The lock file is the sole project marker — deleting it (and only
 // it) is the documented way to re-init without losing the systems
 // registry or any plan files.
 func TestCheckProject_SystemsFileNotRequired(t *testing.T) {
@@ -282,7 +282,7 @@ func TestPromptAgents_OutOfRange(t *testing.T) {
 }
 
 // TestPromptAgents_NonNumeric covers the "typed the key instead of the
-// number" case. Two valid input shapes are easy to confuse, so the prompt
+// number" case. Two valid input forms are easy to confuse, so the prompt
 // must error rather than guess — the user should retry.
 func TestPromptAgents_NonNumeric(t *testing.T) {
 	if _, err := promptAgents(strings.NewReader("claude\n")); err == nil {
@@ -345,7 +345,7 @@ func TestResolveAgents_FlagBeatsPrompt(t *testing.T) {
 
 // TestResolveAgents_EmptyFlagPromptsAndDefaults covers the inverse: no
 // flag → fall into the prompt → empty input → all agents. End-to-end
-// shape of the "user runs `x-x init --scope project` piping nothing" path.
+// form of the "user runs `x-x init --scope project` piping nothing" path.
 func TestResolveAgents_EmptyFlagPromptsAndDefaults(t *testing.T) {
 	// Empty flag → prompt path → empty input → all agents.
 	got, err := resolveAgents(nil, strings.NewReader(""))
@@ -440,7 +440,7 @@ func TestPromptPrefixWidth_Invalid(t *testing.T) {
 // TestPromptMaxPlanLines_Default and _ValidInt mirror the prefix-width
 // pair: shared helper readPositiveIntLine, but each prompt's own
 // printed text + default needs end-to-end coverage so a typo in the
-// constant wiring surfaces here.
+// constant connection surfaces here.
 func TestPromptMaxPlanLines_Default(t *testing.T) {
 	got, err := promptMaxPlanLines(strings.NewReader("\n"))
 	if err != nil {
@@ -542,7 +542,7 @@ func TestValidatePositiveInt(t *testing.T) {
 
 // TestResolveInitConfig_AllFlagsSkipPrompts proves the short-circuit:
 // every flag set → no stdin read, returned config carries the flag
-// values verbatim. The panicReader is the trip-wire.
+// values verbatim. The panicReader is the trip-mark.
 func TestResolveInitConfig_AllFlagsSkipPrompts(t *testing.T) {
 	f := initFlags{
 		agents:       []string{"claude"},
@@ -690,7 +690,7 @@ func TestInitFlags_ToConfig_InvalidValues(t *testing.T) {
 // TestScopeRootFor maps the two valid scope enums to their filesystem
 // roots and asserts the defensive default-branch error fires for an
 // invalid enum value (guards against a future caller passing a
-// non-canonical initScope by accident).
+// non-standard initScope by accident).
 func TestScopeRootFor(t *testing.T) {
 	home := pinHome(t)
 	got, err := scopeRootFor(scopeProject, "/cwd-x")
@@ -718,7 +718,7 @@ func TestScopeRootFor(t *testing.T) {
 // _x-x_shared) so a stricter filter would break the install.
 func TestListSkills(t *testing.T) {
 	dir := t.TempDir()
-	// Bundled-shape sample: regular skill, shared (underscore prefix
+	// Bundled-form sample: regular skill, shared (underscore prefix
 	// allowed), a dotfile dir (must be filtered), and a stray file.
 	for _, name := range []string{"alpha", "_shared", ".hidden"} {
 		if err := os.MkdirAll(filepath.Join(dir, name), 0o700); err != nil {
@@ -803,7 +803,7 @@ func TestWriteIfAbsent_NilContent(t *testing.T) {
 	}
 }
 
-// defaultInitConfig is the canonical "everything at project defaults"
+// defaultInitConfig is the standard "everything at project defaults"
 // initConfig. Centralized so tests can reach for the same baseline
 // rather than hand-rolling struct literals (which would silently drift
 // if the constants ever move).
@@ -815,7 +815,7 @@ func defaultInitConfig() initConfig {
 	}
 }
 
-// TestWritePlansScaffold pins the on-disk wire format of `_config.lock`:
+// TestWritePlansScaffold pins the on-disk protocol format of `_config.lock`:
 // trailing newline, JSON with the three configured fields. Plan tooling
 // (next-prefix, lint) reads these values, so a layout change here would
 // silently miscalibrate every downstream command.
@@ -1087,7 +1087,7 @@ func TestInstallAgentConfig_MergesExistingJSONFile(t *testing.T) {
 }
 
 // TestInstallAgentConfig_MergesExistingJSONFile_UserWinsOnScalar pins
-// the "existing wins on scalar conflict" half of the merge contract.
+// the "existing wins on scalar conflict" side of the merge contract.
 // A user who has explicitly set `fastMode: false` must NOT have it
 // flipped to `true` by a re-run of init.
 func TestInstallAgentConfig_MergesExistingJSONFile_UserWinsOnScalar(t *testing.T) {
@@ -1189,7 +1189,7 @@ func TestMergeJSON_NilExistingTakesBundled(t *testing.T) {
 
 // TestMergeJSON_ObjectsAdditive pins the object-merge path: shared
 // keys recurse (user wins on scalar), keys-only-on-bundle are added,
-// keys-only-on-user survive. This is the shape that lets a user's
+// keys-only-on-user survive. This is the form that lets a user's
 // existing model setting + our hooks both end up in settings.json.
 func TestMergeJSON_ObjectsAdditive(t *testing.T) {
 	existing := map[string]any{"model": "sonnet", "fastMode": false}
@@ -1209,7 +1209,7 @@ func TestMergeJSON_ObjectsAdditive(t *testing.T) {
 	}
 }
 
-// TestMergeJSON_ArraysUnionDedup covers the array-union half of the
+// TestMergeJSON_ArraysUnionDedup covers the array-union side of the
 // merge: bundled entries appended after existing ones in registry order,
 // and entries that deep-equal something already present are skipped so
 // re-running init never produces duplicates.
@@ -1235,7 +1235,7 @@ func TestMergeJSON_ArraysUnionDedup(t *testing.T) {
 // TestMergeJSON_TypeMismatchExistingWins pins the defensive branch in
 // mergeJSON: if the user's value is an array and the bundle's value at
 // the same key is an object (or vice-versa), the user's value survives
-// untouched — we never silently rewrite a shape we don't understand.
+// untouched — we never silently rewrite a structure we don't understand.
 func TestMergeJSON_TypeMismatchExistingWins(t *testing.T) {
 	existing := []any{1, 2}
 	bundled := map[string]any{"k": "v"}
@@ -1358,7 +1358,7 @@ func TestInstallAgentConfig_CopiesMissingFile(t *testing.T) {
 
 // TestInstallAgentConfig_NestedFile covers the recursive case: nested
 // agent-config files (e.g. agents/codex/sessions/*.json hypothetically)
-// must land at the equivalent nested dest path. Pins the walk shape so
+// must land at the equivalent nested dest path. Pins the walk structure so
 // future per-agent subdirs work without code changes.
 func TestInstallAgentConfig_NestedFile(t *testing.T) {
 	src := t.TempDir()
@@ -1466,14 +1466,20 @@ func TestRunInit_UserScope_EndToEnd(t *testing.T) {
 		}
 	}
 
-	// User-scope MUST NOT drop the project-scoped .x-plans/ scaffold into
-	// the user's terminal cwd. Earlier the scaffold write was unconditional;
-	// that polluted unrelated working directories and tripped the project
-	// gate on the next x-x invocation. Gating the scaffold-write on
-	// project scope keeps the user's cwd untouched.
-	if _, err := os.Stat(filepath.Join(cwd, plansDir)); !os.IsNotExist(err) {
-		t.Fatalf("user-scope init leaked %s/ into cwd (%v); should only land for --scope project",
-			plansDir, err)
+	// User-scope MUST also drop the .x-plans/ scaffold into cwd. Scope
+	// only decides where SKILLS land (project tree vs $HOME); the project
+	// check keyed on `<cwd>/.x-plans/_config.lock` is what makes cwd usable
+	// with `/x-plan`, `/x-x`, and the `x-x plans *` CLI subcommands. A
+	// user-scope install that left cwd un-scaffolded produced skills with
+	// nowhere to anchor plans — every subsequent command tripped the
+	// `not an x-x project` check.
+	lockPath := filepath.Join(cwd, plansDir, plansConfigLockFile)
+	if _, err := os.Stat(lockPath); err != nil {
+		t.Fatalf("user-scope init did not seed %s in cwd: %v", lockPath, err)
+	}
+	systemsPath := filepath.Join(cwd, plansDir, plansSystemsFile)
+	if _, err := os.Stat(systemsPath); err != nil {
+		t.Fatalf("user-scope init did not seed %s in cwd: %v", systemsPath, err)
 	}
 }
 
@@ -1636,7 +1642,7 @@ func TestValidateInitFlags_RejectsEmptyReviewPer(t *testing.T) {
 // TestValidateInitFlags_RejectsNonPositiveInts preserves the original
 // validateInitIntFlags contract under its renamed home. Both bad values
 // in one table-driven test so a future int-flag addition slots in by
-// extending the table, not the test function shape.
+// extending the table, not the test function structure.
 func TestValidateInitFlags_RejectsNonPositiveInts(t *testing.T) {
 	cases := []struct {
 		name string

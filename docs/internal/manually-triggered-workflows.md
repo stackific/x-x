@@ -23,10 +23,10 @@ faster than this doc would.
 
 - **File naming.** `.github/workflows/exp-<topic>.yml`. `<topic>` is short
   and kebab-cased (`claude-deepseek-judge`). Once a workflow has produced
-  consistent signal and is ready to gate PRs / post-merge sanity, it drops
+  consistent signal and is ready to guard PRs / post-merge sanity, it drops
   the `exp-` prefix in the same change that adds the `pull_request:` /
   `push:` triggers — see `.github/workflows/windows-cli.yml` for the
-  graduated shape.
+  graduated form.
 - **Trigger.** `workflow_dispatch:` only. Never `push:` / `pull_request:` /
   `schedule:` while a workflow is in the `exp-` phase. The point of the
   `exp-` prefix is "I want to start this myself from the Actions tab."
@@ -174,7 +174,7 @@ signal across multiple runs, it can be merged into a single
 `exp-agent-judge.yml` with an `agent:` input ({`claude-deepseek`,
 `codex-deepseek`, `cursor-anthropic`, …}). The merged workflow keeps
 `workflow_dispatch:` only — it stays manual until we have enough confidence
-to wire it into CI proper.
+to route it into CI proper.
 
 Standalone workflows (the Windows CLI smoke, future per-platform smokes) do
 not get folded in. They keep their own files indefinitely so a platform

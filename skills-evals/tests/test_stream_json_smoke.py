@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Stackific Inc.
-"""Shape-check that the stream-json driver can talk to Claude at all.
+"""Format-check that the stream-json driver can talk to Claude at all.
 
 Runs before test_claude_todo.py (alphabetical pytest order). If THIS test
-fails, the failure is a wire-format / version / API-key issue — not a
+fails, the failure is a protocol-format / version / API-key issue — not a
 skill issue. If only this test passes but test_claude_todo fails, the
 issue is specific to how the skills behave under stream-json input.
 
@@ -43,7 +43,7 @@ def test_stream_json_wire_format(tmp_path: Path) -> None:
     f"smoke test didn't complete: turns={run.turns} "
     f"timed_out={run.timed_out} stderr:\n{run.stderr_tail}"
   )
-  assert not run.timed_out, "smoke test timed out — wire format may be wrong"
+  assert not run.timed_out, "smoke test timed out — protocol format may be wrong"
 
   text_blocks = [
     block.get("text", "")
@@ -53,7 +53,7 @@ def test_stream_json_wire_format(tmp_path: Path) -> None:
     if isinstance(block, dict) and block.get("type") == "text"
   ]
   assert text_blocks, (
-    "no assistant text blocks in transcript — stream-json wire format "
+    "no assistant text blocks in transcript — stream-json protocol format "
     "mismatch (envelope or required flag missing). Transcript types seen: "
     f"{sorted({e.get('type') for e in run.transcript if isinstance(e, dict)})}"
   )

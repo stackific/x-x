@@ -25,9 +25,9 @@ Running `x-x` with no arguments prints the about banner and command list. Use on
 Installs every bundled skill into the locations each agent looks for, then seeds the project's `.x-plans/` scaffold. Five questions run in order; when stdin is a terminal with arrow-key select / multiselect and Shift+Tab back-navigation, so you can revise an earlier answer before submitting the final group. When stdin is piped or redirected, the same questions fall back to line-by-line prompts (which the CI test harness exercises).
 
 1. **Which agents?** Multi-select over every registered agent (Claude Code, Codex CLI today). Blank line / no toggle accepts the default (all agents).
-2. **Which scope?**
-   - **This project only** — writes under the current working directory (`.claude/skills/`, `.agents/skills/`, and seeds `.x-plans/`).
-   - **All my projects (user scope)** — writes under `$HOME` (`~/.claude/skills/`, `~/.agents/skills/`).
+2. **Which scope?** Decides where the bundled SKILLS land. Either way, `.x-plans/` is seeded in the current working directory — that's how the project marker check (`./.x-plans/_config.lock`) recognizes the directory as an x-x project.
+   - **This project only** — skills under the current working directory (`.claude/skills/`, `.agents/skills/`).
+   - **All my projects (user scope)** — skills under `$HOME` (`~/.claude/skills/`, `~/.agents/skills/`).
 3. **Prefix width for plan files** — zero-padded width for plan filenames (e.g. width `4` → `0001-foo.md`). Default: `4`.
 4. **Maximum lines per plan** — cap enforced by `x-x plans lint`. Keeps AI agents on a short leash: forces them to split sprawling work into smaller, reviewable plans. Default: `30`.
 5. **Pause for review after every…** — `task` reviews each EARS criterion as the planner finishes it (tight loop, more interruptions); `plan` reviews only at plan boundaries (looser loop, larger diffs). Default: `task`.
@@ -58,7 +58,7 @@ The following are never touched:
 
 - Folders whose name is not on the bundled-skill allowlist (your own skills sitting alongside ours).
 - Anything in the agent config files outside of their `"hooks"` subtree — top-level keys like `"fastMode"` and any user-authored content. Empty arrays or event-key maps left behind by the un-merge are kept as-is; we subtract records, not containers.
-- The `.x-plans/` scaffold at project scope. Once `init` writes it, it's yours.
+- The `.x-plans/` scaffold in cwd. Once `init` writes it (at any scope), it's yours.
 - Parent directories (`.claude/`, `.codex/`). Only the `skills/` subdirectory under each may be removed, and only when it is empty after cleanup.
 
 ### `x-x skills remove --project`
@@ -67,7 +67,7 @@ Same logic as `--user`, but rooted at the current working directory instead of `
 
 `--user` and `--project` are mutually exclusive; exactly one must be passed.
 
-### Project-scope gate
+### Project-scope marker check
 
 Every `x-x plans` subcommand and `x-x skills remove --project` require `./.x-plans/` to exist — it's how `x-x` recognizes the current directory as an x-x project. If it's missing, the command prints a two-line diagnostic on stderr and exits `2`:
 
@@ -124,13 +124,13 @@ Files matching the filename pattern but missing frontmatter, `status:`, or `syst
 
 ### `x-x plans lint`
 
-Validates every `*.md` plan file in `./.x-plans` against the contract: filename pattern (`<prefix>-<slug>.md`), file length (≤ `max_plan_lines` from `_config.lock`, default 30), YAML frontmatter shape, mandatory `title:` (first key) and `created:` (last key, ISO 8601 UTC timestamp `YYYY-MM-DDTHH:MM:SSZ`), allowed `status:` values, every id in `systems:` is a known `id:` in `.x-plans/_data_systems.yaml`, every slug in `supersedes:` / `superseded_by:` / `extends:` / `extended_by:` resolves to a sibling plan and is not the plan itself, the `supersedes` ↔ `superseded_by` and `extends` ↔ `extended_by` back links are symmetric across plans, filename slug ↔ `slugify(title)` equality, required body sections (`## Goal`, `## Approach`, `## Tasks`), and the set of EARS subject names (each resolved to its registry id) equals the declared `systems:` id set exactly.
+Validates every `*.md` plan file in `./.x-plans` against the contract: filename pattern (`<prefix>-<slug>.md`), file length (≤ `max_plan_lines` from `_config.lock`, default 30), YAML frontmatter format, mandatory `title:` (first key) and `created:` (last key, ISO 8601 UTC timestamp `YYYY-MM-DDTHH:MM:SSZ`), allowed `status:` values, every id in `systems:` is a known `id:` in `.x-plans/_data_systems.yaml`, every slug in `supersedes:` / `superseded_by:` / `extends:` / `extended_by:` resolves to a sibling plan and is not the plan itself, the `supersedes` ↔ `superseded_by` and `extends` ↔ `extended_by` back links are symmetric across plans, filename slug ↔ `slugify(title)` equality, required body sections (`## Goal`, `## Approach`, `## Tasks`), and the set of EARS subject names (each resolved to its registry id) equals the declared `systems:` id set exactly.
 
 ```bash
 x-x plans lint
 ```
 
-Findings go to stdout (one per line, prefixed with the file path); the `<ok>/<failed>` summary goes to stderr. Exit 0 if every file passes, exit 1 if any failed. The project-scope gate above still applies, so a missing `./.x-plans/` exits `2` rather than passing silently.
+Findings go to stdout (one per line, prefixed with the file path); the `<ok>/<failed>` summary goes to stderr. Exit 0 if every file passes, exit 1 if any failed. The project-scope marker check above still applies, so a missing `./.x-plans/` exits `2` rather than passing silently.
 
 ### `x-x plans slugify "<title>"`
 
@@ -140,7 +140,7 @@ Prints the kebab-case slug for a plan title — lowercase the input, replace eve
 x-x plans slugify "Add payment retry policy"   # → add-payment-retry-policy
 ```
 
-Takes exactly one positional argument; quote titles that contain spaces or shell metacharacters. Exits `2` when the argument is missing, when multiple arguments are passed, or when the title contains no characters that survive slugification. No project-scope gate — slugify is a pure transform and runs from anywhere.
+Takes exactly one positional argument; quote titles that contain spaces or shell metacharacters. Exits `2` when the argument is missing, when multiple arguments are passed, or when the title contains no characters that survive slugification. No project-scope marker check — slugify is a pure transform and runs from anywhere.
 
 ## Examples
 

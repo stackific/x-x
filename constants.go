@@ -66,7 +66,7 @@ const (
 	plansSystemsFile = "_data_systems.yaml"
 
 	// planFileExt is the on-disk extension every plan file carries. Pulled
-	// out as a constant so plan.go's filename-shape regexes, glob, and
+	// out as a constant so plan.go's filename-format regexes, glob, and
 	// suffix-trimming all reference the same value — adding a future
 	// alternative extension (e.g. ".plan.md") is then a one-line change.
 	planFileExt = ".md"
@@ -155,7 +155,7 @@ const configHooksKey = "hooks"
 
 // Plan-tooling defaults pinned into .x-plans/_config.lock by
 // writePlansScaffold during `x-x init`. The `x-x plans` subcommands read
-// these values from the lock file at runtime; the binary is the canonical
+// these values from the lock file at runtime; the binary is the standard
 // source for new projects while existing projects keep whatever they
 // pinned on their first `x-x init`. Bump these numbers to change behavior
 // going forward without disturbing prior installs.
@@ -229,7 +229,7 @@ const (
 	sharedDocEars      = "_ears.md"
 )
 
-// ownedSkills is the canonical, exhaustive list of skill directory names
+// ownedSkills is the standard, exhaustive list of skill directory names
 // the binary ships and is allowed to delete. `x-x skills remove` uses this
 // as a strict allowlist — a folder named anything else under .claude/skills
 // or .agents/skills is the user's, never ours, and is always left alone.
@@ -279,7 +279,7 @@ const (
 	// most recent release's metadata. Only the `tag_name` field is read.
 	releasesAPIURL = "https://api.github.com/repos/stackific/x-x/releases/latest"
 
-	// installShURL / installPS1URL are the canonical install-script URLs
+	// installShURL / installPS1URL are the standard install-script URLs
 	// surfaced to the user in the "update available" nudge. The README
 	// and docs/public/getting-started.md should match these strings.
 	installShURL  = "https://stackific.com/x-x/INSTALL.sh"

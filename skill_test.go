@@ -169,7 +169,7 @@ func TestRemoveOurSkillsIn_MissingDirIsSilent(t *testing.T) {
 	}
 }
 
-// hookFixtureJSON is the canonical settings.json/hooks.json shape used by
+// hookFixtureJSON is the standard settings.json/hooks.json structure used by
 // the un-merge tests. The bundled side ships exactly one record; the user
 // side has the same record (deep-equal) plus a hand-written sibling under
 // the same event key, plus a user-added event key the bundle never ships.
@@ -258,7 +258,7 @@ func TestSubtractHooks_PreservesUserTweakedVariant(t *testing.T) {
 
 // TestSubtractHooks_NoOpWhenNotMap pins the "type-mismatch is preserved"
 // contract: a non-map "hooks" value (someone put an array or null there)
-// must not be silently rewritten. We refuse to touch shapes we don't
+// must not be silently rewritten. We refuse to touch structures we don't
 // understand rather than guess.
 func TestSubtractHooks_NoOpWhenNotMap(t *testing.T) {
 	cases := []struct {
@@ -306,7 +306,7 @@ func TestSubtractHooks_BundledEventKeyMissingInUser(t *testing.T) {
 // TestRemoveBundledHooksIn_DropsOursKeepsTheirs is the full file-I/O
 // path: seed a bundle JSON + a user JSON with mixed ownership, run the
 // un-merge, parse the result and assert exactly the deep-equal record is
-// gone. Uses hookFixtureJSON for the canonical shape.
+// gone. Uses hookFixtureJSON for the standard structure.
 func TestRemoveBundledHooksIn_DropsOursKeepsTheirs(t *testing.T) {
 	tmp := t.TempDir()
 	bundleSrc := filepath.Join(tmp, "bundle")
@@ -485,7 +485,7 @@ func TestRunSkillRemove_EndToEnd_HookUnmerge(t *testing.T) {
 }
 
 // seedHookFixture lays down one agent's bundle file + user counterpart on
-// the pinned $HOME. Both files use hookFixtureJSON's shape so the bundled
+// the pinned $HOME. Both files use hookFixtureJSON's structure so the bundled
 // record deep-equals the matching user record after JSON round-trip.
 func seedHookFixture(t *testing.T, home string, target *agentTarget, fname string) {
 	t.Helper()
