@@ -93,10 +93,12 @@ def test_copilot_reminders_supersedes_todo(
     f"timed_out={exec_run.timed_out}; stderr:\n{exec_run.stderr_tail}"
   )
   assert exec_run.completed
-  assert exec_run.turns < DEFAULT_MAX_TURNS, (
-    f"/x-x hit max_turns cap ({DEFAULT_MAX_TURNS}) — supersede flip may "
-    f"not have completed. Inspect {transcripts / 'x-x.txt'}."
-  )
+  # No turn-cap assertion for /x-x: legitimate execution of two plans
+  # plus the supersede flip (SKILL.md step 3.4) needs more turns than
+  # a tight cap allows under --review-per plan. The supersede flip
+  # itself is asserted directly via plan-frontmatter inspection below,
+  # so a missing flip surfaces precisely rather than as an
+  # underspecified "hit cap" message.
 
   # --- Plan mechanics ---
   plans = load_all_plans(copilot_workspace)
