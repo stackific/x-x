@@ -2786,7 +2786,10 @@ try {
   Assert-Eq        'exit 0'                       $RunRC 0
   Assert-IsDir     'install under USERPROFILE'    (Join-Path $env:USERPROFILE (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'no install under project cwd' (Join-Path $projF6 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
-  Assert-NotExists 'no plans dir under user scope' (Join-Path $env:USERPROFILE $STAX_DIR)
+  # $HOME/.stax/ itself exists under user scope — it holds the materialized
+  # embed (binary-owned). The project marker (_config.lock) must NOT leak
+  # there; it lives in cwd's .stax/ only.
+  Assert-NotExists 'no project marker under user home' (Join-Path $env:USERPROFILE (Join-Path $STAX_DIR $STAX_LOCK_FILE))
 } finally { Pop-Location }
 
 Start-Case 'init --agents= (empty value) is rejected'
