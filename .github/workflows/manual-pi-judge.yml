@@ -1,0 +1,70 @@
+name: manual / pi <- llm judge
+
+# Manually-triggered experiment in the agent-eval lineage. Targets the
+# Pi CLI (`pi`, from pi.dev — a minimal terminal coding harness with
+# pluggable provider routing). Drivers, judges, and test files live
+# in a follow-up PR — this workflow ships the scaffold (CLI install,
+# env routing, pytest invocation) so the eval suite can plug in once
+# the pi driver lands.
+#
+# Non-interactive entry: `pi -p "<query>"` with `--mode json` for an
+# NDJSON event stream. Pi supports Anthropic, OpenAI, Google, Azure,
+# and 10+ other providers — DeepSeek routing will be wired in the
+# driver's provider config.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    env:
+      X_X_AGENT_KEY: pi
+
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: install x-x to PATH
+        run: |
+          go install .
+          x-x --version
+
+      # Pi has an npm path too, but the canonical install is the
+      # shell installer documented on pi.dev.
+      - name: install pi cli
+        run: |
+          curl -fsSL https://pi.dev/install.sh | sh
+          pi --version
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - name: install skills-evals deps
+        working-directory: skills-evals
+        run: uv sync --frozen || uv sync
+
+      - name: run pytest
+        working-directory: skills-evals
+        run: uv run pytest
+
+      - name: upload pytest tmp on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: pytest-tmp-${{ github.run_id }}
+          path: /tmp/pytest-of-runner/
+          if-no-files-found: warn
+          retention-days: 14
