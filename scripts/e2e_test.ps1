@@ -439,7 +439,7 @@ function Format-Prefix {
 # override per test.
 function Write-Plan {
   param(
-    [Parameter(Mandatory)][string]$PlansDir,
+    [Parameter(Mandatory)][string]$StaxDir,
     [Parameter(Mandatory)][string]$Name,
     [Parameter(Mandatory)][string]$Status,
     [Parameter(Mandatory)][string]$Systems   # comma-separated kebab ids
@@ -462,7 +462,7 @@ g
 ## Tasks
 - [ ] The Auth Service shall do a thing.
 "@
-  $fullPath = Join-Path $PlansDir $Name
+  $fullPath = Join-Path $StaxDir $Name
   Set-Content -LiteralPath $fullPath -Value $fm -Encoding ascii
 }
 
@@ -470,7 +470,7 @@ g
 # names. Each name's kebab id is derived by lowercase + space→hyphen.
 function Write-Registry {
   param(
-    [Parameter(Mandatory)][string]$PlansDir,
+    [Parameter(Mandatory)][string]$StaxDir,
     [Parameter(Mandatory)][string]$Names   # "Auth Service,Billing Service"
   )
   $lines = @('systems:')
@@ -483,7 +483,7 @@ function Write-Registry {
     $lines += "    brief: seeded by e2e harness"
   }
   $body = ($lines -join "`n") + "`n"
-  Set-Content -LiteralPath (Join-Path $PlansDir $STAX_SYSTEMS_FILE) -Value $body -Encoding ascii
+  Set-Content -LiteralPath (Join-Path $StaxDir $STAX_SYSTEMS_FILE) -Value $body -Encoding ascii
 }
 
 # ---------- build ----------
@@ -1385,7 +1385,7 @@ try {
 # Helper: seed N body-only plans whose body is exactly the supplied content.
 function Write-PlanWithBody {
   param(
-    [Parameter(Mandatory)][string]$PlansDir,
+    [Parameter(Mandatory)][string]$StaxDir,
     [Parameter(Mandatory)][string]$Name,
     [Parameter(Mandatory)][string]$Body
   )
@@ -1396,18 +1396,18 @@ systems: [auth]
 ---
 $Body
 "@
-  Set-Content -LiteralPath (Join-Path $PlansDir $Name) -Value $fm -Encoding ascii
+  Set-Content -LiteralPath (Join-Path $StaxDir $Name) -Value $fm -Encoding ascii
 }
 
 function Add-ManyPlans {
   param(
-    [Parameter(Mandatory)][string]$PlansDir,
+    [Parameter(Mandatory)][string]$StaxDir,
     [Parameter(Mandatory)][int]$Count,
     [string]$Body = 'generic body'
   )
   for ($i = 1; $i -le $Count; $i++) {
     $name = '{0:D4}-plan{1:D3}.md' -f $i, $i
-    Write-PlanWithBody -StaxDir $PlansDir -Name $name -Body "$i $Body"
+    Write-PlanWithBody -StaxDir $StaxDir -Name $name -Body "$i $Body"
   }
 }
 
@@ -1642,7 +1642,7 @@ try {
 # field to trip a single finding.
 function Write-FullPlan {
   param(
-    [Parameter(Mandatory)][string]$PlansDir,
+    [Parameter(Mandatory)][string]$StaxDir,
     [Parameter(Mandatory)][string]$Name,
     [Parameter(Mandatory)][string]$Status,
     [Parameter(Mandatory)][string]$SystemIds,
@@ -1666,7 +1666,7 @@ g
 ## Tasks
 - [ ] The $EarsSubject shall do.
 "@
-  Set-Content -LiteralPath (Join-Path $PlansDir $Name) -Value $body -Encoding ascii
+  Set-Content -LiteralPath (Join-Path $StaxDir $Name) -Value $body -Encoding ascii
 }
 
 Start-Case 'plans lint passes on a clean single-system plan'
