@@ -84,6 +84,19 @@ jobs:
           which task
           task --version
 
+      # `task build` depends on `task frontend:build` (per Taskfile.yml)
+      # so the //go:embed all:frontend/dist directive resolves against a
+      # fresh dist tree. The golang:1.26-bookworm container ships Go but
+      # not Node — install it explicitly here so `npm ci && npm run
+      # build` succeeds before the cross-compile loop runs.
+      - name: install node
+        run: |
+          set -x
+          curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+          apt-get install -y nodejs
+          node --version
+          npm --version
+
       - name: task build
         run: |
           set -x
