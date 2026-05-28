@@ -81,26 +81,43 @@ func TestHandleAPIStats_CountsSystemsAndScopes(t *testing.T) {
 }
 
 // TestReadSystemsForAPI exercises the testable body of handleAPISystems
-// directly against a temp registry file: returns id+name pairs in
-// ascending id order. The pure shape (path in, slice out, no globals)
-// keeps the lookup logic decoupled from the http.Handler so a regression
-// in either layer surfaces independently.
+// directly: returns id+name+scopes triples in ascending id order, with
+// the scopes count tallied from plan files in the same directory. The
+// pure shape (path in, slice out, no globals) keeps the lookup logic
+// decoupled from the http.Handler so a regression in either layer
+// surfaces independently.
 func TestReadSystemsForAPI(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "registry.yaml")
+	staxPath := filepath.Join(dir, staxDir)
+	if err := os.MkdirAll(staxPath, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
 	// Two systems, written out-of-order — the sort below proves we
 	// don't depend on YAML appearance order.
-	body := "systems:\n" +
+	registry := "systems:\n" +
 		"  - id: zeta\n    name: Zeta Service\n" +
 		"  - id: alpha\n    name: Alpha Service\n"
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatalf("seed: %v", err)
+	if err := os.WriteFile(filepath.Join(staxPath, staxSystemsFile), []byte(registry), 0o600); err != nil {
+		t.Fatalf("seed registry: %v", err)
+	}
+	// Seed three plans: two declaring `alpha`, one declaring `zeta`.
+	// Asserts the per-system tally is correct and that a plan can
+	// contribute to more than one system at once.
+	plans := map[string]string{
+		"0001-alpha-only.md":     "---\ntitle: A\nstatus: valid\nsystems: [alpha]\ncreated: 2026-01-01T00:00:00Z\n---\n\n## Goal\nG.\n",
+		"0002-alpha-and-zeta.md": "---\ntitle: B\nstatus: valid\nsystems: [alpha, zeta]\ncreated: 2026-01-02T00:00:00Z\n---\n\n## Goal\nG.\n",
+		"0003-zeta-broken.md":    "no frontmatter — must be ignored\n",
+	}
+	for name, body := range plans {
+		if err := os.WriteFile(filepath.Join(staxPath, name), []byte(body), 0o600); err != nil {
+			t.Fatalf("seed plan %s: %v", name, err)
+		}
 	}
 
-	got := readSystemsForAPI(path)
+	got := readSystemsForAPI(staxPath)
 	want := []systemEntry{
-		{ID: "alpha", Name: "Alpha Service"},
-		{ID: "zeta", Name: "Zeta Service"},
+		{ID: "alpha", Name: "Alpha Service", Scopes: 2},
+		{ID: "zeta", Name: "Zeta Service", Scopes: 1},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("len = %d, want %d (%+v)", len(got), len(want), got)
@@ -117,9 +134,9 @@ func TestReadSystemsForAPI(t *testing.T) {
 // state (no project, or fresh init) — the API must not surface it as
 // an error.
 func TestReadSystemsForAPI_Missing(t *testing.T) {
-	got := readSystemsForAPI(filepath.Join(t.TempDir(), "absent.yaml"))
+	got := readSystemsForAPI(filepath.Join(t.TempDir(), "absent"))
 	if len(got) != 0 {
-		t.Fatalf("expected empty slice for missing file, got %+v", got)
+		t.Fatalf("expected empty slice for missing staxDir, got %+v", got)
 	}
 }
 

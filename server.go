@@ -83,10 +83,15 @@ func mustSubFS(parent embed.FS, dir string) fs.FS {
 
 // systemEntry is the JSON shape for one row in the /api/systems
 // response. id / name come straight from _data_systems.yaml's entries
-// (parseRegistry's byID map carries the same pairs).
+// (parseRegistry's byID map carries the same pairs). scopes is the
+// number of plans in the project that declare this system in their
+// frontmatter `systems:` array — surfaced in the list view so each
+// card can show "N scope(s)" without a per-row /api/systems?id=
+// round-trip.
 type systemEntry struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Scopes int    `json:"scopes"`
 }
 
 // statsResponse is the JSON shape for /api/stats: a liveness probe
@@ -330,7 +335,7 @@ func handleFrontend(w http.ResponseWriter, r *http.Request) {
 func handleAPIStats(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, statsResponse{
 		Version: Version,
-		Systems: len(readSystemsForAPI(filepath.Join(staxDir, staxSystemsFile))),
+		Systems: len(readSystemsForAPI(staxDir)),
 		Scopes:  len(readScopesForAPI(staxDir)),
 	})
 }
@@ -356,7 +361,7 @@ func handleAPISystems(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	if id == "" {
 		writeJSON(w, http.StatusOK, systemsResponse{
-			Systems: readSystemsForAPI(filepath.Join(staxDir, staxSystemsFile)),
+			Systems: readSystemsForAPI(staxDir),
 		})
 		return
 	}
@@ -613,18 +618,44 @@ func enrichRelationSlugs(staxDir string, slugs []string) []scopeRelation {
 }
 
 // readSystemsForAPI is the testable body of handleAPISystems: takes
-// the registry-file path, returns a deterministically-sorted slice of
-// systemEntry. Missing or unparseable files surface as an empty slice,
-// matching the "200 with empty array" contract handleAPISystems
-// guarantees to callers. Sorted by id so a UI can render a stable
-// list without re-sorting client-side.
-func readSystemsForAPI(registryPath string) []systemEntry {
-	reg := parseRegistry(registryPath)
+// the project's stax directory, returns a deterministically-sorted
+// slice of systemEntry. Each row carries the parsed `Scopes` count —
+// the number of plans in the same directory that declare this system
+// in their frontmatter `systems:` array. Missing or unparseable
+// registry files surface as an empty slice, matching the "200 with
+// empty array" contract handleAPISystems guarantees to callers. Sorted
+// by id so a UI can render a stable list without re-sorting
+// client-side.
+func readSystemsForAPI(staxDir string) []systemEntry {
+	reg := parseRegistry(filepath.Join(staxDir, staxSystemsFile))
+	counts := countScopesPerSystem(staxDir)
 	out := make([]systemEntry, 0, len(reg.byID))
 	for id, name := range reg.byID {
-		out = append(out, systemEntry{ID: id, Name: name})
+		out = append(out, systemEntry{ID: id, Name: name, Scopes: counts[id]})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+// countScopesPerSystem walks every plan file in staxDir and tallies
+// how many plans declare each system in their frontmatter `systems:`
+// array. Plans that fail to parse contribute nothing — same warn-and-
+// skip policy parsePlan applies elsewhere; per-row tally errors should
+// never abort the /api/systems response. Returns a map keyed by
+// system id; missing or unparseable staxDir yields an empty map so
+// callers can index into it safely.
+func countScopesPerSystem(staxDir string) map[string]int {
+	out := make(map[string]int)
+	files, _ := filepath.Glob(filepath.Join(staxDir, "*"+planFileExt))
+	for _, f := range files {
+		row, ok := parsePlan(f, io.Discard)
+		if !ok {
+			continue
+		}
+		for _, id := range row.systems {
+			out[id]++
+		}
+	}
 	return out
 }
 

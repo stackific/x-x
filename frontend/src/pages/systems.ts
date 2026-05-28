@@ -1,33 +1,23 @@
 import { api } from "../shared/api";
 import { $, tpl } from "../shared/dom";
 
-// `chaptersFound` / `total` are placeholders mirroring the minibooks layout —
-// the count slot will get a real field name once /api/systems exposes one.
+// Mirrors the Go-side systemEntry in server.go. `scopes` is the live
+// per-system plan count surfaced by /api/systems so the list view can
+// render "N scope(s)" without an extra round-trip.
 type System = {
-  id?: string;
+  id: string;
   name: string;
+  scopes: number;
   brief?: string;
-  chaptersFound?: number;
-  total?: number;
 };
 
 type SystemsResponse = { systems: System[] };
 
-function formatCount(s: System): string {
-  if (s.chaptersFound !== undefined && s.total !== undefined) {
-    return `${s.chaptersFound} / ${s.total} chapters`;
-  }
-  // Placeholder mirroring the minibooks page until /api/systems exposes a
-  // real count. Derived deterministically from id so the same system shows
-  // the same numbers across reloads.
-  const seed = s.id ?? s.name;
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) {
-    h = ((h << 5) - h + seed.charCodeAt(i)) | 0;
-  }
-  const total = 5 + (Math.abs(h) % 8);
-  const found = Math.abs(h >> 3) % (total + 1);
-  return `${found} / ${total} chapters`;
+// formatCount returns the small-text label rendered on each system
+// row. Singular vs plural keeps the wording natural across the "0",
+// "1", and "N" cases.
+function formatCount(n: number): string {
+  return `${n} ${n === 1 ? "scope" : "scopes"}`;
 }
 
 export async function systems(): Promise<void> {
@@ -45,7 +35,7 @@ export async function systems(): Promise<void> {
       if (a && s.id) a.href = `/system?id=${encodeURIComponent(s.id)}`;
       $('[data-slot="name"]', node).textContent = s.name;
       $('[data-slot="brief"]', node).textContent = s.brief ?? "";
-      $('[data-slot="count"]', node).textContent = formatCount(s);
+      $('[data-slot="count"]', node).textContent = formatCount(s.scopes ?? 0);
       frag.appendChild(node);
     }
     host.replaceChildren(frag);
