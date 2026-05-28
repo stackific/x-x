@@ -10,10 +10,12 @@ name: manual / cline <- llm judge
 #        a. Spawn `cline --yolo --json -c <ws> -t <s>` per skill
 #           invocation (single-shot subprocess; YOLO mode auto-approves
 #           every tool call). The cline driver inlines the SKILL.md off
-#           `<ws>/.claude/skills/<skill>/SKILL.md` into the prompt
+#           `<ws>/.cline/skills/<skill>/SKILL.md` into the prompt
 #           because cline does not resolve slash commands in headless
 #           mode — same workaround the opencode driver used before
-#           sst/opencode#2348 landed.
+#           sst/opencode#2348 landed. `x-x init --agents cline` (now a
+#           first-class entry in agentTargets) writes the SKILL.md
+#           tree exactly where the driver reads it.
 #        b. Provider routing comes from cline's on-disk auth state
 #           (`cline auth --provider deepseek --apikey <key> --modelid
 #           deepseek-v4-pro` in the workspace fixture; sandboxed $HOME
