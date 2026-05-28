@@ -3577,12 +3577,18 @@ Start-Case 'stax --version differs from the bare-stax server banner'
 Reset-UserHome
 Invoke-XX --version
 $versionOut = $RunOut
-$srv = Start-StaxServer --no-browser
+# Bare `stax --no-browser` gates on `.stax/_config.lock`; seed a fresh
+# project so the listener actually binds. Without --cwd + scaffold the
+# server would exit 2 with the init banner and Start-StaxServer would
+# (correctly) report "process exited before listening".
+$projBanner = New-FreshProject
+Initialize-ProjectScaffold -Path $projBanner
+$srv = Start-StaxServer --no-browser --cwd $projBanner
 try {
   $serverBanner = Get-Content -LiteralPath $srv.StaxStdout -Raw
   Assert-Contains '--version prints notice'             $versionOut 'Stax by Stackific'
-  Assert-NotContains '--version is not the server banner' $versionOut $STAX_SERVER_DISPLAY_URL
-  Assert-Contains 'server prints listening banner'      $serverBanner $STAX_SERVER_DISPLAY_URL
+  Assert-NotContains '--version is not the server banner' $versionOut $srv.StaxUrl
+  Assert-Contains 'server prints listening banner'      $serverBanner $srv.StaxUrl
   Assert-NotContains 'server is not the version notice' $serverBanner 'Stax by Stackific'
 } finally {
   Stop-StaxServer -Process $srv
