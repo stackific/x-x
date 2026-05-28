@@ -2,15 +2,17 @@
 title: Add canary feature deployment workflow
 status: valid
 systems: [feature-store]
-created: 2026-04-04T20:35:35Z
+extended_by: [0105-add-feature-store-canary-rollback-watcher]
+created: 2026-04-18T09:30:00Z
 ---
 
 ## Goal
-Route a small percentage of inference reads to a canary version of a feature before promoting it to all callers.
+Roll new features out to a small slice of traffic before the full population so regressions are caught early.
 
 ## Approach
-- Assign canary weight per feature.
-- Compare distributions before promotion.
+- Route a configurable percentage to the new version.
+- Compare its metrics against the baseline.
 
 ## Tasks
-- [x] While a canary weight is configured, the Feature Store shall route the configured percentage of reads to the canary version.
+- [x] When a feature canary starts, the Feature Store shall route the configured percentage of inference reads to the canary version.
+- [x] When the canary completes, the Feature Store shall promote the canary version to the default route.

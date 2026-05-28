@@ -1,16 +1,18 @@
 ---
-title: Quarantine malformed events into a dead letter topic
+title: Quarantine malformed events into a dead-letter topic
 status: valid
 systems: [ingest-pipeline]
-created: 2025-12-02T08:45:22Z
+extends: [0053-apply-schema-validation-against-the-event-registry-at-ingest]
+created: 2025-12-02T11:20:00Z
 ---
 
 ## Goal
-Capture every malformed event for replay and forensics by writing it to a dedicated dead-letter topic with the original headers.
+Send the malformed events 0053 detects to a dedicated dead-letter topic so on-call can inspect them without blocking the main pipeline.
 
 ## Approach
-- Preserve original headers and payload bytes.
-- Surface the dead-letter topic in the ingest dashboard.
+- Route messages marked malformed to a DLQ topic.
+- Keep them for 14 days.
 
 ## Tasks
-- [x] When the Ingest Pipeline rejects an event, the Ingest Pipeline shall write it to the dead-letter topic with original headers preserved.
+- [x] When the Ingest Pipeline marks an event malformed, the Ingest Pipeline shall publish it to the dead-letter topic.
+- [x] When a DLQ message ages past 14 days, the Ingest Pipeline shall drop it.

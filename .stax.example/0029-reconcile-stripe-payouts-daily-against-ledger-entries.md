@@ -2,16 +2,17 @@
 title: Reconcile Stripe payouts daily against ledger entries
 status: valid
 systems: [billing]
-created: 2025-09-07T16:26:40Z
+extends: [0019-retry-failed-stripe-webhooks-with-exponential-backoff]
+created: 2025-09-14T10:24:55Z
 ---
 
 ## Goal
-Confirm that every Stripe payout corresponds to ledger entries on this side, flagging mismatches for finance review.
+Catch ledger drift early by reconciling Stripe payouts against our internal ledger every day. Builds on the reliable webhook delivery 0019 established.
 
 ## Approach
-- Pull yesterday's payouts each morning.
-- Compare totals against the ledger.
+- Pull the payout list from Stripe each morning.
+- Diff against ledger entries for the same window.
 
 ## Tasks
-- [x] When the daily reconciliation runs, the Billing shall compare every Stripe payout against the ledger.
-- [x] If a payout total does not match the ledger, then the Billing shall raise a reconciliation alert.
+- [x] When the daily reconciliation job runs, the Billing shall fetch the previous day's Stripe payouts.
+- [x] If a Stripe payout has no matching ledger entry, the Billing shall raise a reconciliation finding.

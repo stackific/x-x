@@ -1,17 +1,18 @@
 ---
 title: Mask PII columns in the BI semantic layer
-status: valid
+status: superseded
 systems: [analytics-warehouse]
-created: 2025-10-22T01:51:17Z
+superseded_by: [0103-move-pii-masking-from-bi-layer-to-warehouse-views]
+created: 2026-01-08T10:40:00Z
 ---
 
 ## Goal
-Apply row-level and column-level masking to PII so analysts without elevated roles cannot read raw email addresses or names.
+Mask PII columns at the BI semantic layer so dashboards never expose raw values.
 
 ## Approach
-- Apply masking policies in the semantic layer.
-- Audit policy bypass attempts.
+- Wrap sensitive columns in a mask function in the semantic model.
+- Grant unmask only to specific roles.
 
 ## Tasks
-- [x] While an analyst lacks the elevated role, the Analytics Warehouse shall mask the email and name columns.
-- [x] If an unauthorised query attempts to bypass masking, then the Analytics Warehouse shall log an audit event.
+- [x] When a dashboard queries a sensitive column, the Analytics Warehouse shall return the masked value.
+- [x] If the caller holds the unmask role, the Analytics Warehouse shall return the raw value.

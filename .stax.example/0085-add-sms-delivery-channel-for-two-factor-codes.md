@@ -2,16 +2,17 @@
 title: Add SMS delivery channel for two factor codes
 status: valid
 systems: [notification-bus]
-created: 2026-04-21T14:42:09Z
+extended_by: [0091-track-delivery-receipts-for-sms-messages]
+created: 2026-04-23T10:00:00Z
 ---
 
 ## Goal
-Deliver two-factor codes via SMS using the chosen provider with strict rate limits.
+Send two-factor codes by SMS so users without an authenticator app can still verify.
 
 ## Approach
-- Add SMS provider integration.
-- Cap to one code per minute per number.
+- Plug Twilio in as the SMS provider.
+- Format the message to a 6-digit code.
 
 ## Tasks
-- [x] When a two-factor code is enqueued for SMS, the Notification Bus shall deliver it via the SMS provider.
-- [x] If more than one SMS code is requested for the same number in a minute, then the Notification Bus shall drop the duplicate.
+- [x] When a 2FA challenge starts, the Notification Bus shall send the code over SMS.
+- [x] If the SMS provider rejects the send, the Notification Bus shall surface a delivery error.

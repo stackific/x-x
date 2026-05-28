@@ -2,16 +2,17 @@
 title: Retry failed Stripe webhooks with exponential backoff
 status: valid
 systems: [billing]
-created: 2025-08-14T07:26:30Z
+extended_by: [0029-reconcile-stripe-payouts-daily-against-ledger-entries]
+created: 2025-08-15T09:11:43Z
 ---
 
 ## Goal
-Recover from transient Stripe webhook delivery failures by retrying processing up to five times with exponential backoff.
+Avoid losing Stripe webhook deliveries when our endpoint hiccups by retrying with exponential backoff.
 
 ## Approach
-- Queue failed webhooks with attempt counter.
-- Cap retries at five.
+- Wrap the webhook receiver in a retry queue.
+- Cap delay at 5 minutes; give up after 6 attempts.
 
 ## Tasks
-- [x] When webhook processing throws a transient error, the Billing shall enqueue the webhook for retry with exponential backoff.
-- [x] If a webhook has failed five times, then the Billing shall move it to a dead-letter table for manual review.
+- [x] When the Stripe webhook receiver returns non-2xx, the Billing shall enqueue a retry with exponential delay.
+- [x] When a retry succeeds, the Billing shall mark the original delivery as acknowledged.

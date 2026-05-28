@@ -1,17 +1,18 @@
 ---
 title: Apply EU VAT to customers in the European Economic Area
-status: valid
+status: superseded
 systems: [billing]
-created: 2025-08-18T09:06:55Z
+superseded_by: [0034-add-stripe-tax-integration-for-sales-tax-compliance]
+created: 2025-08-26T11:00:00Z
 ---
 
 ## Goal
-Charge the correct VAT rate for each EEA customer based on billing country and surface the rate on the invoice.
+Apply the correct VAT rate to EEA customers based on their billing country.
 
 ## Approach
-- Maintain a VAT-rate table by country.
-- Add a tax line per invoice.
+- Look up the rate by country.
+- Add a VAT line to the invoice.
 
 ## Tasks
-- [x] While a customer's billing country is inside the EEA, the Billing shall add a VAT line at the country's current rate.
-- [x] When the rate table is updated, the Billing shall use the new rate on invoices issued after the update.
+- [x] When the Billing finalises an invoice for an EEA customer, the Billing shall add a VAT line at the country rate.
+- [x] If the country rate changes mid-cycle, the Billing shall apply the new rate from the next cycle.

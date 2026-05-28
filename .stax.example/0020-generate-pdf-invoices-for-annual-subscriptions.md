@@ -1,17 +1,18 @@
 ---
 title: Generate PDF invoices for annual subscriptions
-status: valid
+status: superseded
 systems: [billing]
-created: 2025-08-15T04:19:23Z
+superseded_by: [0101-add-stripe-hosted-invoice-pages]
+created: 2025-08-19T15:33:21Z
 ---
 
 ## Goal
-Produce a PDF invoice on every annual subscription renewal and email it to the billing contact.
+Generate a server-side PDF invoice for every annual subscription and email it to the customer on cycle close.
 
 ## Approach
-- Render a branded PDF from the invoice template.
-- Email it via the notification bus.
+- Render the invoice HTML.
+- Convert to PDF and attach to the email.
 
 ## Tasks
-- [x] When an annual subscription renews, the Billing shall generate a PDF invoice from the rendered template.
-- [x] When a PDF invoice is generated, the Billing shall store it under the customer's invoice history.
+- [x] When an annual subscription cycle closes, the Billing shall render an invoice PDF.
+- [x] When the PDF is ready, the Billing shall email it to the customer.
