@@ -1,4 +1,4 @@
-name: manual / opencode <- llm judge
+name: skills eval / opencode
 
 # Manually-triggered experiment from the agent-eval lineage. The loop:
 #

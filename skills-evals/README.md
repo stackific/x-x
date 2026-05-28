@@ -74,5 +74,5 @@ Drop another `tests/test_<agent>_<name>.py` mirroring `test_claude_todo.py`:
 hardcode the task, call `drive_skill(workspace, "/x-plan <task>")`,
 assert `PlanJudge`, call `drive_skill(workspace, "/x-x")`, assert
 `ArtifactJudge`. The `workspace` fixture already initializes a throwaway
-project. New backends (codex, cursor, …) get their own driver — the
+project. New backends get their own driver — the
 DeepEval judges are agent-agnostic and can be reused as-is.

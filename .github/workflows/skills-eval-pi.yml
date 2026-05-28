@@ -1,4 +1,4 @@
-name: manual / pi <- llm judge
+name: skills eval / pi
 
 # Manually-triggered experiment from the agent-eval lineage. The loop:
 #

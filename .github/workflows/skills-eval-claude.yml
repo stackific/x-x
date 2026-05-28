@@ -1,4 +1,4 @@
-name: manual / claude code <- llm judge
+name: skills eval / claude code
 
 # Manually-triggered experiment from the agent-eval lineage. The loop:
 #

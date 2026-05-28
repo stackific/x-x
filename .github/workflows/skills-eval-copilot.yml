@@ -1,7 +1,7 @@
-name: manual / github copilot cli <- llm judge
+name: skills eval / github copilot cli
 
 # Manually-triggered experiment from the agent-eval lineage. Mirrors
-# manual-claude-judge.yml but targets GitHub Copilot CLI via BYOK to
+# skills-eval-claude.yml but targets GitHub Copilot CLI via BYOK to
 # DeepSeek's Anthropic-compatible endpoint. The loop:
 #
 #   1. Install GitHub Copilot CLI (npm @github/copilot); install x-x to PATH.

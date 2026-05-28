@@ -1,0 +1,114 @@
+name: skills eval / cline
+
+# Manually-triggered experiment from the agent-eval lineage. Mirrors
+# skills-eval-opencode.yml but targets Cline CLI via DeepSeek routed
+# through cline's first-class `deepseek` provider. The loop:
+#
+#   1. Install Cline CLI (npm `cline`); install x-x to PATH.
+#   2. Sync the uv-managed skills-evals project.
+#   3. Run `uv run pytest tests/test_cline_*`. The tests:
+#        a. Spawn `cline --yolo --json -c <ws> -t <s>` per skill
+#           invocation (single-shot subprocess; YOLO mode auto-approves
+#           every tool call). The cline driver inlines the SKILL.md off
+#           `<ws>/.cline/skills/<skill>/SKILL.md` into the prompt
+#           because cline does not resolve slash commands in headless
+#           mode — same workaround the opencode driver used before
+#           sst/opencode#2348 landed. `x-x init --agents cline` (now a
+#           first-class entry in agentTargets) writes the SKILL.md
+#           tree exactly where the driver reads it.
+#        b. Provider routing comes from cline's on-disk auth state
+#           (`cline auth --provider deepseek --apikey <key> --modelid
+#           deepseek-v4-pro` in the workspace fixture; sandboxed $HOME
+#           means the auth state is per-test).
+#        c. Score the plan and produced artifacts with the same DeepEval
+#           `GEval` metrics used by the Claude eval.
+#   4. Upload the pytest tmp directory (transcripts + workspace) on
+#      failure so the run can be inspected offline.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    # Same envelope as the other manual judges: 60-minute cap leaves
+    # headroom for DeepSeek latency across the smoke + three scenario
+    # tests without rewarding a stuck agent.
+    timeout-minutes: 60
+
+    env:
+      # X_X_AGENT_KEY tells the skills-evals conftest which backend's
+      # tests to collect (`test_cline_*`), which binary to require on
+      # PATH (`cline`), and which `--agents <key>` value to pass to
+      # `x-x init` (`cline` — first-class entry in agentTargets, lands
+      # skills at `.cline/skills/` per docs.cline.bot).
+      X_X_AGENT_KEY: cline
+
+      # Cline reads its DeepSeek routing from its on-disk auth state,
+      # not from process env. DEEPSEEK_API_KEY is what the workspace
+      # fixture feeds to `cline auth --apikey` (and what the judge LLM
+      # reads directly), so the one secret routes both sides.
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # `go install .` lands a release-flavored x-x in $(go env GOPATH)/bin.
+      # The setup-go action puts that directory on PATH.
+      - name: install x-x to PATH
+        run: |
+          go install .
+          x-x --version
+
+      # Cline CLI requires Node 22+.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      # The cline CLI BYOK / wire surface evolves; pinning to @latest is
+      # fragile but acceptable for a manually-triggered experiment. Bump
+      # intentionally after verifying the smoke test still passes against
+      # the new version.
+      - name: install cline cli
+        run: |
+          npm install -g cline@latest
+          cline --version
+
+      # setup-uv no longer publishes moving major tags (@v8), so pin to a
+      # specific version. Bump intentionally after checking release notes.
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+
+      - name: install skills-evals deps
+        working-directory: skills-evals
+        run: uv sync --frozen || uv sync
+
+      # `test_cline_stream_smoke.py` runs first via the smoke-first
+      # collection hook in conftest — a wire-format / install / env
+      # regression fails it without burning a full planner+executor
+      # cycle on a real scenario.
+      - name: run pytest
+        working-directory: skills-evals
+        run: uv run pytest tests/test_cline_stream_smoke.py tests/test_cline_todo.py tests/test_cline_plan_extends.py tests/test_cline_reminders_supersedes_todo.py
+
+      # Pytest writes transcripts and per-test workspaces under tmp_path
+      # (`/tmp/pytest-of-runner/...`). Uploading on failure gives us the
+      # NDJSON stream that records every event the agent emitted, plus
+      # the workspace state at failure.
+      - name: upload pytest tmp on failure
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: pytest-tmp-${{ github.run_id }}
+          path: /tmp/pytest-of-runner/
+          if-no-files-found: warn
+          retention-days: 14

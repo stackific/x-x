@@ -1,7 +1,7 @@
-name: manual / github copilot cli <- llm judge (user scope)
+name: skills eval / github copilot cli (user scope)
 
 # Manually-triggered experiment from the agent-eval lineage. Mirrors
-# manual-copilot-judge.yml but installs skills at user scope
+# skills-eval-copilot.yml but installs skills at user scope
 # (~/.agents/skills/) rather than project scope (`.agents/skills/`).
 # `~/.agents/skills/` is on Copilot CLI's official user-scope list per
 # docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills,
@@ -32,7 +32,7 @@ jobs:
     timeout-minutes: 60
 
     env:
-      # Identical to manual-copilot-judge.yml EXCEPT for X_X_INSTALL_SCOPE.
+      # Identical to skills-eval-copilot.yml EXCEPT for X_X_INSTALL_SCOPE.
       # The pytest fixture (skills-evals/tests/conftest.py) reads this
       # and passes it to `x-x init --scope <value>`, so the same test
       # suite drives both project-scope and user-scope installs.

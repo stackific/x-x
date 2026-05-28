@@ -1,6 +1,12 @@
-name: manual / omp (oh-my-pi) <- llm judge (user scope)
+name: skills eval / pi (user scope)
 
-# Identical to manual-omp-judge.yml EXCEPT for X_X_INSTALL_SCOPE.
+# Identical to skills-eval-pi.yml EXCEPT for X_X_INSTALL_SCOPE.
+# This workflow installs skills at user scope (~/.agents/skills/) rather
+# than project scope (<workspace>/.agents/skills/) so we exercise that
+# branch of `x-x init`. The pytest fixture (skills-evals/tests/conftest.py)
+# reads X_X_INSTALL_SCOPE and passes it to `x-x init --scope <value>`; pi
+# discovers skills from `~/.agents/skills/` (one of its documented
+# user-scope skill locations alongside `~/.pi/agent/skills/`).
 
 on:
   workflow_dispatch:
@@ -14,10 +20,12 @@ jobs:
     timeout-minutes: 60
 
     env:
-      X_X_AGENT_KEY: omp
+      X_X_AGENT_KEY: pi
       X_X_INSTALL_SCOPE: user
 
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+
+      PI_OFFLINE: "1"
 
     steps:
       - uses: actions/checkout@v6
@@ -32,12 +40,14 @@ jobs:
           go install .
           x-x --version
 
-      - name: install omp
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: install pi cli
         run: |
-          curl -fsSL https://omp.sh/install | sh
-          echo "$HOME/.omp/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.omp/bin:$PATH"
-          omp --version
+          npm install -g --ignore-scripts @earendil-works/pi-coding-agent@latest
+          pi --version
 
       - uses: astral-sh/setup-uv@v8.1.0
         with:
