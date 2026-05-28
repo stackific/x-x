@@ -146,6 +146,20 @@ func runDefault(args []string) {
 		return
 	}
 
+	// Bare `stax` only makes sense inside an initialized project — the
+	// web UI's /api/systems, /api/scopes, and /api/scope endpoints all
+	// read from cwd's .stax/ tree, and there is nothing useful to show
+	// when that tree doesn't exist. Surface the same `stax init` hint
+	// the plan-tooling subcommands print, then exit 2 (usage error)
+	// before runServer binds the listener or opens a browser. --version
+	// above is the deliberate exception: it is an identity probe, not a
+	// project operation, and the installer scripts depend on it
+	// working in any directory.
+	if err := checkProject(); err != nil {
+		fmt.Fprintln(os.Stderr, notProjectBanner)
+		os.Exit(2)
+	}
+
 	// Default path: launch the loopback HTTP server, optionally open a
 	// browser at it, and block until SIGINT / SIGTERM. runServer prints
 	// the listening URL on stdout itself — no need for an extra

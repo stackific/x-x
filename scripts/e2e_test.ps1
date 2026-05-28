@@ -615,7 +615,9 @@ Assert-NotExists 'embed README skipped from disk' (Join-Path $env:USERPROFILE (J
 
 Start-Case 'stax --no-browser starts the loopback API server'
 Reset-UserHome
-$srv = Start-StaxServer --no-browser
+$projNoBrowser = New-FreshProject
+Initialize-ProjectScaffold -Path $projNoBrowser
+$srv = Start-StaxServer --no-browser --cwd $projNoBrowser
 try {
   $resp = Invoke-WebRequest -Uri "$STAX_SERVER_DISPLAY_URL$STAX_API_HELLO_PATH" -TimeoutSec 1 -UseBasicParsing
   Assert-Eq       'hello status 200' $resp.StatusCode 200
@@ -632,10 +634,24 @@ try {
 }
 Assert-IsDir 'lazy-bootstrap agents tree present' (Join-Path $env:USERPROFILE $STAX_AGENTS_DIR)
 
+# Bare `stax` (and `stax --no-browser`) gates on .stax/_config.lock so
+# the UI never spawns against a directory it cannot read scopes from.
+# A missing marker MUST emit the canonical `stax init` banner on
+# stderr, exit 2 (usage error), and skip the listener / browser open
+# entirely.
+Start-Case 'stax --cwd <not-a-project> prints init banner and exits 2'
+Reset-UserHome
+$noProjBare = New-FreshProject
+Invoke-XX --no-browser --cwd $noProjBare
+Assert-Eq       'exit 2'         $RunRC  2
+Assert-Eq       'no stdout'      $RunOut ''
+Assert-Contains 'init-banner'    $RunErr 'not a stax project'
+Assert-Contains 'init-banner'    $RunErr 'stax init'
+
 Start-Case 'stax --cwd <PROJ> serves /api/systems for that project'
 Reset-UserHome
 $projApi = New-FreshProject
-New-Item -ItemType Directory -Force -Path (Join-Path $projApi $STAX_DIR) | Out-Null
+Initialize-ProjectScaffold -Path $projApi
 $registry = "systems:`n  - id: auth`n    name: Auth Service`n"
 Set-Content -LiteralPath (Join-Path (Join-Path $projApi $STAX_DIR) $STAX_SYSTEMS_FILE) -Value $registry -Encoding ascii
 $srv = Start-StaxServer --no-browser --cwd $projApi
@@ -648,10 +664,12 @@ try {
   Stop-StaxServer -Process $srv
 }
 
-Start-Case 'stax --cwd <not-a-project> serves /api/systems as empty list'
+Start-Case 'stax --cwd <empty-project> serves /api/systems as empty list'
 Reset-UserHome
-$noProjApi = New-FreshProject
-$srv = Start-StaxServer --no-browser --cwd $noProjApi
+$emptyProjApi = New-FreshProject
+Initialize-ProjectScaffold -Path $emptyProjApi
+Remove-Item -LiteralPath (Join-Path (Join-Path $emptyProjApi $STAX_DIR) $STAX_SYSTEMS_FILE) -ErrorAction SilentlyContinue
+$srv = Start-StaxServer --no-browser --cwd $emptyProjApi
 try {
   $resp = Invoke-WebRequest -Uri "$STAX_SERVER_DISPLAY_URL$STAX_API_SYSTEMS_PATH" -TimeoutSec 1 -UseBasicParsing
   Assert-Eq       'systems status 200'  $resp.StatusCode 200

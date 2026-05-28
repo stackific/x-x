@@ -516,7 +516,9 @@ assert_is_dir "lazy-bootstrap skill ${SKILL_SHIP_DIR}" \
 
 case_start "stax --no-browser starts the loopback API server"
 reset_user_home
-bg_spawn_stax --no-browser
+PROJ_NOBROWSER="$(fresh_project)"
+seed_project_scaffold "$PROJ_NOBROWSER"
+bg_spawn_stax --no-browser --cwd "$PROJ_NOBROWSER"
 assert_eq "spawn succeeded" "$?" "0"
 # Curl the URL the spawn actually bound (BG_URL is exported by
 # bg_spawn_stax after extracting it from the listening banner) — the
@@ -545,6 +547,23 @@ bg_kill_stax
 # embed materialized on disk same as any subcommand would do.
 assert_is_dir "lazy-bootstrap agents dir" "$HOME/${STAX_AGENTS_DIR}"
 
+# ---------- bare stax in a non-project directory ----------
+#
+# Bare `stax` (and `stax --no-browser`) only makes sense inside an
+# initialized project — the UI's /api/scopes, /api/scope, and the
+# detail mode of /api/systems all read from .stax/. Surface the
+# canonical `stax init` banner to stderr, exit 2 (usage error),
+# and DO NOT bind the listener or open a browser.
+
+case_start "stax --cwd <not-a-project> prints init banner and exits 2"
+reset_user_home
+NOPROJ_BARE="$(fresh_project)"
+run_capture "" --no-browser --cwd "$NOPROJ_BARE"
+assert_eq "exit 2"     "$RUN_RC"  "2"
+assert_eq "no stdout"  "$RUN_OUT" ""
+assert_contains "init-banner stderr" "$RUN_ERR" "not a stax project"
+assert_contains "init-banner stderr" "$RUN_ERR" "stax init"
+
 # ---------- /api/systems with --cwd PATH ----------
 #
 # /api/systems reads .stax/_data_systems.yaml from the running stax's
@@ -555,7 +574,7 @@ assert_is_dir "lazy-bootstrap agents dir" "$HOME/${STAX_AGENTS_DIR}"
 case_start "stax --cwd <PROJ> serves /api/systems for that project"
 reset_user_home
 PROJ_API="$(fresh_project)"
-mkdir -p "$PROJ_API/${STAX_DIR}"
+seed_project_scaffold "$PROJ_API"
 printf 'systems:\n  - id: auth\n    name: Auth Service\n' \
   > "$PROJ_API/${STAX_DIR}/${STAX_SYSTEMS_FILE}"
 bg_spawn_stax --no-browser --cwd "$PROJ_API"
@@ -565,16 +584,20 @@ assert_contains "systems id"   "$systems_body" '"id":"auth"'
 assert_contains "systems name" "$systems_body" '"name":"Auth Service"'
 bg_kill_stax
 
-# ---------- /api/systems on a directory with no project ----------
+# ---------- /api/systems on an initialized but empty project ----------
 #
-# Missing .stax/_data_systems.yaml is a normal state (no project here
-# yet). /api/systems MUST answer 200 with an empty array so a UI can
-# render a friendly empty state rather than an error toast.
+# A directory with .stax/_config.lock (so it crosses the project gate)
+# but no _data_systems.yaml is a normal state — `stax init` writes a
+# zero-byte placeholder for the registry. /api/systems MUST answer
+# 200 with an empty array so a UI can render a friendly empty state
+# rather than an error toast.
 
-case_start "stax --cwd <not-a-project> serves /api/systems as empty list"
+case_start "stax --cwd <empty-project> serves /api/systems as empty list"
 reset_user_home
-NOPROJ="$(fresh_project)"
-bg_spawn_stax --no-browser --cwd "$NOPROJ"
+EMPTY_PROJ="$(fresh_project)"
+seed_project_scaffold "$EMPTY_PROJ"
+rm -f "$EMPTY_PROJ/${STAX_DIR}/${STAX_SYSTEMS_FILE}"
+bg_spawn_stax --no-browser --cwd "$EMPTY_PROJ"
 assert_eq "spawn succeeded" "$?" "0"
 systems_body="$(curl -fsS --max-time 1 "${BG_URL}${STAX_API_SYSTEMS_PATH}")"
 assert_contains "empty systems list" "$systems_body" '"systems":[]'
@@ -592,7 +615,7 @@ bg_kill_stax
 case_start "stax /api/systems?id=<known> returns detail with rendered HTML"
 reset_user_home
 PROJ_DETAIL="$(fresh_project)"
-mkdir -p "$PROJ_DETAIL/${STAX_DIR}"
+seed_project_scaffold "$PROJ_DETAIL"
 printf 'systems:\n  - id: auth\n    name: Auth Service\n' \
   > "$PROJ_DETAIL/${STAX_DIR}/${STAX_SYSTEMS_FILE}"
 write_full_plan "$PROJ_DETAIL/${STAX_DIR}" "0001-add-pkce.md" "valid" "auth" "Auth Service"
@@ -617,7 +640,7 @@ bg_kill_stax
 case_start "stax /api/systems?id=<unknown> returns 404"
 reset_user_home
 PROJ_404="$(fresh_project)"
-mkdir -p "$PROJ_404/${STAX_DIR}"
+seed_project_scaffold "$PROJ_404"
 printf 'systems:\n  - id: auth\n    name: Auth Service\n' \
   > "$PROJ_404/${STAX_DIR}/${STAX_SYSTEMS_FILE}"
 bg_spawn_stax --no-browser --cwd "$PROJ_404"
