@@ -226,6 +226,18 @@ def drive_skill(
       )
       break
 
+    stream_error = _detect_stream_error(turn_events)
+    if stream_error is not None:
+      # omp exits 0 even when the LLM call 402s — `stopReason: "error"`
+      # is the only hint we get. Flip the exit_code to non-zero so the
+      # downstream `assert run.exit_code == 0` in scenario tests reports
+      # the upstream cause directly instead of failing much later on
+      # `assert len(plans) == 2, got 0`.
+      log("driver", f"turn {run.turns} ended with LLM error: {stream_error}")
+      run.exit_code = 1
+      run.stderr_tail = (run.stderr_tail + "\n" + stream_error).strip()
+      break
+
     if not _asks_for_confirmation(turn_text):
       log("driver", f"turn {run.turns} ended without 'Reply yes' gate — session done")
       run.completed = True
@@ -449,39 +461,58 @@ def _log_event(event: dict, idx: int) -> None:
 def _summarize_event(event: dict) -> str:
   """One-line summary of an event for CI debug surface.
 
-  omp's event shapes evolve quickly; the summarizer is permissive — it
-  reads `content[]` like the Anthropic Messages assistant shape and falls
-  back to whole-event JSON otherwise. Unknown event types still get a
-  bounded JSON dump so a wire-format regression is visible without
-  crashing the driver.
+  omp emits one event per stream chunk on stdout when `--mode json` is
+  set: `session`, `agent_start`, `turn_start`/`turn_end`, `message_start`
+  (assistant or user), a flurry of `message_update` carrying
+  `thinking_delta`/`text_delta`/`toolcall_*` events, and a closing
+  `message_end` with the consolidated message. The summarizer covers the
+  shapes that carry information the auto-yes detector cares about
+  (`message_end` final assistant text, error signals) and falls back to
+  a bounded JSON dump for everything else so a wire-format regression is
+  visible without crashing the driver.
   """
   if "_raw" in event:
     return _brief(event["_raw"], 200)
+  if "_turn" in event:
+    return f"--- driver turn {event['_turn']} ---"
 
   etype = event.get("type")
 
-  # Anthropic-shaped messages — text content under content[].text
-  if etype == "assistant" or etype == "user":
+  if etype == "message_end":
     msg = event.get("message") or {}
+    role = msg.get("role", "?") if isinstance(msg, dict) else "?"
+    stop_reason = msg.get("stopReason", "?") if isinstance(msg, dict) else "?"
     content = msg.get("content") if isinstance(msg, dict) else None
+    text = ""
+    tool_names: list[str] = []
     if isinstance(content, list):
-      first = content[0] if content else {}
-      if isinstance(first, dict):
-        if first.get("type") == "text":
-          return f"text={_brief(first.get('text', '') or '', 160)}"
-        return f"{etype} content[0].type={first.get('type', '?')}"
-    return _brief(json.dumps(event), 200)
+      for item in content:
+        if not isinstance(item, dict):
+          continue
+        if item.get("type") == "text":
+          t = item.get("text")
+          if isinstance(t, str):
+            text += t
+        elif item.get("type") == "toolCall":
+          name = item.get("name")
+          if isinstance(name, str):
+            tool_names.append(name)
+    return (
+      f"role={role} stopReason={stop_reason} tools={tool_names} "
+      f"text={_brief(text, 160)}"
+    )
 
-  # OpenCode-shaped events keep a `part` envelope
-  part = event.get("part") or {}
-  if etype == "text":
-    txt = part.get("text") if isinstance(part, dict) else ""
-    return f"text={_brief(txt or '', 160)}" if txt else f"text_empty raw={_brief(json.dumps(event), 200)}"
-  if etype == "tool_use":
-    tool = part.get("tool", "?") if isinstance(part, dict) else "?"
-    return f"tool={tool} input={_brief(json.dumps(part.get('state', {}).get('input', {})), 100)}"
-  if etype == "reasoning":
-    return f"reasoning={_brief(part.get('text', '') or '', 100)}"
+  if etype in ("turn_start", "turn_end", "agent_start", "session"):
+    return _brief(json.dumps({k: v for k, v in event.items() if k != "type"}), 120)
+
+  if etype == "message_update":
+    inner = event.get("assistantMessageEvent") or {}
+    inner_type = inner.get("type", "?") if isinstance(inner, dict) else "?"
+    delta = inner.get("delta") if isinstance(inner, dict) else None
+    if isinstance(delta, str):
+      return f"update {inner_type} delta={_brief(delta, 80)}"
+    return f"update {inner_type}"
+
   if etype == "error":
     err = event.get("error") or event.get("message") or {}
     return f"error={_brief(json.dumps(err) if isinstance(err, dict) else str(err), 200)}"
@@ -492,38 +523,67 @@ def _summarize_event(event: dict) -> str:
 def _extract_text(event: dict) -> str:
   """Pull user-visible assistant text from one event, if any.
 
-  Filters out reasoning / chain-of-thought — including that would let the
-  auto-yes detector false-trigger on "yes" mentioned inside thinking. Two
-  event shapes are accepted to absorb wire-format variation across omp
-  versions:
-    - Anthropic-style: `{type: "assistant", message: {content: [{type: "text", text: ...}]}}`
-    - OpenCode-style:  `{type: "text", part: {text: ...}}`
+  Source of truth is `type: "message_end"` with `message.role:
+  "assistant"` — this carries the consolidated final assistant message
+  with the full `content[]` array. Iterating `text_end` / `text_delta`
+  events would also work but multiplies the chance of double-counting
+  text already present in the message_end. Filtering on content type
+  drops `thinking` (chain-of-thought) and `toolCall` items so the
+  auto-yes detector doesn't false-trigger on "yes" mentioned inside
+  reasoning text or in a tool argument.
   """
-  if "_raw" in event:
+  if "_raw" in event or "_turn" in event:
     return ""
 
-  etype = event.get("type")
+  if event.get("type") != "message_end":
+    return ""
 
-  if etype == "assistant":
-    msg = event.get("message") or {}
-    content = msg.get("content") if isinstance(msg, dict) else None
-    if isinstance(content, list):
-      parts: list[str] = []
-      for item in content:
-        if isinstance(item, dict) and item.get("type") == "text":
-          t = item.get("text")
-          if isinstance(t, str):
-            parts.append(t)
-      return "\n".join(parts)
+  msg = event.get("message")
+  if not isinstance(msg, dict):
+    return ""
+  if msg.get("role") != "assistant":
+    return ""
 
-  if etype == "text":
-    part = event.get("part")
-    if isinstance(part, dict):
-      t = part.get("text")
+  content = msg.get("content")
+  if not isinstance(content, list):
+    return ""
+
+  parts: list[str] = []
+  for item in content:
+    if isinstance(item, dict) and item.get("type") == "text":
+      t = item.get("text")
       if isinstance(t, str):
-        return t
+        parts.append(t)
+  return "\n".join(parts)
 
-  return ""
+
+def _detect_stream_error(events: list[dict]) -> str | None:
+  """Return a human-readable error if the LLM call ended in error.
+
+  omp's print mode exits 0 even when the underlying model call returns a
+  402 / 429 / 500 — the failure surfaces only as `stopReason: "error"`
+  on the last assistant message_end with an empty content[] and an
+  `errorMessage` field. Without this check the driver reports the run
+  as `completed` and the scenario test fails much later with the
+  cryptic "got 0 plan files" — masking the upstream cause.
+  """
+  for event in reversed(events):
+    if not isinstance(event, dict):
+      continue
+    if event.get("type") != "message_end":
+      continue
+    msg = event.get("message")
+    if not isinstance(msg, dict):
+      continue
+    if msg.get("role") != "assistant":
+      continue
+    stop_reason = msg.get("stopReason")
+    if stop_reason == "error":
+      err_msg = msg.get("errorMessage") or msg.get("error") or "(no errorMessage field)"
+      return f"assistant message_end stopReason=error errorMessage={_brief(str(err_msg), 240)}"
+    # Found the last assistant message, no error.
+    return None
+  return None
 
 
 def _pump_to_queue(stream: IO[str], q: queue.Queue[str | None]) -> None:
