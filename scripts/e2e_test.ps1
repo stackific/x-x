@@ -58,16 +58,11 @@ Set-Variable -Option Constant -Name PLANS_SYSTEMS_FILE             -Value '_data
 Set-Variable -Option Constant -Name DEFAULT_PREFIX_WIDTH           -Value 4
 Set-Variable -Option Constant -Name PLANS_LIST_OVERFLOW_THRESHOLD  -Value 20
 
-Set-Variable -Option Constant -Name SKILL_SHARED_DIR    -Value '_x-x_shared'
 Set-Variable -Option Constant -Name SKILL_X_PLAN_DIR    -Value 'x-plan'
 Set-Variable -Option Constant -Name SKILL_X_X_DIR       -Value 'x-x'
 Set-Variable -Option Constant -Name SKILL_MANIFEST_FILE -Value 'SKILL.md'
 
-Set-Variable -Option Constant -Name SHARED_DOC_PLAN_FIRST -Value '_plan_first.md'
-Set-Variable -Option Constant -Name SHARED_DOC_SYSTEMS    -Value '_systems.md'
-Set-Variable -Option Constant -Name SHARED_DOC_EARS       -Value '_ears.md'
-
-Set-Variable -Option Constant -Name OWNED_SKILLS -Value @($SKILL_SHARED_DIR, $SKILL_X_PLAN_DIR, $SKILL_X_X_DIR)
+Set-Variable -Option Constant -Name OWNED_SKILLS -Value @($SKILL_X_PLAN_DIR, $SKILL_X_X_DIR)
 
 # agentTargets in constants.go — index 0 = Claude Code, 1 = Codex CLI.
 Set-Variable -Option Constant -Name CLAUDE_SKILLS_REL -Value '.claude\skills'
@@ -507,9 +502,6 @@ foreach ($skill in $OWNED_SKILLS) {
 }
 Assert-IsFile  'x-x SKILL.md'    (Join-Path $env:USERPROFILE (Join-Path $XX_AGENTS_SKILLS_DIR (Join-Path $SKILL_X_X_DIR $SKILL_MANIFEST_FILE)))
 Assert-IsFile  'x-plan SKILL.md' (Join-Path $env:USERPROFILE (Join-Path $XX_AGENTS_SKILLS_DIR (Join-Path $SKILL_X_PLAN_DIR $SKILL_MANIFEST_FILE)))
-foreach ($doc in @($SHARED_DOC_PLAN_FIRST, $SHARED_DOC_SYSTEMS, $SHARED_DOC_EARS)) {
-  Assert-IsFile "shared doc $doc" (Join-Path $env:USERPROFILE (Join-Path $XX_AGENTS_SKILLS_DIR (Join-Path $SKILL_SHARED_DIR $doc)))
-}
 Assert-NotExists 'embed README skipped from disk' (Join-Path $env:USERPROFILE (Join-Path $XX_AGENTS_DIR 'README.md'))
 
 Start-Case 'bare x-x is idempotent (second run does not re-bootstrap)'

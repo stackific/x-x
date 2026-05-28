@@ -21,15 +21,12 @@ The user may switch modes at any point ("review per plan" / "review per task"); 
 
 ## 1. Load context
 
-Skills install into a folder we call `<skills_root>`, which is either `.claude/skills/` (Claude Code) or `.agents/skills/` (other agents).
+Required reads before doing anything else:
 
-`<skills_root>` can exist at two scopes:
-- **Project scope**: `<cwd>/.claude/skills/` or `<cwd>/.agents/skills/`
-- **User scope**: `.claude/skills/` or `.agents/skills/` in the user's home directory
+- `<cwd>/.x-plans/_data_systems.yaml` — registry of named systems (id, name, brief). If missing, STOP and tell the user this directory isn't set up for x-x yet — they need to run `x-x init`.
+- The project constitution: whichever of `CLAUDE.md`, `AGENTS.md`, or `GEMINI.md` exists at the repo root. Read whichever is present and take it as the override on all defaults in this skill. If none exist, suggest the user create one as a helpful tip and proceed.
 
-When a reference like `../_x-x_shared/...` appears, resolve it against `<skills_root>/_x-x_shared/`. Check project scope first, then user scope. If the file is missing from both, STOP and report to the user.
-
-Now load context per **Context to load** in `../_x-x_shared/_plan_first.md`. If any required file is missing, STOP and report.
+The plan-first protocol (used by Step 3.3.2 when presenting sub-plans) is defined inline in Appendix A at the bottom of this file. Read it before the first approval prompt.
 
 ## 2. Enumerate plans
 
@@ -58,8 +55,8 @@ For each plan, in numerical order:
 3. For each incomplete `[ ]` task, in the order written:
    1. Compose the side effects required to satisfy the task.
    2. Approval, per the active review mode resolved in Step 0:
-      - **Per-task:** present a sub-plan for this task per `../_x-x_shared/_plan_first.md` and wait for `yes`.
-      - **Per-plan:** on the first incomplete task of the plan, present **one** consolidated sub-plan listing every incomplete `[ ]` task in this plan and all their side effects; wait for a single `yes`. For subsequent tasks in the same plan, skip the prompt — the bundle approval covers them. A verification failure (step 3.3.4) halts the plan per Step 6; bundle approval does not survive a failed task.
+      - **Per-task:** present a sub-plan for this task per the plan-first protocol in Appendix A and wait for `yes`.
+      - **Per-plan:** on the first incomplete task of the plan, present **one** consolidated sub-plan (per Appendix A) listing every incomplete `[ ]` task in this plan and all their side effects; wait for a single `yes`. For subsequent tasks in the same plan, skip the prompt — the bundle approval covers them. A verification failure (step 3.3.4) halts the plan per Step 6; bundle approval does not survive a failed task.
    3. Execute. After each command, report what happened in one line.
    4. **Verify before flipping.** If the task added new code paths (endpoint, worker, parser, adapter, signal handler, etc.), write at least one unit or smoke test exercising the new path in the project's test layout. Then run the project's standard test + lint + type-check target, if exists. They MUST exit 0 before the checkbox flips. If verification fails, leave the checkbox `[ ]` and apply the failure-mode protocol in step 6. Pure config / doc / registry / settings edits skip the test-write step but still run lint + type-checks.
    5. Flip the checkbox from `[ ]` to `[x]` in the plan file.
@@ -88,3 +85,97 @@ When a task needs the current contract for a system (to extend, modify, or reaso
 ## 6. Failure mode
 
 If a task cannot be completed (command fails, user rejects the sub-plan, missing input), STOP that worktree's sequence and leave the checkbox `[ ]`. In sequential mode this halts everything. In parallel mode, sibling worktrees continue independently. At the end, report every blocking plan + task in one summary. No auto-merge, no auto-cleanup, no skipping past failures.
+
+## Appendix A: Plan-first protocol
+
+Every sub-plan presented for approval in Step 3.3.2 follows this protocol. The same protocol is used by the `x-plan` skill when authoring full plan files; here in `x-x` it governs the approval prompts shown for each task (per-task) or each plan (per-plan).
+
+### The protocol
+
+0. **Load the context.** Already done in Step 1 — the constitution file and the systems registry are required reads.
+1. **Gather inputs.** Receive inputs from the user, identify the intent, find related content. No state changes yet.
+2. **Build the plan.** Compose the full set of changes you intend to make.
+3. **Present the plan.** Output a clear plan to the user using the template below. End with the literal sentence:
+   > Reply `yes` to proceed, or tell me what to change.
+4. **Wait for approval.** Wait until the user replies. A reply of `yes`, `y`, `ok`, `proceed`, `go`, `confirm`, or `approved` is approval. Anything else is a request to revise — go back to step 2 with the user's feedback.
+5. **Execute.** Now execute what the user wanted. After each command, report what happened in one line.
+6. **Summarize.** When done, give a one-line confirmation per entity created/changed/deleted.
+
+### Sub-plan template
+
+Every sub-plan must include:
+
+- **Goal:** one-sentence description of the outcome.
+- **Inputs already gathered:** what the skill found (plan slug, current state, related items).
+- **Changes proposed:** every file that will be created/modified/deleted; every DB row that will change.
+- **Named systems used:** which entries from `<cwd>/.x-plans/_data_systems.yaml`'s `systems` array the work targets.
+- **Commands to run:** the exact shell commands or tool calls, in order.
+
+### Plan file format (read-side, for executing plan files written by x-plan)
+
+Every plan file under `<cwd>/.x-plans/` lives at `<prefix>-<slug>.md` with YAML frontmatter:
+
+```yaml
+---
+title: <one-line human-readable title>
+status: valid | superseded | deprecated
+systems: [system-id-1, system-id-2]
+# Optional: forward link from successor to each predecessor it replaces.
+supersedes: [00003-some-slug, 00007-another-slug]
+# Optional: back link on the predecessor; mirrors every `supersedes:` that names it.
+superseded_by: [00021-some-slug]
+# Optional: forward link from extender to each predecessor it extends.
+extends: [00002-some-slug]
+# Optional: back link on the predecessor; mirrors every `extends:` that names it.
+extended_by: [00012-some-slug, 00015-another-slug]
+created: 2026-05-23T14:30:00Z
+---
+```
+
+Body sections, in order: `## Goal`, `## Approach`, `## Tasks` (EARS-format checkboxes; `[ ]` open, `[x]` done — x-x flips these as it executes).
+
+### Plan tooling (the `x-x plans` subcommands)
+
+- `x-x plans list [--status NAME[,NAME...]] [--system ID] [--order asc|desc] [--overflow-keywords PATTERN[,PATTERN...]]` — lists plans, one tab-separated row per plan: `<slug>\t<status>\t<id>,<id>,...`.
+  - `--status` keeps only matching statuses. Repeatable; comma-separated values OK.
+  - `--system` keeps only plans whose `systems:` array contains the given kebab id.
+  - `--order` sorts by zero-padded prefix; default `desc`. Pass `--order=asc` when you need oldest-first execution order (this skill's work queue uses asc).
+  - `--overflow-keywords` filters by body substring when row count exceeds the project's overflow threshold. Safe to omit.
+- `x-x plans lint` — validates every plan file. Exit 0 = all pass, exit 1 = at least one failure.
+
+All `x-x plans` commands read `prefix_width` / `max_plan_lines` from `<cwd>/.x-plans/_config.lock` (seeded by `x-x init`).
+
+### Approval discipline
+
+- A single `yes` approves the entire sub-plan as presented. If the user asks for a change ("rename", "drop step 3"), revise and re-present — the previous approval does not carry forward.
+- Approval covers only the commands listed in the sub-plan. Anything that emerges mid-execution requires its own sub-plan and its own approval.
+- Never bypass this protocol because the change "seems small". Side effects are side effects.
+
+### What the user sees
+
+A sub-plan looks like this when rendered:
+
+```
+## Plan
+
+**Goal:** Implement the payment retry policy task.
+
+**Inputs gathered:**
+- Plan slug 00012-payment-retry-policy, status valid.
+- Checkout Service entry in _data_systems.yaml.
+
+**Named systems:** Checkout Service.
+
+**Changes proposed:**
+- Edit src/checkout/retry.ts to add exponential-backoff retry loop.
+- Add unit test test/checkout/retry.test.ts covering 3-retry cap + transient-only filter.
+
+**Commands to run:**
+1. Edit src/checkout/retry.ts.
+2. Write test/checkout/retry.test.ts.
+3. Run `npm test -- retry`.
+
+Reply `yes` to proceed, or tell me what to change.
+```
+
+Keep it terse. The user reads, says yes, the task executes.

@@ -206,9 +206,8 @@ var skipFromEmbed = map[string]bool{
 // embedded markdown/json content. Non-Go consumers (scripts/e2e_test.sh,
 // docs/public/reference.md) still hold literal strings; keep them in sync.
 const (
-	skillSharedDir = "_x-x_shared"
-	skillXPlanDir  = "x-plan"
-	skillXXDir     = "x-x"
+	skillXPlanDir = "x-plan"
+	skillXXDir    = "x-x"
 )
 
 // skillManifestFile is the manifest filename every bundled skill ships
@@ -217,17 +216,6 @@ const (
 // constant so tests that round-trip files out of the embed don't violate
 // the "no inline path literals in Go source" rule.
 const skillManifestFile = "SKILL.md"
-
-// Filenames shipped under agents/skills/_x-x_shared/. The Go code
-// embeds the whole directory wholesale and never opens these by name,
-// but the e2e harness asserts on their post-install presence — so they
-// must live in constants.go for the e2e shell mirror to be lawful.
-// Renaming a shared file = edit here, edit the shell mirror, ship.
-const (
-	sharedDocPlanFirst = "_plan_first.md"
-	sharedDocSystems   = "_systems.md"
-	sharedDocEars      = "_ears.md"
-)
 
 // ownedSkills is the standard, exhaustive list of skill directory names
 // the binary ships and is allowed to delete. `x-x skills remove` uses this
@@ -239,7 +227,6 @@ const (
 // appending it here. The embed.FS-driven install pulls in whatever is on
 // disk; this list is the matching allowlist for removal.
 var ownedSkills = []string{
-	skillSharedDir,
 	skillXPlanDir,
 	skillXXDir,
 }

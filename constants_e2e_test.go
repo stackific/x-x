@@ -40,14 +40,9 @@ func TestE2EShellConstantsMatchGo(t *testing.T) {
 		"DEFAULT_PREFIX_WIDTH":          strconv.Itoa(defaultPrefixWidth),
 		"PLANS_LIST_OVERFLOW_THRESHOLD": strconv.Itoa(plansListOverflowThreshold),
 
-		"SKILL_SHARED_DIR":    skillSharedDir,
 		"SKILL_X_PLAN_DIR":    skillXPlanDir,
 		"SKILL_X_X_DIR":       skillXXDir,
 		"SKILL_MANIFEST_FILE": skillManifestFile,
-
-		"SHARED_DOC_PLAN_FIRST": sharedDocPlanFirst,
-		"SHARED_DOC_SYSTEMS":    sharedDocSystems,
-		"SHARED_DOC_EARS":       sharedDocEars,
 
 		"CLAUDE_SKILLS_REL": agentTargets[0].skillsRel,
 		"CLAUDE_CONFIG_REL": agentTargets[0].configRel,

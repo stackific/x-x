@@ -50,7 +50,7 @@ Agent-specific config files (e.g. `~/.claude/settings.json`) are seeded only whe
 
 ### `x-x skills remove --user`
 
-Walks `~/.claude/skills/`, `~/.agents/skills/`, etc., and removes every entry whose name matches the bundled-skill allowlist (`_x-x_shared`, `x-plan`, `x-x` today). The name is the only criterion — symlink targets are not consulted, which means an entry named the same as a bundled skill *will* be removed even if you authored it yourself. Rename any local skill that collides with a bundled one before running this command.
+Walks `~/.claude/skills/`, `~/.agents/skills/`, etc., and removes every entry whose name matches the bundled-skill allowlist (`x-plan`, `x-x` today). The name is the only criterion — symlink targets are not consulted, which means an entry named the same as a bundled skill *will* be removed even if you authored it yourself. Rename any local skill that collides with a bundled one before running this command.
 
 In addition to deleting bundled skill directories, `skill remove` un-merges the hook records `x-x init` previously deep-merged into each agent's JSON config (`~/.claude/settings.json`, `~/.codex/hooks.json`). Subtraction is per-record and uses deep-equality against the currently bundled file under `~/.x-x/agents/<agent>/`: a record that byte-equals one of ours is dropped; a user-tweaked variant (different command, different matcher) is preserved. The file, its top-level non-hook keys, user-added event keys, and any user-authored sibling entries under the same event key all stay.
 

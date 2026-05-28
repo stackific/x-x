@@ -844,8 +844,9 @@ func TestParseRegistry_SkipsPartialEntries(t *testing.T) {
 
 // TestParseRegistry_MultilineEntries pins that an item's `id:` and
 // `name:` can live on the same line as `- ` or on indented continuation
-// lines — both forms appear in the wild because _systems.md shows the
-// continuation form but a hand-edit may collapse onto one line.
+// lines — both forms appear in the wild because the documented example
+// (now in x-plan/SKILL.md Appendix C) shows the continuation form, but
+// a hand-edit may collapse onto one line.
 func TestParseRegistry_MultilineEntries(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, plansSystemsFile)

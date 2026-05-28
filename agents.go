@@ -12,13 +12,14 @@ import (
 	"path/filepath"
 )
 
-// embeddedAgents bundles the entire agents/ tree (skills, per-agent config,
-// shared helpers) into the binary at compile time. The `all:` prefix is
-// required because some skill directories start with `_` (e.g. _x-x_shared)
-// which the default embed glob excludes — `all:agents` overrides that and
-// pulls everything in. The directive must point at a path relative to the
-// .go file holding it; keep the on-disk `agents/` directory in this same
-// folder or `go build` will fail with "pattern matches no files".
+// embeddedAgents bundles the entire agents/ tree (skills and per-agent
+// config) into the binary at compile time. The `all:` prefix is kept
+// because the default embed glob excludes `_`-prefixed entries — `all:`
+// overrides that, so any future shared helper directory whose name starts
+// with `_` will ship without an extra edit here. The directive must point
+// at a path relative to the .go file holding it; keep the on-disk
+// `agents/` directory in this same folder or `go build` will fail with
+// "pattern matches no files".
 //
 //go:embed all:agents
 var embeddedAgents embed.FS
