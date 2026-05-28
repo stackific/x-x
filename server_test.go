@@ -18,16 +18,17 @@ import (
 	"testing"
 )
 
-// TestHandleAPIHello pins the wire shape of /api/hello: 200, JSON
-// content type, and a body that carries `message` and the running
-// Version. The Version assertion catches a future linker-flag wiring
-// regression (if the build started shipping with an empty Version,
-// every UI talking to the server would lose its "what binary am I
-// hitting" signal).
-func TestHandleAPIHello(t *testing.T) {
+// TestHandleAPIStats pins the wire shape of /api/stats: 200, JSON
+// content type, and a body that carries the running Version plus the
+// system and scope totals. The Version assertion catches a future
+// linker-flag wiring regression. Counts default to zero for a cwd
+// with no project, matching the home page's "0 systems / 0 scopes"
+// empty state.
+func TestHandleAPIStats(t *testing.T) {
+	chdir(t, t.TempDir())
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, apiHelloPath, http.NoBody)
-	handleAPIHello(rec, req)
+	req := httptest.NewRequest(http.MethodGet, apiStatsPath, http.NoBody)
+	handleAPIStats(rec, req)
 
 	res := rec.Result()
 	defer func() { _ = res.Body.Close() }()
@@ -37,15 +38,45 @@ func TestHandleAPIHello(t *testing.T) {
 	if ct := res.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
 		t.Fatalf("Content-Type = %q, want application/json", ct)
 	}
-	var body helloResponse
+	var body statsResponse
 	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if body.Message != "hello" {
-		t.Fatalf("message = %q, want hello", body.Message)
-	}
 	if body.Version != Version {
 		t.Fatalf("version = %q, want %q", body.Version, Version)
+	}
+	if body.Systems != 0 || body.Scopes != 0 {
+		t.Fatalf("expected zero counts on an empty cwd, got %+v", body)
+	}
+}
+
+// TestHandleAPIStats_CountsSystemsAndScopes pins the populated path:
+// when cwd holds a registry + plan files, the response counts match
+// the on-disk reality so the home page renders the right summary.
+func TestHandleAPIStats_CountsSystemsAndScopes(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	seedDetailFixture(t, dir,
+		"systems:\n  - id: auth\n    name: Auth Service\n  - id: billing\n    name: Billing\n",
+		map[string]string{
+			"0001-add-pkce.md":  "---\ntitle: Add PKCE\nstatus: valid\nsystems: [auth]\ncreated: 2026-01-10T12:00:00Z\n---\n\n## Goal\nG.\n",
+			"0002-proration.md": "---\ntitle: Proration\nstatus: valid\nsystems: [billing]\ncreated: 2026-02-01T09:30:00Z\n---\n\n## Goal\nG.\n",
+		},
+	)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, apiStatsPath, http.NoBody)
+	handleAPIStats(rec, req)
+
+	var body statsResponse
+	if err := json.NewDecoder(rec.Result().Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Systems != 2 {
+		t.Fatalf("systems = %d, want 2", body.Systems)
+	}
+	if body.Scopes != 2 {
+		t.Fatalf("scopes = %d, want 2", body.Scopes)
 	}
 }
 
@@ -504,7 +535,7 @@ func TestNewServerMux_RoutesBothEndpoints(t *testing.T) {
 		path string
 		want string
 	}{
-		{apiHelloPath, `"message":"hello"`},
+		{apiStatsPath, fmt.Sprintf(`"version":%q`, Version)},
 		{apiSystemsPath, `"id":"auth"`},
 	}
 	for _, c := range cases {

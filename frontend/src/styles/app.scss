@@ -233,6 +233,23 @@ details.surface-variant a[target="_blank"] {
   text-decoration: underline;
 }
 
+// -- Scope detail body (rendered markdown) -----------------------
+// goldmark's GFM extension renders `- [ ] task` as
+//   <li><input type="checkbox" disabled> …</li>
+// inside a regular <ul> — without adding the GitHub `task-list-item`
+// class. The disc bullet then sits next to the checkbox, which is
+// visually redundant. Suppress the bullet (and the bullet's
+// indentation) on any <li> whose first child element is a checkbox.
+// Scoped to `.scope-body` so unrelated <ul>s on the page keep their
+// default disc bullets.
+
+.scope-body {
+  li:has(> input[type="checkbox"]) {
+    list-style: none;
+    margin-inline-start: -1.25rem;
+  }
+}
+
 // -- Screen-reader only ------------------------------------------
 
 .sr-only {
