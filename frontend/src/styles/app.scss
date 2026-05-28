@@ -247,6 +247,14 @@ details.surface-variant a[target="_blank"] {
   li:has(> input[type="checkbox"]) {
     list-style: none;
     margin-inline-start: -1.25rem;
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+  }
+
+  li > input[type="checkbox"] {
+    margin: 0;
+    flex-shrink: 0;
   }
 }
 
