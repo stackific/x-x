@@ -72,6 +72,8 @@ For each predecessor the user answered **extends** in step 2a, write the link on
 
 The predecessor and the extender both stay `status: valid`. `x-x plans lint` enforces bidirectional integrity — a missing back link on either side fails the lint. Treat each predecessor edit as a side effect that goes through the plan-first sub-plan protocol.
 
+**Supersedes may require cleanup criteria.** When the new plan has `supersedes:` and the predecessor produced on-disk artifacts that should not survive the supersede, propose EARS criteria in `## Tasks` describing the desired post-successor workspace state — targeting the successor's system, naming the affected paths. Read each predecessor's `[x]` criteria to identify what it produced. Skip if the supersede has no artifact disposition (a pure-refactor supersede where paths are unchanged). The user approves or amends the proposal at the plan-first review.
+
 **Before drafting the `## Tasks` section, refer to Appendix B (EARS rules).** Every EARS criterion names exactly one system from `<cwd>/.x-plans/_data_systems.yaml`.
 
 The `systems:` array must list every system named in the plan's EARS tasks, each entry an exact `id:` (kebab key) from `<cwd>/.x-plans/_data_systems.yaml`. EARS criterion text still uses the corresponding display `name:` — see Appendix C (named-systems registry rules).
@@ -296,7 +298,10 @@ For each spec or task you intend to write:
 1. Identify the actor — the specific component, service, or device that performs the response.
 2. Try to match it against an existing entry by name AND `brief`.
 3. If matched: use the existing entry's `name` verbatim in the EARS criterion text (e.g., "the Checkout Service shall …") AND its `id` verbatim in the plan's frontmatter `systems:` array (e.g., `systems: [checkout-service]`). These two are always taken from the same registry entry.
-4. If not matched: STOP. Propose a new system to the user (id + name + one-sentence brief). On approval, add that to `<cwd>/.x-plans/_data_systems.yaml`. Then continue.
+4. If not matched: STOP. Present the new-system proposal (id + name + one-sentence brief) per the plan-first protocol in Appendix A — `Goal` + `Changes proposed` + `Commands to run` — and end the message with the literal sentence:
+   > Reply `yes` to proceed, or tell me what to change.
+
+   On approval, add the entry to `<cwd>/.x-plans/_data_systems.yaml`. Then continue.
 
 ### Source of truth
 
