@@ -112,7 +112,7 @@ ensure_on_path() {
 }
 
 # Seed ~/.stax/agents/ from the binary's embed via a bare invocation. Same
-# trick the release installer uses; the 24h update check is bound to bare
+# trick the release installer uses; the hourly update check is bound to bare
 # invocations and handles refreshes from then on.
 info "Seeding ~/.stax/agents/ from binary"
 "${INSTALL_DIR}/${BINARY}" >/dev/null

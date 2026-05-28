@@ -92,7 +92,7 @@ func saveUpdateConfig(path string, c updateConfig) error {
 // never disrupted by upgrade plumbing. The function returns no error and
 // no value — observation only.
 //
-// The 24-hour cadence is enforced via last_checked, not a process-level
+// The hourly cadence is enforced via last_checked, not a process-level
 // rate-limiter, so even rapid back-to-back invocations only hit the API
 // once per day.
 func maybeNotifyUpdate() {
@@ -116,7 +116,7 @@ func maybeNotifyUpdate() {
 		return
 	}
 
-	// 24h cadence reached → also rewrite $HOME/<staxDir>/agents from the
+	// hourly cadence reached → also rewrite $HOME/<staxDir>/agents from the
 	// binary's embed. This keeps the global skill library in lockstep with
 	// whatever binary version is currently installed: if the user upgraded
 	// since the last check, the new embed lands here. Scope is strictly
@@ -213,7 +213,7 @@ func fetchLatestVersion() (string, error) {
 	resp, err := client.Get(releasesAPIURL) // #nosec G107 -- constant URL.
 	if err != nil {
 		// Network/DNS/timeout errors all land here. No retry — we'll
-		// try again 24h from now per maybeNotifyUpdate's cadence.
+		// try again hourly from now per maybeNotifyUpdate's cadence.
 		return "", err
 	}
 	defer func() { _ = resp.Body.Close() }()

@@ -87,7 +87,7 @@ if (($env:Path -split ';') -notcontains $installDir) {
 }
 
 # Seed ~/.stax/agents/ from the binary's embed via a bare invocation. Same
-# trick the release installer uses; refreshes are handled by the 24h
+# trick the release installer uses; refreshes are handled by the hourly
 # update check from then on.
 Info "Seeding ~/.stax/agents/ from binary"
 & $dest | Out-Null

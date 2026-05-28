@@ -574,3 +574,50 @@ func TestRunSkillsRemove_CwdFlag_TargetsRequestedProject(t *testing.T) {
 // or non-directory --cwd value through the shared applyCwd → exitErr
 // pair, and the unit tests there exercise both rejection branches
 // (missing path, regular file) directly without spinning a subprocess.
+
+// TestValidateSkillsRemoveFlags exercises every policy decision the
+// runSkillsRemove dispatcher delegates to. Direct unit coverage —
+// distinct from the OrExit wrapper that calls os.Exit(2) and is
+// therefore only reachable via subprocess.
+//
+// Two return-channel fields are asserted: `err` non-nil means a real
+// policy violation; `showUsage` true means the caller should print the
+// FlagSet's Usage block before exiting (the "neither flag passed"
+// branch, where the actionable answer is the usage table itself).
+func TestValidateSkillsRemoveFlags(t *testing.T) {
+	cases := []struct {
+		name          string
+		userScope     bool
+		projectScope  bool
+		cwdValue      string
+		wantShowUsage bool
+		wantErrSubstr string // "" → expect nil err
+	}{
+		{"user only", true, false, "", false, ""},
+		{"project only", false, true, "", false, ""},
+		{"project + cwd", false, true, "/some/dir", false, ""},
+		{"both scopes set", true, true, "", false, "mutually exclusive"},
+		{"neither scope set", false, false, "", true, "exactly one of --user or --project"},
+		{"user + cwd rejected", true, false, "/some/dir", false, "--cwd is only valid with --project"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			showUsage, err := validateSkillsRemoveFlags(c.userScope, c.projectScope, c.cwdValue)
+			if showUsage != c.wantShowUsage {
+				t.Fatalf("showUsage = %v, want %v", showUsage, c.wantShowUsage)
+			}
+			if c.wantErrSubstr == "" {
+				if err != nil {
+					t.Fatalf("expected nil err, got %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("expected error containing %q, got nil", c.wantErrSubstr)
+			}
+			if !strings.Contains(err.Error(), c.wantErrSubstr) {
+				t.Fatalf("error %q does not contain %q", err.Error(), c.wantErrSubstr)
+			}
+		})
+	}
+}

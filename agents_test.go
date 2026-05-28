@@ -81,7 +81,7 @@ func TestEnsureAgentsDir_Idempotent(t *testing.T) {
 }
 
 // TestMaterializeAgents_Force_Clobbers pins the `overwrite=true` semantics
-// used by `stax bootstrap` and the 24h refresh path: any stale content
+// used by `stax bootstrap` and the hourly refresh path: any stale content
 // under ~/.stax/agents/ must be wiped before the embed is rewritten, so
 // the result is byte-identical to the binary's bundle.
 func TestMaterializeAgents_Force_Clobbers(t *testing.T) {

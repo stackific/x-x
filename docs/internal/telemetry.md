@@ -72,7 +72,7 @@ Each row shows the event name, what CLI action fires it, and the event-specific 
 | `plans_lint` | End of `planLint` (`plan.go`) — success path only (post-arg-validation + post-project-check) | `plan_count`, `ok_count`, `fail_count` | ✅ |
 | `plans_next_prefix` | End of `planNextPrefix` (`plan.go`) — success path only | `prefix` (zero-padded string matching what was printed to stdout) | ✅ |
 | `update_check` | `maybeNotifyUpdate` after every GitHub round-trip — success AND fetch-error, so the backend sees actual check cadence | `from_version`, `to_version`, `has_update` (`1`/`0`) | ✅ |
-| `update_apply` | `maybeNotifyUpdate` after `writeBundledAgents(true)` (the 24h embed refresh) — success AND failure | `from_version`, `to_version`, `success_count` (`1`/`0`), `fail_count` (`1`/`0`) | ✅ |
+| `update_apply` | `maybeNotifyUpdate` after `writeBundledAgents(true)` (the hourly embed refresh) — success AND failure | `from_version`, `to_version`, `success_count` (`1`/`0`), `fail_count` (`1`/`0`) | ✅ |
 | `command_failed` | Wrapping every subcommand's non-zero exit | `command`, `exit_code` | ⏳ |
 
 `command_failed` stays reserved — wiring it cleanly requires an `os.Exit` wrapper across every subcommand entry point, which is a separate refactor.

@@ -19,7 +19,7 @@ import (
 // The leading-dash check is what lets `stax --version` keep working without
 // being misinterpreted as a subcommand named "--version".
 func main() {
-	// Opportunistic 24h update check fires for EVERY invocation —
+	// Opportunistic hourly update check fires for EVERY invocation —
 	// bare, --version, and every subcommand. Centralizing it here (rather
 	// than peppering each runner with its own call) makes the upsell
 	// behavior uniform: the user sees the same upgrade nudge whether they
@@ -99,7 +99,7 @@ func main() {
 // `ensureBundledAgents` runs first on every branch so the embedded skill
 // tree lands under ~/.stax/agents/ on the very first invocation of a
 // freshly-installed binary, regardless of which flag the caller passed.
-// The 24h update check fires from main() before dispatch (not here), so
+// The hourly update check fires from main() before dispatch (not here), so
 // the upgrade nudge appears identically across every branch.
 func runDefault(args []string) {
 	// A dedicated FlagSet (rather than the global flag.CommandLine) keeps

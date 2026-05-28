@@ -1608,7 +1608,7 @@ assert_contains "tweaked command kept" "$TWEAKED_BODY" 'stax plans lint --verbos
 #
 # Lazy first-run is "create iff missing" — it never touches a tree that
 # already exists. Foreign files dropped into ~/${STAX_AGENTS_DIR} after the
-# first run survive subsequent bare invocations *until* the 24h refresh
+# first run survive subsequent bare invocations *until* the hourly refresh
 # fires (covered by the next case). Without a .config.json present,
 # maybeNotifyUpdate returns early and the refresh never runs.
 #
@@ -1627,14 +1627,14 @@ mkdir -p "$HOME/${STAX_AGENTS_DIR}/my-private-skill"
 echo "USER" > "$HOME/${STAX_AGENTS_DIR}/my-private-skill/SKILL.md"
 # --version with no .config.json → no update check → no refresh.
 run_capture "" --version
-assert_is_file "user file survives without 24h refresh" \
+assert_is_file "user file survives without hourly refresh" \
   "$HOME/${STAX_AGENTS_DIR}/USER-NOTE.md"
-assert_is_file "user skill survives without 24h refresh" \
+assert_is_file "user skill survives without hourly refresh" \
   "$HOME/${STAX_AGENTS_DIR}/my-private-skill/SKILL.md"
 
-# ---------- 24h update check rewrites $HOME/<STAX_AGENTS_DIR> from embed ----------
+# ---------- hourly update check rewrites $HOME/<STAX_AGENTS_DIR> from embed ----------
 
-case_start "24h update check rewrites bundled agents tree"
+case_start "hourly update check rewrites bundled agents tree"
 reset_user_home
 PROJ_REF="$(fresh_project)"
 # 1) Lazy first-run write seeds the agents tree.
@@ -1644,16 +1644,16 @@ assert_is_dir "agents tree seeded" "$HOME/${STAX_AGENTS_DIR}"
 cd "$PROJ_REF"
 run_capture "" init --agents=claude,codex --scope=project
 echo "MINE" > "$PROJ_REF/${CLAUDE_SKILLS_REL}/${SKILL_SHIP_DIR}/PROJECT-LOCAL"
-# 3) Drop a stale file under the global tree — the 24h refresh must wipe it.
+# 3) Drop a stale file under the global tree — the hourly refresh must wipe it.
 echo "STALE" > "$HOME/${STAX_AGENTS_DIR}/STALE.md"
-# 4) Backdate .config.json so the 24h cadence triggers immediately. The
+# 4) Backdate .config.json so the hourly cadence triggers immediately. The
 #    binary's stamped version is recorded so no upgrade nudge fires.
 echo "{\"version\":\"${E2E_VERSION}\",\"last_checked\":0}" \
   > "$HOME/${STAX_DIR}/${STAX_CONFIG_FILE}"
 # 5) --version fires the update check → writeBundledAgents(true).
 run_capture "" --version
 assert_eq "exit 0" "$RUN_RC" "0"
-assert_absent "stale file wiped by 24h refresh" "$HOME/${STAX_AGENTS_DIR}/STALE.md"
+assert_absent "stale file wiped by hourly refresh" "$HOME/${STAX_AGENTS_DIR}/STALE.md"
 assert_is_dir "bundled skill present after refresh" \
   "$HOME/${STAX_AGENTS_SKILLS_DIR}/${SKILL_SHIP_DIR}"
 # 6) Project-local content MUST be untouched.
@@ -1890,9 +1890,9 @@ for skill in $OWNED_SKILLS; do
     || fail "project Codex $manifest is not a symlink" "found symlink — project copy would track user-scope edits"
 done
 
-case_start "project SKILL.md edits survive a 24h user-scope refresh"
+case_start "project SKILL.md edits survive a hourly user-scope refresh"
 # Hand-edit a project-scope SKILL.md with a sentinel byte. Trigger the
-# 24h refresh that wholesale-rewrites ~/.stax/agents/. The project copy
+# hourly refresh that wholesale-rewrites ~/.stax/agents/. The project copy
 # must retain the sentinel; the user-scope copy (a symlink into the
 # refreshed bundled tree) must reflect the embed bytes again.
 reset_user_home
@@ -1903,7 +1903,7 @@ cd "$PROJ_SD8"
 run_capture "" init --scope=project --agents=claude,codex
 sentinel_doc="$PROJ_SD8/${CLAUDE_SKILLS_REL}/${SKILL_SHIP_DIR}/${SKILL_MANIFEST_FILE}"
 printf '\n<!-- e2e sentinel: PROJECT-EDITED -->\n' >> "$sentinel_doc"
-# Backdate .config.json so the next stax invocation fires the 24h refresh.
+# Backdate .config.json so the next stax invocation fires the hourly refresh.
 echo "{\"version\":\"${E2E_VERSION}\",\"last_checked\":0}" \
   > "$HOME/${STAX_DIR}/${STAX_CONFIG_FILE}"
 run_capture "" --version

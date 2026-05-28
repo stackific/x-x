@@ -70,7 +70,7 @@ try {
   New-Item -ItemType Directory -Force -Path $configDir | Out-Null
 
   # Seed the update-check config. The CLI reads ~/.stax/.config.json on every run
-  # and consults the GitHub API at most once per 24h to nudge stale installs.
+  # and consults the GitHub API at most once per hourly to nudge stale installs.
   # Writing last_checked=<now> here means the first post-install invocation
   # does not probe the network.
   # `stax --version` prints the full notice; the version itself is the last

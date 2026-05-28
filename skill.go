@@ -78,30 +78,51 @@ func printSkillsUsage(w io.Writer) {
 //   - Non-JSON per-agent config files (none today). They have no
 //     subtraction path, so they are not consulted at all.
 //
-// validateSkillsRemoveFlagsOrExit enforces the three invariants that
-// would otherwise live inline at the top of runSkillsRemove:
+// validateSkillsRemoveFlags enforces the three invariants that would
+// otherwise live inline at the top of runSkillsRemove:
 //
 //   - exactly one of --user / --project (never both, never neither);
 //   - --cwd is rejected under --user ($HOME is the wipe root either way,
 //     so combining them is a silent contradiction).
 //
-// Pulled into a helper so runSkillsRemove stays under the linter's
-// cyclomatic-complexity ceiling — mirrors validateInitFlagsOrExit's
-// shape. usageFn is the FlagSet's Usage callback so the "neither flag
-// passed" branch can defer to the registered usage text.
-func validateSkillsRemoveFlagsOrExit(userScope, projectScope bool, cwdValue string, usageFn func()) {
+// Returns (showUsage, err). showUsage=true means the caller should
+// print the FlagSet's Usage block before exiting (the "neither flag
+// passed" branch). err is non-nil for any policy violation; a nil err
+// + showUsage=false is the all-clear case.
+//
+// Pulled into an error-returning helper so the rejection paths are
+// unit-testable without an os.Exit kill. validateSkillsRemoveFlagsOrExit
+// wraps it for runSkillsRemove and keeps the "log + exit 2" call site
+// uniform with the rest of the skill.go entry point.
+func validateSkillsRemoveFlags(userScope, projectScope bool, cwdValue string) (showUsage bool, err error) {
 	switch {
 	case userScope && projectScope:
-		fmt.Fprintln(os.Stderr, "error: --user and --project are mutually exclusive")
-		os.Exit(2)
+		return false, fmt.Errorf("--user and --project are mutually exclusive")
 	case !userScope && !projectScope:
-		usageFn()
-		os.Exit(2)
+		return true, fmt.Errorf("exactly one of --user or --project is required")
 	}
 	if userScope && cwdValue != "" {
-		fmt.Fprintln(os.Stderr, "error: --cwd is only valid with --project")
-		os.Exit(2)
+		return false, fmt.Errorf("--cwd is only valid with --project")
 	}
+	return false, nil
+}
+
+// validateSkillsRemoveFlagsOrExit is the runSkillsRemove-facing wrapper
+// around validateSkillsRemoveFlags: prints the violation to stderr (or
+// the FlagSet's Usage block, depending on which branch fired) and
+// exits 2. usageFn is the FlagSet's Usage callback so the "neither
+// flag passed" branch defers to the registered usage text.
+func validateSkillsRemoveFlagsOrExit(userScope, projectScope bool, cwdValue string, usageFn func()) {
+	showUsage, err := validateSkillsRemoveFlags(userScope, projectScope, cwdValue)
+	if err == nil {
+		return
+	}
+	if showUsage {
+		usageFn()
+	} else {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+	}
+	os.Exit(2)
 }
 
 func runSkillsRemove(args []string) {
