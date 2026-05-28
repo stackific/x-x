@@ -411,9 +411,10 @@ function Start-StaxServer {
     -NoNewWindow -PassThru `
     -RedirectStandardOutput $stdout.FullName `
     -RedirectStandardError  $stderr.FullName
-  Add-Member -InputObject $proc -NotePropertyName StaxStdout -NotePropertyValue $stdout.FullName -Force
-  Add-Member -InputObject $proc -NotePropertyName StaxStderr -NotePropertyValue $stderr.FullName -Force
-  Add-Member -InputObject $proc -NotePropertyName StaxUrl    -NotePropertyValue ''                -Force
+  Add-Member -InputObject $proc -NotePropertyName StaxStdout   -NotePropertyValue $stdout.FullName -Force
+  Add-Member -InputObject $proc -NotePropertyName StaxStderr   -NotePropertyValue $stderr.FullName -Force
+  Add-Member -InputObject $proc -NotePropertyName StaxUrl      -NotePropertyValue ''                -Force
+  Add-Member -InputObject $proc -NotePropertyName StaxProbeUrl -NotePropertyValue ''                -Force
   $deadline = (Get-Date).AddSeconds(5)
   $bannerRe = 'Stax server listening on (\S+)'
   while ((Get-Date) -lt $deadline) {
@@ -425,8 +426,16 @@ function Start-StaxServer {
     $banner = Get-Content -LiteralPath $stdout.FullName -Raw -ErrorAction SilentlyContinue
     if ($banner -and ($banner -match $bannerRe)) {
       $proc.StaxUrl = $matches[1]
+      # serverListenAddr binds 127.0.0.1 (IPv4 only). The banner prints
+      # `http://localhost:<port>`, but Windows' resolver returns `::1`
+      # for `localhost` first, and Invoke-WebRequest sits there timing
+      # out against an IPv6 endpoint nothing is listening on. Probe via
+      # the IPv4 literal while keeping the banner URL untouched for
+      # banner-content assertions. Linux's resolver already prefers
+      # IPv4 for localhost so the bash harness sidesteps this.
+      $proc.StaxProbeUrl = $proc.StaxUrl -replace 'http://localhost(:|/|$)', 'http://127.0.0.1$1'
       try {
-        $null = Invoke-WebRequest -Uri "$($proc.StaxUrl)$STAX_API_STATS_PATH" `
+        $null = Invoke-WebRequest -Uri "$($proc.StaxProbeUrl)$STAX_API_STATS_PATH" `
           -TimeoutSec 1 -UseBasicParsing -ErrorAction Stop
         return $proc
       } catch {
@@ -632,7 +641,7 @@ $projNoBrowser = New-FreshProject
 Initialize-ProjectScaffold -Path $projNoBrowser
 $srv = Start-StaxServer --no-browser --cwd $projNoBrowser
 try {
-  $resp = Invoke-WebRequest -Uri "$($srv.StaxUrl)$STAX_API_STATS_PATH" -TimeoutSec 1 -UseBasicParsing
+  $resp = Invoke-WebRequest -Uri "$($srv.StaxProbeUrl)$STAX_API_STATS_PATH" -TimeoutSec 1 -UseBasicParsing
   Assert-Eq       'stats status 200' $resp.StatusCode 200
   Assert-Contains 'stats version'    $resp.Content "`"version`":`"$E2E_VERSION`""
   Assert-Contains 'stats systems'    $resp.Content '"systems":'
@@ -670,7 +679,7 @@ $registry = "systems:`n  - id: auth`n    name: Auth Service`n"
 Set-Content -LiteralPath (Join-Path (Join-Path $projApi $STAX_DIR) $STAX_SYSTEMS_FILE) -Value $registry -Encoding ascii
 $srv = Start-StaxServer --no-browser --cwd $projApi
 try {
-  $resp = Invoke-WebRequest -Uri "$($srv.StaxUrl)$STAX_API_SYSTEMS_PATH" -TimeoutSec 1 -UseBasicParsing
+  $resp = Invoke-WebRequest -Uri "$($srv.StaxProbeUrl)$STAX_API_SYSTEMS_PATH" -TimeoutSec 1 -UseBasicParsing
   Assert-Eq       'systems status 200' $resp.StatusCode 200
   Assert-Contains 'systems id'          $resp.Content '"id":"auth"'
   Assert-Contains 'systems name'        $resp.Content '"name":"Auth Service"'
@@ -685,7 +694,7 @@ Initialize-ProjectScaffold -Path $emptyProjApi
 Remove-Item -LiteralPath (Join-Path (Join-Path $emptyProjApi $STAX_DIR) $STAX_SYSTEMS_FILE) -ErrorAction SilentlyContinue
 $srv = Start-StaxServer --no-browser --cwd $emptyProjApi
 try {
-  $resp = Invoke-WebRequest -Uri "$($srv.StaxUrl)$STAX_API_SYSTEMS_PATH" -TimeoutSec 1 -UseBasicParsing
+  $resp = Invoke-WebRequest -Uri "$($srv.StaxProbeUrl)$STAX_API_SYSTEMS_PATH" -TimeoutSec 1 -UseBasicParsing
   Assert-Eq       'systems status 200'  $resp.StatusCode 200
   Assert-Contains 'empty systems list'  $resp.Content '"systems":[]'
 } finally {
