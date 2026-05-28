@@ -97,12 +97,12 @@ Set-Variable -Option Constant -Name PI_SKILLS_REL               -Value '.agents\
 Set-Variable -Option Constant -Name ZED_SKILLS_REL              -Value '.agents\skills'
 
 # Local-server constants — mirrors of serverListenAddr / serverDisplayURL
-# / apiHelloPath / apiSystemsPath in constants.go. Bare `stax` starts an
+# / apiStatsPath / apiSystemsPath in constants.go. Bare `stax` starts an
 # HTTP listener on serverListenAddr; the Windows e2e spawns it in the
 # background and probes these paths the same way the bash harness does.
 Set-Variable -Option Constant -Name STAX_SERVER_LISTEN_ADDR -Value '127.0.0.1:7829'
 Set-Variable -Option Constant -Name STAX_SERVER_DISPLAY_URL -Value 'http://localhost:7829'
-Set-Variable -Option Constant -Name STAX_API_HELLO_PATH     -Value '/api/hello'
+Set-Variable -Option Constant -Name STAX_API_STATS_PATH     -Value '/api/stats'
 Set-Variable -Option Constant -Name STAX_API_SYSTEMS_PATH   -Value '/api/systems'
 
 # Bundled config filenames (not constants in Go; pinned here for assertions).
@@ -397,7 +397,7 @@ function Start-StaxServer {
   )
   # Bare `stax` blocks on the loopback HTTP server. Start it in the
   # background, wait up to 5s for the port to start accepting requests
-  # (polled via /api/hello), then return the Process object so the
+  # (polled via /api/stats), then return the Process object so the
   # caller can stop it. Captures stdout / stderr to per-process temp
   # files for post-mortem assertions, and stashes their paths on the
   # Process object for the caller to read.
@@ -418,7 +418,7 @@ function Start-StaxServer {
       throw "stax background process exited before listening (rc=$($proc.ExitCode))`nstdout: $out`nstderr: $err"
     }
     try {
-      $null = Invoke-WebRequest -Uri "$STAX_SERVER_DISPLAY_URL$STAX_API_HELLO_PATH" `
+      $null = Invoke-WebRequest -Uri "$STAX_SERVER_DISPLAY_URL$STAX_API_STATS_PATH" `
         -TimeoutSec 1 -UseBasicParsing -ErrorAction Stop
       return $proc
     } catch {
@@ -619,10 +619,11 @@ $projNoBrowser = New-FreshProject
 Initialize-ProjectScaffold -Path $projNoBrowser
 $srv = Start-StaxServer --no-browser --cwd $projNoBrowser
 try {
-  $resp = Invoke-WebRequest -Uri "$STAX_SERVER_DISPLAY_URL$STAX_API_HELLO_PATH" -TimeoutSec 1 -UseBasicParsing
-  Assert-Eq       'hello status 200' $resp.StatusCode 200
-  Assert-Contains 'hello message'    $resp.Content '"message":"hello"'
-  Assert-Contains 'hello version'    $resp.Content "`"version`":`"$E2E_VERSION`""
+  $resp = Invoke-WebRequest -Uri "$STAX_SERVER_DISPLAY_URL$STAX_API_STATS_PATH" -TimeoutSec 1 -UseBasicParsing
+  Assert-Eq       'stats status 200' $resp.StatusCode 200
+  Assert-Contains 'stats version'    $resp.Content "`"version`":`"$E2E_VERSION`""
+  Assert-Contains 'stats systems'    $resp.Content '"systems":'
+  Assert-Contains 'stats scopes'     $resp.Content '"scopes":'
   $banner = Get-Content -LiteralPath $srv.StaxStdout -Raw
   Assert-Contains 'listening banner' $banner $STAX_SERVER_DISPLAY_URL
   Assert-Contains 'ctrl-c hint'      $banner 'Ctrl-C'
@@ -715,7 +716,7 @@ Assert-Contains 'cwd flag listed'              $RunOut '--cwd <path>'
 # Help text MUST NOT leak server internals — the HTTP routes and the
 # listen URL are implementation details behind the web UI, not user
 # surfaces.
-Assert-NotContains 'no api hello leak'         $RunOut $STAX_API_HELLO_PATH
+Assert-NotContains 'no api stats leak'         $RunOut $STAX_API_STATS_PATH
 Assert-NotContains 'no api systems leak'       $RunOut $STAX_API_SYSTEMS_PATH
 Assert-NotContains 'no listen url leak'        $RunOut $STAX_SERVER_DISPLAY_URL
 
