@@ -97,6 +97,13 @@ jobs:
           node --version
           npm --version
 
+      # `task build` -> `task frontend:build` -> `npm run build` needs vite
+      # on PATH, which only exists after `npm ci` populates frontend/node_modules.
+      # The Taskfile's frontend:build does not install deps, so we install them here.
+      - name: install frontend deps
+        working-directory: frontend
+        run: npm ci
+
       - name: task build
         run: |
           set -x
