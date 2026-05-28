@@ -34,8 +34,10 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"sort"
+	"strings"
 	"syscall"
 )
 
@@ -98,15 +100,74 @@ type systemsResponse struct {
 // Route precedence: ServeMux matches longest pattern first, so the
 // explicit `/api/*` registrations take priority over the catch-all `/`
 // static handler — a request for `/api/hello` lands on the JSON
-// handler, not the embedded SPA's index.html. Static files
-// (`/index.html`, `/bundle.js`, every asset under `assets/`) flow
-// through `http.FileServer(http.FS(frontendFS))`.
+// handler, not the embedded SPA. Everything else flows through
+// handleFrontend, which adds clean-URL behavior on top of the raw
+// file server (see that function's doc).
 func newServerMux() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc(apiHelloPath, handleAPIHello)
 	mux.HandleFunc(apiSystemsPath, handleAPISystems)
-	mux.Handle("/", http.FileServer(http.FS(frontendFS)))
+	mux.HandleFunc("/", handleFrontend)
 	return mux
+}
+
+// frontendFileServer is the raw embedded-FS file server reused by every
+// hit handleFrontend forwards. Built once at package scope so each
+// request pays only a method dispatch, not a fresh constructor.
+var frontendFileServer = http.FileServer(http.FS(frontendFS))
+
+// handleFrontend serves the embedded Vite SPA from frontendFS with the
+// two niceties the multi-page output needs that net/http's bare
+// FileServer doesn't provide:
+//
+//   - clean URLs: a request for `/systems` falls back to `systems.html`
+//     when the exact path doesn't exist. The dist tree ships flat
+//     `*.html` files at the root (systems.html, search.html, …), not
+//     `<page>/index.html` subdirectories, so without this fallback
+//     every page except `/` would 404.
+//   - 404.html fallback: when neither the exact path nor the `.html`
+//     variant exists, return the SPA's branded 404 page with a 404
+//     status — same look as the rest of the UI.
+//
+// Path normalization is intentionally minimal: leading `/` is
+// stripped, and the candidate is checked via fs.Stat against the
+// embed. embed.FS doesn't honor `..` segments, so traversal attempts
+// resolve to non-existent names and harmlessly fall through to the
+// 404 branch.
+func handleFrontend(w http.ResponseWriter, r *http.Request) {
+	p := strings.TrimPrefix(r.URL.Path, "/")
+	// Root path: let the file server resolve "" → "index.html".
+	if p == "" {
+		frontendFileServer.ServeHTTP(w, r)
+		return
+	}
+	// Exact-file match (the common case for `/bundle.js`, asset files,
+	// `/index.html` if requested explicitly).
+	if info, err := fs.Stat(frontendFS, p); err == nil && !info.IsDir() {
+		frontendFileServer.ServeHTTP(w, r)
+		return
+	}
+	// Clean-URL fallback: extension-less paths get `.html` appended
+	// when the resulting file exists. Cloning the request so the
+	// upstream file server sees the rewritten URL without mutating the
+	// shared request object the test harness inspects.
+	if path.Ext(p) == "" {
+		if _, err := fs.Stat(frontendFS, p+".html"); err == nil {
+			r2 := r.Clone(r.Context())
+			r2.URL.Path = r.URL.Path + ".html"
+			frontendFileServer.ServeHTTP(w, r2)
+			return
+		}
+	}
+	// 404.html fallback (branded), if the embed ships one.
+	if data, err := fs.ReadFile(frontendFS, "404.html"); err == nil {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write(data)
+		return
+	}
+	// Last-resort generic 404.
+	http.NotFound(w, r)
 }
 
 // handleAPIHello is the simplest endpoint: a JSON `{message, version}`

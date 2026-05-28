@@ -181,6 +181,53 @@ func TestNewServerMux_ServesEmbeddedFrontend(t *testing.T) {
 	}
 }
 
+// TestNewServerMux_CleanURLs pins the `.html` extension fallback that
+// handleFrontend adds on top of net/http's bare FileServer. The Vite
+// dist tree ships flat `*.html` files at the root, so a clean URL like
+// `/systems` MUST resolve to `systems.html` — without this fallback
+// every page except `/` would 404, and a regression here would silently
+// break navigation across the multi-page UI.
+func TestNewServerMux_CleanURLs(t *testing.T) {
+	srv := httptest.NewServer(newServerMux())
+	t.Cleanup(srv.Close)
+	for _, page := range []string{"/systems", "/search", "/minibooks", "/essay"} {
+		t.Run(page, func(t *testing.T) {
+			res, err := http.Get(srv.URL + page) // #nosec G107 -- srv.URL is httptest.
+			if err != nil {
+				t.Fatalf("GET %s: %v", page, err)
+			}
+			defer func() { _ = res.Body.Close() }()
+			if res.StatusCode != http.StatusOK {
+				t.Fatalf("GET %s: status = %d, want 200 (clean-URL fallback to %s.html must work)",
+					page, res.StatusCode, page)
+			}
+			if ct := res.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+				t.Fatalf("GET %s: Content-Type = %q, want text/html prefix", page, ct)
+			}
+		})
+	}
+}
+
+// TestNewServerMux_404FallbackServesBrandedPage pins the branded 404
+// path: an unknown URL gets `404.html` from the embed back with a 404
+// status code. Lets the frontend keep its design language even on the
+// error path.
+func TestNewServerMux_404FallbackServesBrandedPage(t *testing.T) {
+	srv := httptest.NewServer(newServerMux())
+	t.Cleanup(srv.Close)
+	res, err := http.Get(srv.URL + "/this-page-does-not-exist-anywhere") // #nosec G107 -- srv.URL is httptest.
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer func() { _ = res.Body.Close() }()
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", res.StatusCode)
+	}
+	if ct := res.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Fatalf("Content-Type = %q, want text/html prefix (404.html should be branded HTML)", ct)
+	}
+}
+
 // TestNewServerMux_RoutesBothEndpoints is the routing-table pin:
 // fetch both API paths through the live mux + httptest.Server so any
 // future handler-rename or path-typo surfaces as a 404 here. Uses the
