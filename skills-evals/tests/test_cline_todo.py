@@ -5,10 +5,10 @@
 Mirror of test_claude_todo.py, adapted for Cline's headless model.
 Cline's `--yolo` CLI is a one-shot subprocess that auto-approves every
 tool call and does NOT resolve slash commands from disk in headless
-mode, so the driver inlines SKILL.md off `<workspace>/.claude/skills/`
-into the prompt. `x-x init --agents claude` (transitional value for
-cline; see AGENT_INIT_VALUE_FOR_KEY) is what placed those SKILL.md
-files where the driver reads them.
+mode, so the driver inlines SKILL.md off `<workspace>/.cline/skills/`
+into the prompt. `x-x init --agents cline` (a first-class entry in
+constants.go agentTargets) is what placed those SKILL.md files where
+the driver reads them, per docs.cline.bot/customization/overview.
 
 Flow per the user's spec:
   1. Invoke the x-plan skill with the TODO task. The CI directive
