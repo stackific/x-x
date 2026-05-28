@@ -1,0 +1,306 @@
+// =================================================================
+// @stackific/web-template — Project-level styles
+// =================================================================
+// BeerCSS handles typography, spacing, grid, and components.
+// This file only adds what BeerCSS does not provide.
+// =================================================================
+
+@use "sass:list";
+@use "sass:map";
+
+// -- Spacing maps + mixins ---------------------------------------
+// Single source of truth for the directional margin/padding system.
+// Used both by the utility-class generator below and by ad-hoc
+// selectors (e.g. `footer nav`) that want to reuse the same scale.
+
+$breakpoints: (
+  s: null,
+  m: 601px,
+  l: 993px,
+);
+
+// Size keys map 1:1 to --space-{key} variables on :root.
+$size-keys: (t, s, m, l);
+
+$dirs: (
+  mt: margin-block-start,
+  mb: margin-block-end,
+  ml: margin-inline-start,
+  mr: margin-inline-end,
+  mx: margin-inline,
+  my: margin-block,
+  pt: padding-block-start,
+  pb: padding-block-end,
+  pl: padding-inline-start,
+  pr: padding-inline-end,
+  px: padding-inline,
+  py: padding-block,
+);
+
+// Emit a single spacing declaration. Use this to apply the same value
+// an `m{dir}-{size}` / `p{dir}-{size}` utility class would, on any selector.
+// $dir: mt|mb|ml|mr|mx|my|pt|pb|pl|pr|px|py
+// $size: t|s|m|l
+@mixin space($dir, $size) {
+  #{map.get($dirs, $dir)}: var(--space-#{$size}) !important;
+}
+
+// Zero out padding + margin to neutralise BeerCSS list defaults.
+// Call with no args for all sides, or pass sides (e.g. `left`, `top`).
+// Uses *physical* properties (padding-left, margin-left) on purpose:
+// BeerCSS sets bullet indent via physical `padding-left`, so matching
+// physical here produces a clean override. Flip to logical the day
+// BeerCSS flips.
+@mixin no-space($sides...) {
+  @if list.length($sides) == 0 {
+    padding: 0 !important;
+    margin: 0 !important;
+  } @else {
+    @each $side in $sides {
+      padding-#{$side}: 0 !important;
+      margin-#{$side}: 0 !important;
+    }
+  }
+}
+
+// Generate one breakpoint's worth of utility classes.
+// At the base (`s`) breakpoint we emit both `.d-sz` and `.s\:d-sz`
+// in one grouped selector; at `m`/`l` only the prefixed form.
+@mixin spacing-utilities($bp) {
+  @each $d in map.keys($dirs) {
+    @each $sz in $size-keys {
+      @if $bp == s {
+        .#{$d}-#{$sz},
+        .s\:#{$d}-#{$sz} {
+          @include space($d, $sz);
+        }
+      } @else {
+        .#{$bp}\:#{$d}-#{$sz} {
+          @include space($d, $sz);
+        }
+      }
+    }
+  }
+}
+
+:root {
+  --font: "Geist Variable", sans-serif !important;
+  --letter-spacing: -0.01em;
+  --body-font-size: 1rem;
+  --container-max: 1200px;
+  --container-padding: 1rem;
+  --rail-width: 4rem;
+  --space-t: 0.25rem;
+  --space-s: 0.5rem;
+  --space-m: 1rem;
+  --space-l: 1.5rem;
+}
+
+@media (min-width: 601px) {
+  :root {
+    --container-padding: 1.5rem;
+  }
+}
+
+@media (min-width: 993px) {
+  :root {
+    --container-padding: 2rem;
+  }
+}
+
+// -- Global overrides --------------------------------------------
+
+body {
+  letter-spacing: var(--letter-spacing);
+}
+
+#main-content {
+  font-size: var(--body-font-size);
+}
+
+// Route inline SVG text through the global font (Geist Variable).
+// Essay SVGs hard-code `font-family="system-ui, sans-serif"`, which beats
+// CSS without !important. Exclude monospace usages (intentional code labels).
+svg text:not([font-family*="monospace"]) {
+  font-family: var(--font) !important;
+}
+
+// -- Container ---------------------------------------------------
+
+.container {
+  width: 100%;
+  max-width: var(--container-max);
+  margin-inline: auto;
+  padding-inline: var(--container-padding);
+}
+
+// -- Nav rail ----------------------------------------------------
+
+nav:is(.left, .right) {
+  min-inline-size: var(--rail-width);
+  overflow-y: auto;
+
+  // Align standalone buttons (e.g. theme toggle) with nav-item icons
+  // only when the rail is expanded.
+  &.max > button {
+    margin-inline-start: 0.5rem;
+  }
+}
+
+// -- Grid fix ----------------------------------------------------
+
+.grid {
+  align-items: start;
+}
+
+// -- Logo light/dark swap ----------------------------------------
+
+.logo-dark {
+  display: none;
+}
+
+body.dark .logo-light {
+  display: none;
+}
+
+body.dark .logo-dark {
+  display: inline;
+}
+
+// -- Footer lists ------------------------------------------------
+
+footer ul {
+  list-style: none !important;
+  @include no-space;
+}
+
+footer li {
+  @include no-space(left);
+}
+
+footer li::before {
+  content: none !important;
+}
+
+footer nav {
+  display: block !important;
+  @include space(mt, m);
+}
+
+footer nav .grid > div {
+  @include space(mb, m);
+}
+
+// -- Directional margin & padding utility classes ----------------
+// Generated from the maps + mixins at the top of this file.
+// See docs/internal/css-conventions.md for usage.
+
+@each $bp, $min in $breakpoints {
+  @if not $min {
+    @include spacing-utilities($bp);
+  } @else {
+    @media (min-width: $min) {
+      @include spacing-utilities($bp);
+    }
+  }
+}
+
+// -- Essay cards ------------------------------------------------
+
+.essay-card-article {
+  overflow: hidden;
+  outline: 1px solid var(--outline);
+}
+
+.essay-card-article > a {
+  outline: none;
+}
+
+.essay-card-article img {
+  border-radius: 0 !important;
+  display: block;
+}
+
+.essay-card-title {
+  text-decoration: none;
+  color: inherit;
+}
+
+.essay-card-title:hover h6 {
+  text-decoration: underline;
+}
+
+.card-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-s);
+}
+
+.card-meta .small-text {
+  margin-left: auto;
+}
+
+// -- Essay metadata (chips + date) on detail page ---------------
+
+.essay-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-s);
+}
+
+@media (min-width: 993px) {
+  .essay-meta {
+    flex-direction: row;
+    align-items: center;
+  }
+}
+
+
+// -- Category children chips (wrap inside parent details) -------
+
+.category-children {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-t);
+}
+
+// -- Reference links (suppress BeerCSS external-link icon) --------
+
+details.surface-variant a[target="_blank"]::after {
+  content: none !important;
+  display: none !important;
+}
+
+details.surface-variant a[target="_blank"] {
+  text-decoration: underline;
+}
+
+// -- Home filter -------------------------------------------------
+// Ported from index.astro's <style is:global> block. Filter chrome is
+// visible everywhere; the visibility rules below kick in when JS sets
+// body[data-home-filter="..."].
+
+.home-filter-field {
+  width: auto;
+  min-width: 10rem;
+}
+
+body[data-home-filter="essays"] [data-essay-card][data-essay-type="chapter"],
+body[data-home-filter="chapters"] [data-essay-card][data-essay-type="essay"] {
+  display: none;
+}
+
+// -- Screen-reader only ------------------------------------------
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
