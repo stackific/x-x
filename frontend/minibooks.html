@@ -1,0 +1,18 @@
+{{#> layout title="Minibooks" page="minibooks" active="minibooks" description="Stax — multi-chapter minibooks."}}
+  <section class="container py-l">
+    <h4 class="mb-m">Minibooks</h4>
+    <p class="mb-l">Multi-chapter minibooks designed to be read in order, from first chapter to last.</p>
+    <div id="minibooks-list"></div>
+  </section>
+
+  <template id="tpl-minibook">
+    <a class="row padding round surface-variant wave no-elevate mb-s">
+      <i class="large" aria-hidden="true">menu_book</i>
+      <div class="max ml-s">
+        <h6 data-slot="name"></h6>
+        <p class="small-text mt-t" data-slot="description"></p>
+      </div>
+      <span class="small-text" data-slot="progress"></span>
+    </a>
+  </template>
+{{/layout}}

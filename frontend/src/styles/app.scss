@@ -205,41 +205,6 @@ footer nav .grid > div {
   }
 }
 
-// -- Essay cards ------------------------------------------------
-
-.essay-card-article {
-  overflow: hidden;
-  outline: 1px solid var(--outline);
-}
-
-.essay-card-article > a {
-  outline: none;
-}
-
-.essay-card-article img {
-  border-radius: 0 !important;
-  display: block;
-}
-
-.essay-card-title {
-  text-decoration: none;
-  color: inherit;
-}
-
-.essay-card-title:hover h6 {
-  text-decoration: underline;
-}
-
-.card-meta {
-  display: flex;
-  align-items: center;
-  gap: var(--space-s);
-}
-
-.card-meta .small-text {
-  margin-left: auto;
-}
-
 // -- Essay metadata (chips + date) on detail page ---------------
 
 .essay-meta {
@@ -257,14 +222,6 @@ footer nav .grid > div {
 }
 
 
-// -- Category children chips (wrap inside parent details) -------
-
-.category-children {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-t);
-}
-
 // -- Reference links (suppress BeerCSS external-link icon) --------
 
 details.surface-variant a[target="_blank"]::after {
@@ -274,21 +231,6 @@ details.surface-variant a[target="_blank"]::after {
 
 details.surface-variant a[target="_blank"] {
   text-decoration: underline;
-}
-
-// -- Home filter -------------------------------------------------
-// Ported from index.astro's <style is:global> block. Filter chrome is
-// visible everywhere; the visibility rules below kick in when JS sets
-// body[data-home-filter="..."].
-
-.home-filter-field {
-  width: auto;
-  min-width: 10rem;
-}
-
-body[data-home-filter="essays"] [data-essay-card][data-essay-type="chapter"],
-body[data-home-filter="chapters"] [data-essay-card][data-essay-type="essay"] {
-  display: none;
 }
 
 // -- Screen-reader only ------------------------------------------

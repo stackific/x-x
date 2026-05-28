@@ -18,11 +18,13 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.16",
+    "@types/node": "^25.9.1",
     "knip": "^6.14.2",
     "sass": "^1.100.0",
     "terser": "^5.48.0",
     "typescript": "^6.0.3",
-    "vite": "^8.0.14"
+    "vite": "^8.0.14",
+    "vite-plugin-handlebars": "^2.0.3"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",

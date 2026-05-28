@@ -1,0 +1,19 @@
+systems:
+  - id: auth-service
+    name: Auth Service
+    brief: OAuth and session management for all user-facing apps.
+  - id: billing
+    name: Billing
+    brief: Subscriptions, invoicing, and Stripe webhook handling.
+  - id: analytics-warehouse
+    name: Analytics Warehouse
+    brief: BigQuery-backed dimensional model powering exec dashboards.
+  - id: ingest-pipeline
+    name: Ingest Pipeline
+    brief: Kafka to BigQuery ELT with hourly batch and streaming overlays.
+  - id: feature-store
+    name: Feature Store
+    brief: Online and offline feature serving for ML models.
+  - id: notification-bus
+    name: Notification Bus
+    brief: Fan-out for email, push, and webhook delivery to customers.

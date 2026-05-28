@@ -1,4 +1,6 @@
-type MinibookPlaceholder = {
+import { $, tpl } from "../shared/dom";
+
+type Minibook = {
   id: string;
   name: string;
   description: string;
@@ -6,7 +8,7 @@ type MinibookPlaceholder = {
   total: number;
 };
 
-const PLACEHOLDER_MINIBOOKS: MinibookPlaceholder[] = [
+const PLACEHOLDER_MINIBOOKS: Minibook[] = [
   {
     id: "sample-minibook-one",
     name: "Sample minibook one",
@@ -23,26 +25,17 @@ const PLACEHOLDER_MINIBOOKS: MinibookPlaceholder[] = [
   },
 ];
 
-function renderMinibook(m: MinibookPlaceholder): string {
-  return `
-    <a href="/minibooks/${m.id}" class="row padding round surface-variant wave no-elevate mb-s" style="text-decoration:none;">
-      <i class="large" aria-hidden="true">menu_book</i>
-      <div class="max ml-s">
-        <h6>${m.name}</h6>
-        <p class="small-text mt-t">${m.description}</p>
-      </div>
-      <span class="small-text">${m.chaptersFound} / ${m.total} chapters</span>
-    </a>
-  `;
-}
-
-export function minibooks(): string {
-  const items = PLACEHOLDER_MINIBOOKS.map(renderMinibook).join("");
-  return `
-    <section class="container py-l">
-      <h4 class="mb-m">Minibooks</h4>
-      <p class="mb-l">Multi-chapter minibooks designed to be read in order, from first chapter to last.</p>
-      ${items}
-    </section>
-  `;
+export function minibooks(): void {
+  const host = $<HTMLDivElement>("#minibooks-list");
+  const frag = document.createDocumentFragment();
+  for (const m of PLACEHOLDER_MINIBOOKS) {
+    const node = tpl("tpl-minibook");
+    const a = node.querySelector<HTMLAnchorElement>("a");
+    if (a) a.href = `/minibooks?id=${encodeURIComponent(m.id)}`;
+    $('[data-slot="name"]', node).textContent = m.name;
+    $('[data-slot="description"]', node).textContent = m.description;
+    $('[data-slot="progress"]', node).textContent = `${m.chaptersFound} / ${m.total} chapters`;
+    frag.appendChild(node);
+  }
+  host.replaceChildren(frag);
 }

@@ -1,124 +1,21 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Stax</title>
-    <meta name="description" content="Stax — frontend layout scaffold" />
-    <link rel="icon" href="/favicon.ico" sizes="any" />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="icon" type="image/png" href="/favicon-32x32.png" sizes="32x32" />
-    <link rel="icon" type="image/png" href="/favicon-16x16.png" sizes="16x16" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="manifest" href="/site.webmanifest" />
-  </head>
-  <body class="surface">
-    <nav class="left l surface-container" aria-label="Main navigation">
-      <header>
-        <button
-          class="circle extra transparent"
-          id="sidebar-toggle"
-          aria-label="Toggle sidebar"
-          aria-expanded="false"
-        >
-          <i aria-hidden="true">menu</i>
-        </button>
-      </header>
-      <a href="/" data-nav-link data-active-key="home">
-        <i aria-hidden="true">home</i><span class="fw-5">Home</span>
-      </a>
-      <a href="/minibooks" data-nav-link data-active-key="minibooks">
-        <i aria-hidden="true">menu_book</i><span class="fw-5">Minibooks</span>
-      </a>
-      <a href="/categories" data-nav-link data-active-key="categories">
-        <i aria-hidden="true">category</i><span class="fw-5">Categories</span>
-      </a>
-      <div class="max"></div>
-      <a href="/search" data-nav-link data-active-key="search">
-        <i aria-hidden="true">search</i><span class="fw-5">Search</span>
-      </a>
-      <button class="my-s border circle" data-theme-toggle aria-label="Toggle dark mode">
-        <i aria-hidden="true">dark_mode</i>
-      </button>
-    </nav>
+{{#> layout title="Home" page="home" active="home" description="Stax — live data from the Go backend."}}
+  <section class="container py-l">
+    <h4 class="mb-m">Home</h4>
+    <p class="mb-l">Live response from the Go backend at <code>/api/hello</code>.</p>
 
-    <nav class="top s m left-align" aria-label="Mobile navigation">
-      <button class="circle transparent" data-ui="#mobile-menu" aria-label="Open menu">
-        <i aria-hidden="true">menu</i>
-      </button>
-      <div class="max"></div>
-      <button class="circle border" data-theme-toggle aria-label="Toggle dark mode">
-        <i aria-hidden="true">dark_mode</i>
-      </button>
-    </nav>
+    <div id="hello" class="padding round surface-variant" aria-live="polite">
+      <p class="small-text">Loading…</p>
+    </div>
+  </section>
 
-    <dialog id="mobile-menu" class="left no-padding" aria-label="Navigation drawer">
-      <nav class="left max surface-container" aria-label="Navigation menu">
-        <header>
-          <button class="circle extra transparent" data-ui="#mobile-menu" aria-label="Close menu">
-            <i aria-hidden="true">menu_open</i>
-          </button>
-        </header>
-        <a href="/" data-nav-link data-active-key="home" onclick="ui('#mobile-menu')">
-          <i aria-hidden="true">home</i><span class="fw-5">Home</span>
-        </a>
-        <a href="/minibooks" data-nav-link data-active-key="minibooks" onclick="ui('#mobile-menu')">
-          <i aria-hidden="true">menu_book</i><span class="fw-5">Minibooks</span>
-        </a>
-        <a href="/categories" data-nav-link data-active-key="categories" onclick="ui('#mobile-menu')">
-          <i aria-hidden="true">category</i><span class="fw-5">Categories</span>
-        </a>
-        <div class="max"></div>
-        <a href="/search" data-nav-link data-active-key="search" onclick="ui('#mobile-menu')">
-          <i aria-hidden="true">search</i><span class="fw-5">Search</span>
-        </a>
-      </nav>
-    </dialog>
+  <template id="tpl-hello">
+    <div>
+      <h6 class="mb-s" data-slot="message"></h6>
+      <pre class="small-text" data-slot="raw"></pre>
+    </div>
+  </template>
 
-    <main class="responsive mt-l" id="main-content"></main>
-
-    <footer class="container padding" aria-labelledby="footer-heading">
-      <h2 id="footer-heading" class="sr-only">Site footer</h2>
-      <hr />
-      <div class="grid top-align medium-margin">
-        <div class="s12 l6">
-          <p class="small-margin">
-            Tanzim Saqib is a software engineer and educator focused on making AI genuinely useful.
-          </p>
-        </div>
-        <nav class="s12 l6 ml-s" aria-label="Footer">
-          <div class="grid">
-            <div class="s4">
-              <h3 class="large-text bold mb-s">Social</h3>
-              <ul class="no-padding" role="list">
-                <li>
-                  <a class="link" href="https://linkedin.com/in/TanzimSaqib" target="_blank" rel="noopener noreferrer">LinkedIn</a>
-                </li>
-              </ul>
-            </div>
-            <div class="s4">
-              <h3 class="large-text bold mb-s">Websites</h3>
-              <ul class="no-padding" role="list">
-                <li>
-                  <a class="link" href="https://stackific.com" target="_blank" rel="noopener noreferrer">Stackific</a>
-                </li>
-                <li>
-                  <a class="link" href="https://tanzimsaqib.com" target="_blank" rel="noopener noreferrer">Tanzim Saqib</a>
-                </li>
-              </ul>
-            </div>
-            <div class="s4">
-              <h3 class="large-text bold mb-s">Legal</h3>
-              <ul class="no-padding" role="list">
-                <li><a class="link" href="https://stackific.com/privacy">Privacy Policy</a></li>
-                <li><a class="link" href="https://stackific.com/terms">Terms of Service</a></li>
-              </ul>
-            </div>
-          </div>
-        </nav>
-      </div>
-    </footer>
-
-    <script type="module" src="/src/main.ts"></script>
-  </body>
-</html>
+  <template id="tpl-error">
+    <p class="small-text bold" data-slot="error"></p>
+  </template>
+{{/layout}}

@@ -1,0 +1,24 @@
+{{#> layout title="Search" page="search" active="search" description="Stax — search across all essays."}}
+  <section class="container py-l">
+    <h4 class="mb-m">Search</h4>
+    <div class="field label prefix border round mb-l">
+      <i>search</i>
+      <input type="search" id="search-input" autocomplete="off" autofocus />
+      <label>Search by title, category, or keyword</label>
+    </div>
+
+    <div id="search-results"></div>
+
+    <p id="search-hint" class="center-align padding small-text">Type to search across all essays.</p>
+  </section>
+
+  <template id="tpl-result">
+    <a class="row padding round surface-variant wave mb-s">
+      <div class="max">
+        <h6 class="small" data-slot="title"></h6>
+        <p class="small-text mt-t" data-slot="excerpt"></p>
+      </div>
+      <span class="small-text" data-slot="date"></span>
+    </a>
+  </template>
+{{/layout}}
