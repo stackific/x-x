@@ -76,6 +76,12 @@ func TestPrintAbout_IncludesUsage(t *testing.T) {
 	out := captureStdout(t, printAbout)
 	for _, want := range []string{
 		"Usage:",
+		// Bare x-x opens https://google.com — the URL itself must appear
+		// so a user reading `x-x -h` sees what will happen, not just
+		// "open a browser".
+		"https://google.com",
+		"--no-browser",
+		"post-install",
 		"x-x init",
 		"x-x skills remove --user",
 		"x-x skills remove --project",

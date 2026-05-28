@@ -104,12 +104,15 @@ try {
     $env:Path = "$installDir;$env:Path"
   }
 
-  # Seed the bundled agents/ library from the binary's embed. A bare `x-x`
-  # invocation triggers the lazy first-run write to ~/.x-x/agents/; output
-  # is discarded since the user doesn't need to see the version banner
-  # twice. Refreshes are handled by the 24h update check from then on.
+  # Seed the bundled agents/ library from the binary's embed.
+  # `post-install` is the dedicated installer subcommand: it triggers
+  # the lazy first-run write to ~/.x-x/agents/ and exits silently,
+  # NEVER opening a browser. We must not use bare `x-x` here — that
+  # branch opens https://google.com in the user's default browser,
+  # which would pop a window mid-install. The 24h update check (still
+  # bound to every invocation) handles refreshes from then on.
   Info "Seeding ~/.x-x/agents/ from binary"
-  & $dest | Out-Null
+  & $dest post-install | Out-Null
   if ($LASTEXITCODE -ne 0) { Die "x-x first-run seed failed" }
 
   Info "Installed. Run: $binary --help"

@@ -48,6 +48,15 @@ func main() {
 			// Lives in plan.go.
 			runPlans(os.Args[2:])
 			return
+		case "post-install":
+			// `x-x post-install` — installer hook. INSTALL.sh / INSTALL.ps1
+			// invoke it on their last step to materialize ~/.x-x/agents/
+			// from the binary's embed. Modelled as a subcommand rather
+			// than a flag so it never collides with the bare-invocation
+			// browser-open path and so the install pipeline calls it by
+			// the same surface every other subcommand uses.
+			runPostInstall(os.Args[2:])
+			return
 		default:
 			// Unknown bare subcommand. We deliberately do NOT fall through
 			// to runDefault so a typo like `x-x ini` exits visibly rather
@@ -61,31 +70,44 @@ func main() {
 	runDefault(os.Args[1:])
 }
 
-// runDefault is the "no subcommand" path. Bare `x-x` and `x-x --version`
-// are treated as one and the same: both print the notice block and
-// lazy-write the bundled agent tree on first run. The --version flag is
-// still parsed (for backward compat with `x-x --version` invocations) but
-// no longer changes behavior — keeping the two paths unified means
-// there's exactly one entry-point surface to reason about. The 24h update
-// check fires from main() before dispatch, not here, so the same upsell
-// nudge appears regardless of which command the user ran.
+// runDefault is the "no subcommand" path. It owns three distinct user
+// surfaces:
 //
-// `ensureBundledAgents` runs before the banner print so the very first
-// invocation of a freshly-installed binary writes ~/.x-x/agents/ from the
-// embedded FS — no explicit setup step required. Subsequent refreshes are
-// the responsibility of the 24h update check in maybeNotifyUpdate.
+//	x-x --version     → print the notice block (the historical contract
+//	                    that INSTALL.sh / INSTALL.ps1 parse via
+//	                    `awk 'NR==1 { print $NF }'` to seed
+//	                    ~/.x-x/.config.json — DO NOT remove without
+//	                    coordinating an installer-script update).
+//	x-x --no-browser  → user-facing opt-out for the bare-invocation
+//	                    browser launch. Seeds ~/.x-x/agents/ on first
+//	                    run, then exits silently. Useful in CI or any
+//	                    scripted context where a browser pop is wrong.
+//	x-x               → open https://google.com in the user's default
+//	                    browser, unless hasDesktop() reports no
+//	                    graphical session. Prints "Opening …" so the
+//	                    invocation isn't silently invisible.
+//
+// The installer hook (`x-x post-install`) is a sibling SUBCOMMAND, not a
+// runDefault branch — it lives in runPostInstall so the install pipeline
+// calls a stable, name-conflict-free surface that can never accidentally
+// trigger the browser path.
+//
+// `ensureBundledAgents` runs first on every branch so the embedded skill
+// tree lands under ~/.x-x/agents/ on the very first invocation of a
+// freshly-installed binary, regardless of which flag the caller passed.
+// The 24h update check fires from main() before dispatch (not here), so
+// the upgrade nudge appears identically across every branch.
 func runDefault(args []string) {
 	// A dedicated FlagSet (rather than the global flag.CommandLine) keeps
 	// the default-command flags isolated from any future subcommand flags
 	// that might happen to share a name.
 	fs := flag.NewFlagSet("x-x", flag.ExitOnError)
-	// Parsed and discarded: `--version` has no behavioral difference from
-	// the bare invocation anymore. Kept on the FlagSet so the flag is still
-	// listed in `-h` output and existing scripts that pass it keep working.
-	_ = fs.Bool("version", false, "print version and exit")
+	versionFlag := fs.Bool("version", false, "print version and exit")
+	noBrowser := fs.Bool("no-browser", false, "do not open the default browser")
 	// Setting printAbout as the FlagSet's Usage means `x-x -h` shows the
-	// same banner you'd see by running `x-x` with no args — one standard
-	// help output for the default path.
+	// notice + usage block — one standard help output for the default
+	// path. Bare `x-x` does NOT route through this anymore (it opens a
+	// browser); -h is the explicit "show me everything" surface.
 	fs.Usage = printAbout
 	// ExitOnError + ignoring Parse's return is intentional: Parse calls
 	// os.Exit on errors, so any non-nil return is unreachable.
@@ -100,13 +122,65 @@ func runDefault(args []string) {
 		os.Exit(1)
 	}
 
-	// Bare `x-x` (or `x-x --version`) prints the generic notice only —
-	// no usage block. The usage block is reserved for `-h` / `--help`,
-	// which fs.Usage still points at (printAbout) above. Keeping the
-	// banner short means a user who runs `x-x` by accident isn't
-	// confronted with a wall of subcommand documentation; if they want
-	// it, `x-x -h` shows everything.
-	printNotice()
+	// --version keeps the historical notice contract the installer
+	// scripts depend on. Print it and exit before any of the new
+	// branches can interfere.
+	if *versionFlag {
+		printNotice()
+		return
+	}
+
+	// --no-browser is the user-facing opt-out: seed-and-exit silently.
+	if *noBrowser {
+		return
+	}
+
+	// Implicit no-op when there's no graphical session to receive the
+	// browser handoff (headless Linux: DISPLAY + WAYLAND_DISPLAY both
+	// empty). Tell the user why nothing happened so the silence doesn't
+	// read as a hang, and point at --no-browser for callers that want to
+	// suppress the diagnostic in scripted contexts.
+	if !hasDesktop() {
+		fmt.Fprintln(os.Stderr, "no desktop environment detected; not opening browser (pass --no-browser to silence)")
+		return
+	}
+
+	// Desktop session: hand the URL off to the OS-default browser and
+	// announce the action on stdout. Start failures (no `xdg-open`
+	// installed, broken `rundll32`, etc.) surface as a stderr error and
+	// a non-zero exit — better than silently doing nothing.
+	const url = "https://google.com"
+	if err := openBrowser(url); err != nil {
+		fmt.Fprintln(os.Stderr, "error opening browser:", err)
+		os.Exit(1)
+	}
+	fmt.Printf("Opening %s in your browser…\n", url)
+}
+
+// runPostInstall is the `x-x post-install` subcommand: the installer
+// hook that materializes ~/.x-x/agents/ from the binary's embed and
+// exits silently. INSTALL.sh and INSTALL.ps1 invoke it on their last
+// step instead of bare `x-x` — bare invocation opens a browser, which
+// would pop a window mid-install.
+//
+// Takes no flags and no positional arguments. The strict reject of any
+// extra argv prevents the installer scripts from accidentally tunneling
+// future flags through this hook and changing the contract silently.
+func runPostInstall(args []string) {
+	fs := flag.NewFlagSet("x-x post-install", flag.ExitOnError)
+	fs.Usage = func() {
+		fmt.Fprintln(os.Stderr, "Usage: x-x post-install")
+		fmt.Fprintln(os.Stderr, "  Installer hook: seed ~/.x-x/agents/ and exit silently.")
+	}
+	_ = fs.Parse(args)
+	if fs.NArg() > 0 {
+		fmt.Fprintf(os.Stderr, "x-x post-install: unexpected argument: %s\n", fs.Arg(0))
+		os.Exit(2)
+	}
+	if err := ensureBundledAgents(); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
 }
 
 // printNotice is the version-and-license header shared by `x-x` (bare),
@@ -146,6 +220,9 @@ func printAbout() {
 	// because the about banner is often the first thing a user sees and
 	// should be self-sufficient.
 	fmt.Println("Usage:")
+	fmt.Println("  x-x                            Open https://google.com in the default browser (no-op without a desktop)")
+	fmt.Println("  x-x --no-browser               Same as bare x-x, but skip the browser launch")
+	fmt.Println("  x-x post-install               Installer hook: seed ~/.x-x/agents/ and exit silently")
 	fmt.Println("  x-x init                       Install bundled agent skills + seed .x-plans/ (wizard or flag-driven)")
 	fmt.Println("  x-x skills remove --user       Uninstall bundled x-x skills from $HOME")
 	fmt.Println("  x-x skills remove --project    Uninstall bundled x-x skills from the current directory")
