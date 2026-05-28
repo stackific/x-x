@@ -169,6 +169,22 @@ var agentTargets = []agentTarget{
 	// that's a follow-up once the manual eval workflow tells us which
 	// Copilot CLI lifecycle hooks make sense to register.
 	{"copilot", "GitHub Copilot CLI", ".agents/skills", "", "", ""},
+	// Pi (pi.dev — @earendil-works/pi-coding-agent) reads skills from
+	// `.agents/skills/` walking up from cwd at project scope and from
+	// `~/.agents/skills/` at user scope (one of two documented user-scope
+	// locations alongside `~/.pi/agent/skills/`, per pi-mono's
+	// packages/coding-agent/docs/skills.md). We use the cross-agent
+	// `.agents/skills` path at both scopes — same as Codex and Copilot —
+	// so a single install reaches every "agents-standard" tool on the
+	// machine. Pi's CLI command parser resolves `/skill:<name>` in print
+	// mode by reading SKILL.md frontmatter `name:`, so the bundled
+	// `x-plan` and `x-x` skills register as `/skill:x-plan` and
+	// `/skill:x-x` in both interactive (`pi`) and headless (`pi -p`)
+	// invocations without any per-agent config file. configSrc/configRel
+	// stay empty — no pi-specific config bundled today; pi looks for
+	// `~/.pi/agent/AGENTS.md` and `~/.pi/agent/settings.json` if a user
+	// adds them, which is outside the scope of x-x's install.
+	{"pi", "Pi", ".agents/skills", "", "", ""},
 }
 
 // skillsSubdir is the directory inside ~/.x-x/agents/ that holds the

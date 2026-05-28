@@ -51,6 +51,10 @@ func TestE2EShellConstantsMatchGo(t *testing.T) {
 		"OPENCODE_SKILLS_REL": agentTargets[2].skillsRel,
 		// OpenCode has no per-agent config bundled — agentTargets[2].configRel
 		// is "" and is intentionally not mirrored on the shell side.
+		"COPILOT_SKILLS_REL": agentTargets[3].skillsRel,
+		// Copilot bundles no per-agent config (configRel is ""); no mirror needed.
+		"PI_SKILLS_REL": agentTargets[4].skillsRel,
+		// Pi bundles no per-agent config (configRel is ""); no mirror needed.
 	}
 
 	for name, expected := range want {

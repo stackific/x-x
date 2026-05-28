@@ -96,16 +96,16 @@ AGENT_ENV_DEFAULTS_FOR_KEY = {
 }
 # Value passed to `x-x init --agents <value>` for each backend. Today the
 # binary's agentTargets registry (constants.go) recognizes "claude",
-# "codex", "opencode", and "copilot" — "pi" is not a registered target,
-# so Pi tests install the Codex skill layout as a transitional shape (Pi
-# discovers skills from `.agents/skills/` walking up from cwd, which is
-# exactly what `x-x init --agents codex` writes). When pi is added to
-# agentTargets, flip this entry to "pi" in the same change.
+# "codex", "opencode", "copilot", and "pi". Copilot still uses "claude"
+# as a transitional shape because copilot also reads `.claude/skills/`
+# and the bundled SKILL.md content references that path; flipping it
+# would mean writing skills only to `.agents/skills/` and re-validating
+# copilot still finds them.
 AGENT_INIT_VALUE_FOR_KEY = {
   "claude": "claude",
   "opencode": "opencode",
   "copilot": "claude",
-  "pi": "codex",
+  "pi": "pi",
 }
 # Per-agent skills install root under $HOME used by the user-scope
 # post-install log. Reflects each agent's discovery convention — Claude
