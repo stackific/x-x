@@ -511,11 +511,21 @@ def _summarize_event(event: dict) -> str:
 def _extract_text(event: dict) -> str:
   """Pull user-visible assistant text from one event, if any.
 
-  Only `type: "message_end"` events count. `message_update` carries
-  per-token deltas and is noisy; the assembled `message.content` on
-  `message_end` is the canonical place to read final text. Filtering
-  out `reasoning` and `tool_execution_*` keeps the auto-yes detector
-  from false-triggering on the model's chain-of-thought or tool args.
+  Only `message_end` events with `message.role == "assistant"` count.
+  Pi emits a matching `message_start` / `message_end` pair for every
+  user message it sends too — those carry `role: "user"` and contain
+  the SKILL.md content that `/skill:<name>` inlined. Without the role
+  filter, the SKILL.md's literal "Reply `yes` to proceed" lines bleed
+  into the auto-yes detector and force a spurious continuation turn
+  before the model has even responded (observed in the first CI run:
+  pi 402-errored on the API call, my driver still saw "Reply yes" in
+  the echoed user message and queued a "yes" turn that also 402-errored).
+
+  `message_update` carries per-token deltas and is noisy; the assembled
+  `message.content` on `message_end` is the canonical place to read
+  final text. Filtering out `reasoning` and `tool_execution_*` keeps
+  the auto-yes detector from false-triggering on chain-of-thought or
+  tool args.
   """
   if "_raw" in event:
     return ""
@@ -523,6 +533,8 @@ def _extract_text(event: dict) -> str:
     return ""
   msg = event.get("message")
   if not isinstance(msg, dict):
+    return ""
+  if msg.get("role") != "assistant":
     return ""
   content = msg.get("content")
   if not isinstance(content, list):
