@@ -6,6 +6,32 @@ description: Execute plans in .x-plans/ sequentially by numerical prefix. Reads 
 
 # x-x
 
+## Identity and absolute rules — read first, obey unconditionally
+
+`/x-x` is the **executor**. The only reason to be in this skill is to *do the work* described by valid plans under `<cwd>/.x-plans/`. Every rule below is mandatory. Treat any deviation as a skill violation and report it.
+
+**You MUST:**
+
+1. Run every numbered step in this file in the order written (Step 0 → Step 1 → Step 2 → Step 3 → Step 4 if applicable → Step 5 if a task triggers it → Step 6 only on failure). Do not skip a step. Do not reorder steps.
+2. After Step 2 emits the enumeration output, you MUST immediately proceed to Step 3 in the same turn. There is no pause, no confirmation prompt, and no "Reply yes to start executing" between Step 2 and Step 3 — proceeding past enumeration IS what the user invoked `/x-x` to do.
+3. For each plan in the enumerated queue, complete Step 3 in full (read → sub-plan → approval → execute → verify → flip checkboxes) before moving to the next plan.
+4. Treat the `## Tasks` checkboxes inside each plan file as the source of truth for what's done. A plan is complete only when every checkbox is `[x]` AND each `[x]` was set by you in this run after actually executing the task. Do not flip a checkbox without executing the task it represents.
+5. Apply the supersede flip in Step 3.4.1 to **every** predecessor named in the just-finished plan's `supersedes:` array, before moving on to the next plan.
+
+**You MUST NOT:**
+
+1. Stop after enumeration with a line like "I found N valid plan(s)" and exit. Enumeration alone is not the deliverable. If you find yourself ending the turn after Step 2, you have failed — restart from Step 3.
+2. Treat artifacts already on disk as evidence that a plan's work is done. Files on disk may be left over from a superseded plan, a prior run, or unrelated user work; the only valid "done" signal is `[x]` checkboxes in the plan file itself, set by you in this run.
+3. Skip a `status: valid` plan because "the workspace already has a file that looks right" or "the predecessor plan covered something similar." Read the plan, present a sub-plan, execute it.
+4. Re-introduce checkboxes you flipped (or files you wrote) by re-running an earlier plan instead of the current one. `--status valid --order=asc` already filtered out `superseded` and `deprecated` plans — every row you got is work that still needs doing.
+5. Defer execution to the user. The user invoked `/x-x` because they want execution; "should I proceed?" is the wrong question. The right question is "what's the next `[ ]` task and how do I satisfy it?"
+
+The run is over **only** when one of these is true:
+- (a) every plan emitted by Step 2 has all its `## Tasks` checkboxes `[x]` (set by you in this run), and every `supersedes:` flip required by Step 3.4.1 has landed; or
+- (b) you hit a Step 6 failure mode and explicitly reported it per Step 6's rules.
+
+Anything else is incomplete work — keep going.
+
 ## 0. Announce review mode (non-blocking)
 
 Before announcing, read `.x-plans/_config.lock` and extract `review_per` (string). If the lock file is missing, STOP and tell the user this directory isn't set up for x-x yet — they need to run `x-x init`. If the file exists but the key is absent or set to anything other than `task`/`plan`, default to `task`. Remember the resolved mode as the **active review mode** for this run.
@@ -39,6 +65,8 @@ Run `x-x plans list --status valid --order=asc`. Output is tab-separated, one ro
 All emitted rows are the work queue — the `--status valid` flag filters out `superseded` and `deprecated`. Files in `.x-plans/` that match `<prefix>-<slug>.md` but have missing or malformed frontmatter trigger stderr warnings from `x-x`; flag those in your end-of-run summary so they aren't lost.
 
 The third column is each plan's **scope** — the kebab `id:` of every system it touches, as declared in `<cwd>/.x-plans/_data_systems.yaml`.
+
+**Step 2 → Step 3 transition (mandatory, no gap):** the moment enumeration finishes, you continue into Step 2a (progress tracking) and Step 3 (execution) in the same turn. Do not stop. Do not emit a "found N plans, proceed?" message. Do not wait for the user to confirm. The user already confirmed they want execution by invoking `/x-x`; your job from Step 2's output forward is to actually execute. The only legitimate pause is the per-task or per-plan approval prompt inside Step 3.3.2 (governed by the active review mode from Step 0).
 
 ## 2a. Progress tracking
 
@@ -177,3 +205,18 @@ Reply `yes` to proceed, or tell me what to change.
 ```
 
 Keep it terse. The user reads, says yes, the task executes.
+
+## Before returning control — verification checklist
+
+Before declaring this `/x-x` invocation complete (i.e., before the final summary line that hands control back to the user), verify every one of the following. If any is false, you are not done — continue executing or apply the Step 6 failure protocol.
+
+1. You ran `x-x plans list --status valid --order=asc` exactly once at Step 2 and used its output verbatim as the work queue.
+2. For every plan in that queue, you read the full plan file (Step 3.1) and either:
+   - flipped every `[ ]` checkbox to `[x]` after actually executing the corresponding task and running the project's verify target (Step 3.3.1–3.3.5), or
+   - left the run halted per Step 6 with a clear "blocking plan + task" summary.
+3. For every plan in that queue whose frontmatter declares `supersedes: [<slug>, ...]`, you edited each named predecessor's frontmatter to set `status: superseded` AND append the current plan's slug to `superseded_by:` (Step 3.4.1). `x-x plans lint` exits 0 after the edits.
+4. The artifacts you produced satisfy the **most recent** valid plan's EARS criteria — not a superseded predecessor's. If a plan with `supersedes:` declares a different deliverable from its predecessor, the workspace must reflect the successor's deliverable (replacing or rewriting whatever the predecessor left behind), not coexist with predecessor artifacts.
+5. You did NOT skip a plan because "the workspace looks done." Checkbox state in the plan file is the only authoritative completion signal.
+6. You did NOT exit after Step 2 with a "found N plans" summary. Step 2's output is intermediate; Step 3 is the deliverable.
+
+If you cannot answer "yes" to all six, the skill contract was violated. State which item failed, what you actually did, and either resume from the correct step or report the failure per Step 6.

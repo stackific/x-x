@@ -6,6 +6,28 @@ description: Plan-first workflow for `<cwd>`. Loads the shared planning context,
 
 # x-plan
 
+## Identity and absolute rules — read first, obey unconditionally
+
+`/x-plan` is the **planner**. The only reason to be in this skill is to write a plan file (and, when Step 2a / Step 3 requires it, the predecessor-frontmatter edits or systems-registry edits that make the new plan resolvable). Execution of the plan's `## Tasks` is a separate skill — `/x-x` — invoked by the user as a separate command. Every rule below is mandatory.
+
+**You MUST:**
+
+1. Run every step in this file in the order written (Step 1 → Step 2 if needed → Step 2a if applicable → Step 2b if applicable → Step 3). Stop after Step 3.
+2. After Step 3 writes the new plan file (and any predecessor edits Step 3 requires), report what landed on disk in one to three lines and STOP. Hand control back to the user with a brief tip that `/x-x` is the next command if they want to execute.
+3. Keep every edit limited to: (a) the new plan file at `<cwd>/.x-plans/<prefix>-<slug>.md`; (b) predecessor plan files' frontmatter for `extended_by:` (Step 3) or `supersedes:` declaration (the new plan only — the predecessor's `superseded_by:` flip and `status: valid → superseded` are `/x-x`'s job, NOT yours); (c) `<cwd>/.x-plans/_data_systems.yaml` when Appendix C step 4 approves a new system entry.
+
+**You MUST NOT:**
+
+1. Implement any of the plan's `## Tasks` criteria from within `/x-plan`. Writing production code, creating non-plan files, installing dependencies, running build/test/lint targets, calling deploy scripts — all forbidden. None of those satisfy "write a plan file." If your sub-plan's "Commands to run" contains anything beyond plan-file writes and the frontmatter/registry edits enumerated above, you have drifted out of `/x-plan` — revise the sub-plan and stop.
+2. Flip any `## Tasks` checkbox to `[x]`. Checkboxes are flipped exclusively by `/x-x` during execution.
+3. Edit a predecessor's `status:` from `valid` to `superseded` or write `superseded_by:` on a predecessor. Those edits land later, when `/x-x` finishes executing the successor plan (Step 3.4.1 of `x-x`). `/x-plan`'s only supersede-related write is the `supersedes: [<predecessor-slug>, ...]` field on the **new** plan.
+4. Invoke `/x-x` (or any execution skill) from within `/x-plan`, even via a sub-plan, even when the plan "seems trivial," even when the user says "and execute it." If the user wants execution, they will invoke `/x-x` themselves. If they explicitly asked you to both plan and execute in the same turn, the correct response is to write the plan file, report it, and then tell them to invoke `/x-x` — do not chain into the executor yourself.
+5. Treat the "Execute" wording in Appendix A step 5 as a license to implement EARS tasks. In `/x-plan`'s context, "Execute" means "perform the plan-file write you just got approval for" — typically `Write` / `Edit` calls against `<cwd>/.x-plans/...` and the registry. Nothing else.
+
+The skill is over **only** when one of these is true:
+- (a) Step 3 completed: the new plan file exists at the correct path, any required predecessor frontmatter edits landed, the systems registry edit (if any) landed, `x-x plans lint` exits 0, and you reported the result; or
+- (b) you halted earlier per a Step-1/2a/2b check (missing config lock, structurally underspecified request, unresolved research conflict) and reported the blocker.
+
 ## 1. Load context
 
 Required reads before doing anything else:
@@ -79,8 +101,8 @@ Every plan that has side effects — creating, updating, removing, git committin
 3. **Present the plan.** Output a clear plan to the user using the template below. End with the literal sentence:
    > Reply `yes` to proceed, or tell me what to change.
 4. **Wait for approval.** Wait until the user replies. Any unambiguous affirmation counts as approval — `yes`, `y`, `yep`, `yeah`, `ok`, `okay`, `sure`, `lgtm`, `sounds good`, `proceed`, `go`, `go ahead`, `do it`, `ship it`, `confirm`, `accept`, `approved`, `affirmative`, `+1`, and similar. Anything ambiguous or that requests a change is a revision — go back to step 2 with the user's feedback.
-5. **Execute.** Now execute what the user wanted. After each command, report what happened in one line.
-6. **Summarize.** When done, give a one-line confirmation per entity created/changed/deleted.
+5. **Execute.** Run exactly the commands listed in the "Commands to run" section of the sub-plan you just got approval for — nothing else. In `/x-plan`'s context that means `Write`/`Edit` calls against `<cwd>/.x-plans/...` and (when Appendix C step 4 fired) `<cwd>/.x-plans/_data_systems.yaml`, plus the `x-x plans lint` validation run. It does NOT mean "implement the EARS criteria the plan describes" — that is `/x-x`'s job, invoked by the user later as a separate command. After each command, report what happened in one line.
+6. **Summarize.** When done, give a one-line confirmation per entity created/changed/deleted, then STOP. Do not continue into another planning round, do not chain into `/x-x`, do not start implementing the plan's tasks.
 
 ### Plan template
 
@@ -310,3 +332,18 @@ A few do-and-don't examples:
 - Never invent a system name on the fly that's not in the registry. Either match an entry or propose one and wait for approval.
 - Never write `the system shall …`, `it shall …`, `the application shall …`, `the service shall …`, `the platform shall …`. Those are banned per EARS.
 - Never write the slug/id into EARS criterion text. EARS uses the display name (`"the Checkout Service shall …"`); the id is for the plan's frontmatter `systems:` array and `--system <id>` lookups only.
+
+## Before returning control — verification checklist
+
+Before declaring this `/x-plan` invocation complete (i.e., before the final summary line that hands control back to the user), verify every one of the following. If any is false, you have violated the skill contract — say which item failed, undo what you did wrong if possible, and stop.
+
+1. A new plan file exists at `<cwd>/.x-plans/<prefix>-<slug>.md` with frontmatter in the order `title:` → `status:` → `systems:` → (optional `supersedes:` / `extends:`) → `created:`, followed by `## Goal` / `## Approach` / `## Tasks` sections.
+2. `x-x plans lint` exits 0 against `<cwd>/.x-plans/` after your writes.
+3. For every `extends:` entry on the new plan, the named predecessor's frontmatter now has the new plan's slug in its `extended_by:` array (Step 3 mandates the bidirectional link).
+4. For every `supersedes:` entry on the new plan, you did NOT touch the predecessor's `status:` (it stays `valid` until `/x-x` flips it later) and you did NOT add `superseded_by:` (also `/x-x`'s job).
+5. You did NOT write any non-plan files. Specifically: zero source files, zero test files, zero build/config artifacts, zero shell-script outputs. The only paths under your write footprint this turn are `<cwd>/.x-plans/<new>.md`, `<cwd>/.x-plans/<predecessor>.md` (if `extends:`), and `<cwd>/.x-plans/_data_systems.yaml` (if Appendix C step 4 fired).
+6. You did NOT flip any `## Tasks` checkbox to `[x]`. Every checkbox in the new plan is `[ ]` (unflipped).
+7. You did NOT run any build, test, lint, install, or deploy command. The only commands you ran were `x-x plans next-prefix`, `x-x plans slugify`, `x-x plans list` (Step 2a overlap check), `x-x plans lint`, and `date -u +%Y-%m-%dT%H:%M:%SZ`.
+8. You did NOT invoke `/x-x` (or any executor skill, or any equivalent agent workflow that runs the plan's tasks). The plan is written; it is now the user's call whether to run `/x-x`.
+
+If items 5–8 fail, the failure mode is "drift into the executor's job." That is not a small mistake — it produces wrong artifacts (the supersedes scenario surfaces this: a `/x-plan` that executed plan-1 inline before plan-2 was even authored leaves the workspace with predecessor artifacts that subsequent plans then don't overwrite). Plan-only is non-negotiable.
