@@ -102,8 +102,13 @@ DEFAULT_MODEL = "deepseek/deepseek-v4-pro"
 # resolves the same SKILL.md differently and the model is less hesitant.
 # This is opencode-specific and lives next to the driver, not in the
 # SKILL.md (which has to stay agent-agnostic).
+# NOTE: must not begin with `-` / `--`. The string is passed as an argv
+# element to `opencode run`, and yargs treats any element starting with
+# `--` as a flag (or as the `--` separator). When `arguments=""` we send
+# the directive alone — a leading `---` parsed as a flag, opencode
+# printed its help banner, and the run exited 1.
 CI_DIRECTIVE = (
-  "\n\n--- OPERATING MODE: non-interactive CI evaluation ---\n"
+  "\n\nOPERATING MODE: non-interactive CI evaluation. "
   "There is no human operator available to answer questions or grant "
   "approvals. Every gate the SKILL TEMPLATE above describes ('propose "
   "to user and wait for approval', 'STOP and ask', 'Reply yes to "
