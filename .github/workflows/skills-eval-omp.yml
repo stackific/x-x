@@ -1,4 +1,4 @@
-name: manual / omp (oh-my-pi) <- llm judge
+name: skills eval / omp (oh-my-pi)
 
 # Manually-triggered experiment in the agent-eval lineage. Targets
 # oh-my-pi (`omp`, from omp.sh — a Rust-cored terminal coding agent

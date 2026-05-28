@@ -86,10 +86,10 @@ CLINE_ENV_DEFAULTS: dict[str, str] = {}
 
 # Which agent backend the workspace fixture installs and probes for.
 # Default `claude` keeps the existing Claude tests running unchanged.
-# Workflows targeting other backends (e.g. manual-opencode-judge.yml,
-# manual-copilot-judge.yml, manual-pi-judge.yml, manual-cline-judge.yml)
-# set X_X_AGENT_KEY=<key> to flip both the binary the fixture skips on if
-# missing and the per-agent env defaults that get pointed at DeepSeek.
+# Workflows targeting other backends (e.g. skills-eval-opencode.yml,
+# skills-eval-copilot.yml, skills-eval-pi.yml, skills-eval-cline.yml)
+# set X_X_AGENT_KEY=<key> to flip both the binary the fixture skips on
+# if missing and the per-agent env defaults that get pointed at DeepSeek.
 VALID_AGENT_KEYS = ("claude", "opencode", "copilot", "pi", "cline")
 AGENT_BINARY_FOR_KEY = {
   "claude": "claude",
@@ -139,7 +139,7 @@ AGENT_USER_SKILLS_REL_FOR_KEY = {
 
 # Which `x-x init --scope` value to use when bootstrapping each test's
 # workspace. Default `project` installs skills into <workspace>/.claude/skills/.
-# Set X_X_INSTALL_SCOPE=user (e.g. from manual-claude-judge-user-scope.yml)
+# Set X_X_INSTALL_SCOPE=user (e.g. from skills-eval-claude-user-scope.yml)
 # to install skills into ~/.claude/skills/ — exercises the user-scope path
 # of `x-x init`. Either way, each test gets a virgin sandboxed $HOME (see
 # the `workspace` fixture), so user-scope test N never inherits ~/.claude/

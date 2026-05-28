@@ -6,15 +6,15 @@ into the existing `skills-evals` test suite alongside the Claude path.
 
 The Claude implementation is the reference. Read
 `skills-evals/src/skills_evals/claude_driver.py` and
-`.github/workflows/manual-claude-judge.yml` before starting — every
+`.github/workflows/skills-eval-claude.yml` before starting — every
 section below maps to something already shipped there.
 
 ## Current state
 
 - One agent backend routed: Claude Code, routed at DeepSeek's
   Anthropic-compatible endpoint.
-- Two scope workflows: `manual-claude-judge.yml` (project scope) and
-  `manual-claude-judge-user-scope.yml` (user scope). They share the
+- Two scope workflows: `skills-eval-claude.yml` (project scope) and
+  `skills-eval-claude-user-scope.yml` (user scope). They share the
   same pytest scenarios and differ only in the `X_X_INSTALL_SCOPE`
   env var.
 - Four pytest scenarios under `skills-evals/tests/` per agent. The
@@ -53,7 +53,7 @@ section below maps to something already shipped there.
 | `skills_evals/<agent>_driver.py` | Subprocess spawn, protocol parsing, auto-yes loop. Each agent's CLI has different conventions; cannot be fully abstracted today. |
 | `tests/conftest.py` env defaults | Routing env vars are agent-specific (Claude uses `ANTHROPIC_*`; Cursor will use `CURSOR_*`; Gemini uses `GOOGLE_*`; …). Add a new defaults dict per agent. |
 | `tests/test_<agent>_*.py` | Either duplicate the test files (per-agent driver import) or refactor to a shared file with a `driver` fixture. Start with duplication; refactor once you have ≥3 backends. |
-| `.github/workflows/manual-<agent>-judge.yml` | Install step (npm/pip/cargo/bash), env block, secret mapping. |
+| `.github/workflows/skills-eval-<agent>.yml` | Install step (npm/pip/cargo/bash), env block, secret mapping. |
 
 ## Step-by-step recipe
 
@@ -158,8 +158,8 @@ spec — not the protocol format.
 Copy an existing one as a starting point:
 
 ```sh
-cp .github/workflows/manual-claude-judge.yml \
-   .github/workflows/manual-<agent>-judge.yml
+cp .github/workflows/skills-eval-claude.yml \
+   .github/workflows/skills-eval-<agent>.yml
 ```
 
 Update:

@@ -1,4 +1,4 @@
-name: manual / claude code <- llm judge (user scope)
+name: skills eval / claude code (user scope)
 
 # Manually-triggered experiment from the agent-eval lineage. The loop:
 #
@@ -35,7 +35,7 @@ jobs:
     timeout-minutes: 60
 
     env:
-      # Identical to manual-claude-judge.yml EXCEPT for X_X_INSTALL_SCOPE.
+      # Identical to skills-eval-claude.yml EXCEPT for X_X_INSTALL_SCOPE.
       # This workflow installs skills at user scope (~/.claude/skills/)
       # rather than project scope (<workspace>/.claude/skills/) so we
       # exercise that branch of `x-x init`. The pytest fixture

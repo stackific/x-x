@@ -1,7 +1,7 @@
-name: manual / cline <- llm judge
+name: skills eval / cline
 
 # Manually-triggered experiment from the agent-eval lineage. Mirrors
-# manual-opencode-judge.yml but targets Cline CLI via DeepSeek routed
+# skills-eval-opencode.yml but targets Cline CLI via DeepSeek routed
 # through cline's first-class `deepseek` provider. The loop:
 #
 #   1. Install Cline CLI (npm `cline`); install x-x to PATH.
