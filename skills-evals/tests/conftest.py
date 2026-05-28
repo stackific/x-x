@@ -155,29 +155,27 @@ AGENT_ENV_DEFAULTS_FOR_KEY = {
 }
 # Value passed to `x-x init --agents <value>` for each backend. Today the
 # binary's agentTargets registry (constants.go) recognizes "claude",
-# "codex", "opencode", and "copilot" — "kilocode" is not yet a registered
-# target, so Kilocode tests install the Claude skill layout as a
-# transitional shape and the Kilo CLI discovers them by the cross-agent
-# SKILL.md convention (Kilo reads `.claude/skills/` in compat mode per
-# kilo.ai/docs/customize/skills). When kilocode is added to agentTargets,
-# flip this entry to "kilocode" / "kilo" in the same change.
+# "codex", "opencode", "copilot", and "kilo". Kilocode workflows set
+# X_X_AGENT_KEY=kilocode (matching the npm package `@kilocode/cli`); the
+# Go binary's `--agents` flag uses the binary name `kilo` (matching the
+# `kilo` CLI invocation). The two are mapped here.
 AGENT_INIT_VALUE_FOR_KEY = {
   "claude": "claude",
   "opencode": "opencode",
   "copilot": "claude",
-  "kilocode": "claude",
+  "kilocode": "kilo",
 }
 # Per-agent skills install root under $HOME used by the user-scope
 # post-install log. Reflects each agent's discovery convention — Claude
 # reads `.claude/skills/`, OpenCode reads `.opencode/commands/`, Copilot
-# CLI (via the transitional Claude layout) reads `.claude/skills/`,
-# Kilocode (also via the transitional Claude layout, since Kilo's
-# compat-mode lookup includes `.claude/skills/`) reads `.claude/skills/`.
+# CLI reads `.agents/skills/` (cross-agent open spec), Kilocode reads
+# `.agents/skills/` (also cross-agent, "Open agent standard, loaded by
+# default" per kilo.ai/docs/customize/skills).
 AGENT_USER_SKILLS_REL_FOR_KEY = {
   "claude": Path(".claude") / "skills",
   "opencode": Path(".opencode") / "commands",
   "copilot": Path(".claude") / "skills",
-  "kilocode": Path(".claude") / "skills",
+  "kilocode": Path(".agents") / "skills",
 }
 
 # Which `x-x init --scope` value to use when bootstrapping each test's

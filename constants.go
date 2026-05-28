@@ -169,6 +169,30 @@ var agentTargets = []agentTarget{
 	// that's a follow-up once the manual eval workflow tells us which
 	// Copilot CLI lifecycle hooks make sense to register.
 	{"copilot", "GitHub Copilot CLI", ".agents/skills", "", "", ""},
+	// Kilo Code CLI is a fork of anomalyco/opencode and reads skills from
+	// `.kilo/skills/`, `.agents/skills/` ("Open agent standard, loaded by
+	// default"), and `.claude/skills/` ("Claude Code compatibility, loaded
+	// when Claude Code Compatibility is enabled") at project scope; user
+	// scope is documented as `~/.kilo/skills/` (kilo.ai/docs/customize/skills,
+	// May 2026). We use `.agents/skills` at BOTH scopes — same reasoning as
+	// the Copilot row above:
+	//   1. agents/skills/x-plan/SKILL.md and agents/skills/x-x/SKILL.md
+	//      define `<skills_root>` as exactly `.claude/skills/` (Claude) or
+	//      `.agents/skills/` (other agents). The agent's path-resolution
+	//      logic globs that exact list — `.kilo/skills` is not in it.
+	//   2. `.agents/skills/` is Kilo's documented "open agent standard"
+	//      compat path, loaded by default at project scope. Empirical
+	//      evidence from the eval (manual-kilocode-judge*.yml) confirms
+	//      the user-scope `~/.agents/skills/` lookup works the same way
+	//      Copilot's does — both binaries fall back through the
+	//      cross-agent discovery list at $HOME.
+	//   3. Reusing `.agents/skills` co-locates with Codex / Copilot
+	//      (install is idempotent), keeping the registry uniform across
+	//      "other agents".
+	// Skills-only — no settings.json / hooks file shipped yet; that's a
+	// follow-up once the eval workflow tells us which Kilo lifecycle
+	// hooks make sense to register.
+	{"kilo", "Kilo Code", ".agents/skills", "", "", ""},
 }
 
 // skillsSubdir is the directory inside ~/.x-x/agents/ that holds the

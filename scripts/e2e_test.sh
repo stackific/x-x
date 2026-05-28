@@ -44,14 +44,13 @@ readonly SKILL_MANIFEST_FILE="SKILL.md"           # skillManifestFile
 readonly OWNED_SKILLS="${SKILL_X_PLAN_DIR} ${SKILL_X_X_DIR}"
 
 # agentTargets in constants.go — index 0 = Claude Code, 1 = Codex CLI,
-# 2 = OpenCode, 3 = GitHub Copilot CLI (copilot added in this branch;
-# constants.go registration follows in a sibling commit). Copilot reuses
-# Codex's `.agents/skills` for both scopes (cross-agent open spec, install
-# is idempotent so the two rows co-exist on disk without conflict). The
-# agentTarget.userSkillsRel field exists for future agents whose project-
-# vs user-scope paths diverge; Copilot doesn't need it because the bundled
-# x-x skill content already documents `.agents/skills` as the canonical
-# "other agents" path.
+# 2 = OpenCode, 3 = GitHub Copilot CLI, 4 = Kilo Code. Copilot and Kilo
+# both reuse Codex's `.agents/skills` for both scopes (cross-agent open
+# spec, install is idempotent so the rows co-exist on disk without
+# conflict). The agentTarget.userSkillsRel field exists for future agents
+# whose project- vs user-scope paths diverge; neither Copilot nor Kilo
+# needs it because the bundled x-x skill content already documents
+# `.agents/skills` as the canonical "other agents" path.
 readonly CLAUDE_SKILLS_REL=".claude/skills"            # agentTargets[0].skillsRel
 readonly CLAUDE_CONFIG_REL=".claude"                   # agentTargets[0].configRel
 readonly CODEX_SKILLS_REL=".agents/skills"             # agentTargets[1].skillsRel
@@ -60,6 +59,7 @@ readonly OPENCODE_SKILLS_REL=".opencode/commands"      # agentTargets[2].skillsR
 # OpenCode currently ships no per-agent config (configSrc / configRel are
 # empty), so no OPENCODE_CONFIG_REL mirror is needed.
 readonly COPILOT_SKILLS_REL=".agents/skills"           # agentTargets[3].skillsRel
+readonly KILO_SKILLS_REL=".agents/skills"              # agentTargets[4].skillsRel
 # Parent of CODEX_SKILLS_REL — used by isolation cases that seed sibling
 # files alongside the Codex skills dir. Derived (not a Go constant) to
 # avoid drift if agentTargets[1].skillsRel ever moves.
@@ -640,6 +640,31 @@ assert_is_dir "copilot user-scope skills landed" \
   "${SANDBOX_HOME}/${COPILOT_SKILLS_REL}/${SKILL_X_X_DIR}"
 assert_absent "no install under project cwd" \
   "$PROJ_CP_USER/${COPILOT_SKILLS_REL}"
+
+case_start "x-x init --agents=kilo installs Kilo Code at project scope"
+reset_user_home
+PROJ_KL="$(fresh_project)"
+cd "$PROJ_KL"
+run_capture "" init --agents=kilo --scope=project
+assert_eq "exit 0" "$RUN_RC" "0"
+# Kilo's project skillsRel coincides with Codex / Copilot's `.agents/skills`
+# (cross-agent open spec, documented as "loaded by default" at
+# kilo.ai/docs/customize/skills). Skills land there; .claude is untouched.
+assert_is_dir "kilo project skills installed" "$PROJ_KL/${KILO_SKILLS_REL}/${SKILL_X_X_DIR}"
+assert_absent "claude NOT installed" "$PROJ_KL/${CLAUDE_SKILLS_REL}"
+
+case_start "x-x init --agents=kilo --scope=user lands at ~/.agents/skills"
+PROJ_KL_USER="$(fresh_project)"
+cd "$PROJ_KL_USER"
+reset_user_home
+run_capture "" init --agents=kilo --scope=user
+assert_eq "exit 0" "$RUN_RC" "0"
+# Kilo reuses the Codex `.agents/skills` path at both scopes (cross-agent
+# open spec). Skills land under SANDBOX_HOME, project cwd is left alone.
+assert_is_dir "kilo user-scope skills landed" \
+  "${SANDBOX_HOME}/${KILO_SKILLS_REL}/${SKILL_X_X_DIR}"
+assert_absent "no install under project cwd" \
+  "$PROJ_KL_USER/${KILO_SKILLS_REL}"
 
 case_start "x-x init --agents=invalid rejects unknown agent"
 reset_user_home
