@@ -217,6 +217,35 @@ jobs:
           & $bin -h
           if ($LASTEXITCODE -ne 0) { throw "$bin -h exited $LASTEXITCODE" }
 
+      # scripts/e2e_test.ps1 does its own `go build` (release-flavored,
+      # version-stamped to v0.0.0-e2e for harness assertions). server.go's
+      # `//go:embed all:frontend/dist` requires `frontend/dist/` on disk at
+      # compile time, and `frontend/dist/` is gitignored — the upstream
+      # `build` job populated it inside its own container, but that
+      # workspace doesn't survive the artifact handoff. Mirror what the
+      # build job does so the in-harness rebuild resolves the embed.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: install task
+        shell: bash
+        run: |
+          set -x
+          sh -c "$(curl -fsSL https://taskfile.dev/install.sh)" -- -d -b "$HOME/bin"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      # `task frontend:build` deliberately does not install deps (so `task
+      # run` stays snappy in the dev loop). Install them explicitly first.
+      - name: install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: build frontend (produces frontend/dist for the in-harness go build)
+        run: task frontend:build
+
       - name: run e2e suite
         run: |
           Write-Host "=== invoking e2e_test.ps1 (verbose=${{ inputs.verbose }}) ==="
