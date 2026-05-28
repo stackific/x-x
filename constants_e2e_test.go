@@ -52,14 +52,20 @@ func TestE2EShellConstantsMatchGo(t *testing.T) {
 		"CLAUDE_CONFIG_REL": agentByKey("claude").configRel,
 		"CLINE_SKILLS_REL":  agentByKey("cline").skillsRel,
 		// Cline bundles no per-agent config (configRel is ""); no mirror needed.
-		"CODEX_SKILLS_REL":    agentByKey("codex").skillsRel,
-		"CODEX_CONFIG_REL":    agentByKey("codex").configRel,
-		"COPILOT_SKILLS_REL":  agentByKey("copilot").skillsRel,
-		"OMP_SKILLS_REL":      agentByKey("omp").skillsRel,
-		"OPENCODE_SKILLS_REL": agentByKey("opencode").skillsRel,
-		"PI_SKILLS_REL":       agentByKey("pi").skillsRel,
-		// Copilot / OpenCode / Pi / omp each bundle no per-agent config
-		// (configRel is ""), so no *_CONFIG_REL mirror is needed for them.
+		"CODEX_SKILLS_REL":       agentByKey("codex").skillsRel,
+		"CODEX_CONFIG_REL":       agentByKey("codex").configRel,
+		"CONTINUE_SKILLS_REL":    agentByKey("continue").skillsRel,
+		"CURSOR_SKILLS_REL":      agentByKey("cursor").skillsRel,
+		"CURSOR_USER_SKILLS_REL": agentByKey("cursor").userSkillsRel,
+		"COPILOT_SKILLS_REL":     agentByKey("copilot").skillsRel,
+		"KILO_SKILLS_REL":        agentByKey("kilo").skillsRel,
+		"OMP_SKILLS_REL":         agentByKey("omp").skillsRel,
+		"OPENCODE_SKILLS_REL":    agentByKey("opencode").skillsRel,
+		"PI_SKILLS_REL":          agentByKey("pi").skillsRel,
+		"ZED_SKILLS_REL":         agentByKey("zed").skillsRel,
+		// Copilot / Continue / Cursor / Kilo / OpenCode / Pi / omp / Zed
+		// each bundle no per-agent config (configRel is ""), so no
+		// *_CONFIG_REL mirror is needed for them.
 	}
 
 	for name, expected := range want {

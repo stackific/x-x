@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -275,9 +276,12 @@ func TestPromptAgents_MultiPick_PreservesRegistryOrder(t *testing.T) {
 
 // TestPromptAgents_OutOfRange rejects numbers outside `1..len(agentTargets)`.
 // Silent fall-through would surprise the user with an unexpected agent
-// selection; the function must error and let runInit bail.
+// selection; the function must error and let runInit bail. Derives the
+// out-of-range pick from the registry size so adding a row never makes
+// the test silently start passing a "real" pick instead.
 func TestPromptAgents_OutOfRange(t *testing.T) {
-	if _, err := promptAgents(strings.NewReader("9\n")); err == nil {
+	beyond := strconv.Itoa(len(agentTargets) + 1)
+	if _, err := promptAgents(strings.NewReader(beyond + "\n")); err == nil {
 		t.Fatal("expected error for out-of-range pick")
 	}
 }

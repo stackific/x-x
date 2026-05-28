@@ -189,6 +189,28 @@ var agentTargets = []agentTarget{
 	// config.toml, etc.) still lives under .codex/ — see Codex docs:
 	// https://developers.openai.com/codex/hooks for the lookup order.
 	{"codex", "Codex CLI", ".agents/skills", "", "codex", ".codex"},
+	// Continue (continue.dev) reads skills from `.continue/skills/` at
+	// project scope and `~/.continue/skills/` at user scope, per the
+	// continue.dev customization docs (the IDE extension scans both
+	// roots on session start). Symmetric across scopes — no
+	// userSkillsRel override needed. Continue does NOT honor the
+	// cross-agent `.agents/skills` path, so installing there would
+	// land files Continue never discovers; the install must use
+	// `.continue/skills` exclusively. Skills-only — Continue's
+	// settings live at `~/.continue/config.yaml` and are user-owned
+	// end-to-end, outside the x-x install scope.
+	{"continue", "Continue", ".continue/skills", "", "", ""},
+	// Cursor reads skills from `.agents/skills/` at workspace scope
+	// (the cross-agent open spec path, shared with Codex/Copilot/Pi/
+	// omp/Antigravity) and from `~/.cursor/skills/` at global scope —
+	// Cursor does NOT honor the cross-agent `~/.agents/skills`
+	// fallback at user scope, same divergence shape as Antigravity.
+	// Needs a `userSkillsRel` override for that reason. The install
+	// is skills-only; Cursor's settings (`~/.cursor/settings.json`,
+	// MCP config, the cursor-agent hosted backend auth via
+	// CURSOR_API_KEY) are all user-owned end-to-end and outside the
+	// x-x install scope.
+	{"cursor", "Cursor", ".agents/skills", ".cursor/skills", "", ""},
 	// GitHub Copilot CLI reads skills from `.agents/skills/`, `.claude/skills/`,
 	// or `.github/skills/` at project scope, and `~/.copilot/skills/` or
 	// `~/.agents/skills/` at user scope (per Copilot CLI's May 2026 docs at
@@ -207,6 +229,16 @@ var agentTargets = []agentTarget{
 	// that's a follow-up once the manual eval workflow tells us which
 	// Copilot CLI lifecycle hooks make sense to register.
 	{"copilot", "GitHub Copilot CLI", ".agents/skills", "", "", ""},
+	// Kilo Code (kilocode.ai) reads skills from `.kilocode/skills/` at
+	// project scope and `~/.kilocode/skills/` at user scope, per
+	// kilocode.ai's customization docs and the published `.kilocode/`
+	// config tree convention. The cross-agent `.agents/skills` path is
+	// NOT a documented Kilo lookup, so installing there would land
+	// files Kilo never discovers. Symmetric across scopes — no
+	// userSkillsRel override needed. Skills-only; Kilo's settings live
+	// in `~/.kilocode/` end-to-end and are user-owned outside the x-x
+	// install scope.
+	{"kilo", "Kilo Code", ".kilocode/skills", "", "", ""},
 	// omp (oh-my-pi, omp.sh / can1357/oh-my-pi) is a TS coding agent
 	// that registers a documented `agents` skill provider at priority
 	// 70 — see oh-my-pi/docs/skills.md "priority 70 group (in
@@ -239,7 +271,7 @@ var agentTargets = []agentTarget{
 	// (interactive Settings → Memory tab) and its model registry at
 	// `~/.omp/agent/models.yml`. Both are user-owned end-to-end and
 	// outside the x-x install scope.
-	{"omp", "omp (oh-my-pi)", ".agents/skills", "", "", ""},
+	{"omp", "Oh My Pi", ".agents/skills", "", "", ""},
 	// OpenCode resolves slash commands from `.opencode/{command,commands}/**/*.md`
 	// at project scope and `~/.config/opencode/commands/` at user scope.
 	// The lookup keys off the file's frontmatter `name:` (the path-derived
@@ -268,6 +300,20 @@ var agentTargets = []agentTarget{
 	// `~/.pi/agent/AGENTS.md` and `~/.pi/agent/settings.json` if a user
 	// adds them, which is outside the scope of x-x's install.
 	{"pi", "Pi", ".agents/skills", "", "", ""},
+	// Zed (zed.dev) reads skills from `.agents/skills/` at workspace
+	// scope and from `~/.agents/skills/` at global scope — Zed
+	// explicitly honors the cross-agent open spec at BOTH scopes per
+	// zed.dev's "agent panel skills" docs, making it the symmetric
+	// case (no userSkillsRel override). Install collapses with
+	// Codex/Copilot/Pi/omp/Cursor-workspace/Antigravity-workspace at
+	// project scope, and with Codex/Copilot/Pi/omp at user scope —
+	// a single `--agents codex,zed` install writes one shared
+	// `.agents/skills/` directory at each scope. Skills-only; Zed's
+	// settings live at `~/.config/zed/settings.json` (Linux/macOS
+	// XDG), `%APPDATA%\Zed\settings.json` (Windows), or
+	// `$FLATPAK_XDG_CONFIG_HOME/zed/settings.json` (Flatpak), all
+	// user-owned end-to-end and outside the x-x install scope.
+	{"zed", "Zed", ".agents/skills", "", "", ""},
 }
 
 // skillsSubdir is the directory inside ~/.x-x/agents/ that holds the
