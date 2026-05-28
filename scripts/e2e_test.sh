@@ -43,35 +43,39 @@ readonly SKILL_MANIFEST_FILE="SKILL.md"           # skillManifestFile
 # ownedSkills, flattened to a space-separated list for `for` iteration.
 readonly OWNED_SKILLS="${SKILL_X_PLAN_DIR} ${SKILL_X_X_DIR}"
 
-# agentTargets in constants.go — index 0 = Claude Code, 1 = Codex CLI,
-# 2 = OpenCode, 3 = GitHub Copilot CLI, 4 = Pi, 5 = Cline, 6 = omp
-# (oh-my-pi). Codex, Copilot, Pi, and omp all resolve skills from
-# `.agents/skills` at both scopes (cross-agent open spec, install is
-# idempotent so the four rows co-exist on disk without conflict). Cline
-# does NOT use the cross-agent path — per docs.cline.bot/customization/
-# overview it reads from `.cline/skills/` (project) and
-# `~/.cline/skills/` (user) only. OpenCode and Claude stay on their own
-# paths because their lookup logic doesn't include `.agents/skills` —
-# OpenCode reads `.opencode/{command,commands}/` only, Claude reads
-# `.claude/skills/` only. The agentTarget.userSkillsRel field exists
-# for future agents whose project- vs user-scope paths diverge; none of
-# the current rows need it.
-readonly CLAUDE_SKILLS_REL=".claude/skills"            # agentTargets[0].skillsRel
-readonly CLAUDE_CONFIG_REL=".claude"                   # agentTargets[0].configRel
-readonly CODEX_SKILLS_REL=".agents/skills"             # agentTargets[1].skillsRel
-readonly CODEX_CONFIG_REL=".codex"                     # agentTargets[1].configRel
-readonly OPENCODE_SKILLS_REL=".opencode/commands"      # agentTargets[2].skillsRel
-# OpenCode currently ships no per-agent config (configSrc / configRel are
-# empty), so no OPENCODE_CONFIG_REL mirror is needed.
-readonly COPILOT_SKILLS_REL=".agents/skills"           # agentTargets[3].skillsRel
-readonly PI_SKILLS_REL=".agents/skills"                # agentTargets[4].skillsRel
-readonly CLINE_SKILLS_REL=".cline/skills"              # agentTargets[5].skillsRel
-readonly OMP_SKILLS_REL=".agents/skills"               # agentTargets[6].skillsRel
-# omp ships no per-agent config (settings live at ~/.omp/config.yml,
-# outside the x-x install scope), so no OMP_CONFIG_REL mirror is needed.
+# Mirrors of agentTargets[*].skillsRel / userSkillsRel / configRel in
+# constants.go. The registry is sorted alphabetically by display name
+# (case-insensitive) and looked up by `key` in the Go drift check
+# (TestE2EShellConstantsMatchGo), so these readonly entries are matched
+# by NAME, not by index. Codex, Copilot, Pi, omp, and Antigravity all
+# resolve skills from `.agents/skills` at workspace scope (cross-agent
+# open spec, install is idempotent so the rows co-exist on disk without
+# conflict). Cline does NOT use the cross-agent path — per
+# docs.cline.bot/customization/overview it reads from `.cline/skills/`
+# (project) and `~/.cline/skills/` (user) only. OpenCode and Claude
+# stay on their own paths because their lookup logic doesn't include
+# `.agents/skills` — OpenCode reads `.opencode/{command,commands}/` only,
+# Claude reads `.claude/skills/` only. Antigravity is the lone row that
+# diverges across scopes: workspace `.agents/skills`, global
+# `~/.gemini/antigravity/skills` (per antigravity.google/docs/skills) —
+# represented in Go via agentTarget.userSkillsRel.
+readonly ANTIGRAVITY_SKILLS_REL=".agents/skills"
+readonly ANTIGRAVITY_USER_SKILLS_REL=".gemini/antigravity/skills"
+readonly CLAUDE_SKILLS_REL=".claude/skills"
+readonly CLAUDE_CONFIG_REL=".claude"
+readonly CLINE_SKILLS_REL=".cline/skills"
+readonly CODEX_SKILLS_REL=".agents/skills"
+readonly CODEX_CONFIG_REL=".codex"
+readonly COPILOT_SKILLS_REL=".agents/skills"
+readonly OMP_SKILLS_REL=".agents/skills"
+readonly OPENCODE_SKILLS_REL=".opencode/commands"
+readonly PI_SKILLS_REL=".agents/skills"
+# OpenCode / Copilot / Pi / omp / Antigravity each ship no per-agent
+# config (configSrc / configRel are empty), so no *_CONFIG_REL mirrors
+# are needed for them.
 # Parent of CODEX_SKILLS_REL — used by isolation cases that seed sibling
 # files alongside the Codex skills dir. Derived (not a Go constant) to
-# avoid drift if agentTargets[1].skillsRel ever moves.
+# avoid drift if the skillsRel ever moves.
 readonly CODEX_SKILLS_PARENT="${CODEX_SKILLS_REL%/*}"
 # Parent of OPENCODE_SKILLS_REL — used by reset_user_home to wipe the
 # whole .opencode/ tree between cases. Derived for the same drift reason.
@@ -79,6 +83,10 @@ readonly OPENCODE_SKILLS_PARENT="${OPENCODE_SKILLS_REL%/*}"
 # Parent of CLINE_SKILLS_REL — wiped between cases. Cline owns its own
 # `.cline/` dir at both project and user scope.
 readonly CLINE_SKILLS_PARENT="${CLINE_SKILLS_REL%/*}"
+# Parent of ANTIGRAVITY_USER_SKILLS_REL — `~/.gemini/antigravity/`.
+# Wiped between cases that touch Antigravity at user scope so no stale
+# global skill tree leaks across cases.
+readonly ANTIGRAVITY_USER_SKILLS_PARENT="${ANTIGRAVITY_USER_SKILLS_REL%/*}"
 
 # Bundle-provided config filenames (agents/<configSrc>/* in the embed). Not
 # named in constants.go (the embed tree is the source) but pinned here
@@ -194,6 +202,7 @@ reset_user_home() {
          "$HOME/${CODEX_SKILLS_PARENT}" \
          "$HOME/${OPENCODE_SKILLS_PARENT}" \
          "$HOME/${CLINE_SKILLS_PARENT}" \
+         "$HOME/${ANTIGRAVITY_USER_SKILLS_PARENT}" \
          "$HOME/${XX_HOME_DIR}"
 }
 
@@ -742,6 +751,43 @@ assert_is_dir "omp user-scope skills landed" \
   "${SANDBOX_HOME}/${OMP_SKILLS_REL}/${SKILL_X_X_DIR}"
 assert_absent "no install under project cwd" \
   "$PROJ_OMP_USER/${OMP_SKILLS_REL}"
+
+case_start "x-x init --agents=antigravity installs at the shared .agents/skills/ path"
+reset_user_home
+PROJ_AG="$(fresh_project)"
+cd "$PROJ_AG"
+run_capture "" init --agents=antigravity --scope=project
+assert_eq "exit 0" "$RUN_RC" "0"
+# Antigravity's workspace skill path defaults to `.agents/skills`, the
+# cross-agent open spec path Codex, Copilot, Pi, and omp also use (per
+# antigravity.google/docs/skills). Other agents' exclusive paths and
+# their config files must stay absent under a single-row install.
+assert_is_dir "antigravity project skills installed" \
+  "$PROJ_AG/${ANTIGRAVITY_SKILLS_REL}/${SKILL_X_X_DIR}"
+assert_absent "claude path NOT installed"   "$PROJ_AG/${CLAUDE_SKILLS_REL}"
+assert_absent "cline path NOT installed"    "$PROJ_AG/${CLINE_SKILLS_REL}"
+assert_absent "opencode path NOT installed" "$PROJ_AG/${OPENCODE_SKILLS_REL}"
+assert_absent "codex config NOT installed"  "$PROJ_AG/${CODEX_CONFIG_REL}"
+assert_absent "claude config NOT installed" "$PROJ_AG/${CLAUDE_CONFIG_REL}"
+
+case_start "x-x init --agents=antigravity --scope=user lands at ~/.gemini/antigravity/skills"
+PROJ_AG_USER="$(fresh_project)"
+cd "$PROJ_AG_USER"
+reset_user_home
+run_capture "" init --agents=antigravity --scope=user
+assert_eq "exit 0" "$RUN_RC" "0"
+# Antigravity diverges from the cross-agent fallback at user scope: it
+# reads `~/.gemini/antigravity/skills/` (NOT `~/.agents/skills/`) per
+# antigravity.google/docs/skills. Skills land under SANDBOX_HOME at
+# that path; the cross-agent `~/.agents/skills` must stay clean to
+# prove the userSkillsRel override drove the install; project cwd is
+# left alone.
+assert_is_dir "antigravity user-scope skills landed" \
+  "${SANDBOX_HOME}/${ANTIGRAVITY_USER_SKILLS_REL}/${SKILL_X_X_DIR}"
+assert_absent "cross-agent ~/.agents/skills NOT touched" \
+  "${SANDBOX_HOME}/${CODEX_SKILLS_REL}"
+assert_absent "no install under project cwd" \
+  "$PROJ_AG_USER/${ANTIGRAVITY_USER_SKILLS_REL}"
 
 case_start "x-x init --agents=invalid rejects unknown agent"
 reset_user_home

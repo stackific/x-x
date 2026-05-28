@@ -248,7 +248,8 @@ func TestPromptAgents_BlankLineDefaultsToAll(t *testing.T) {
 
 // TestPromptAgents_SinglePick exercises the simplest non-default input:
 // one number, one selected agent. Asserts against agentTargets[0].key
-// so the test tracks any future renaming of the Claude row.
+// (whatever row currently sorts first alphabetically) — the test
+// tracks the registry ordering rather than any particular agent.
 func TestPromptAgents_SinglePick(t *testing.T) {
 	got, err := promptAgents(strings.NewReader("1\n"))
 	if err != nil {
@@ -1424,10 +1425,11 @@ func TestRunInit_AgentsFilter_OnlyInstallsSelected(t *testing.T) {
 
 	// Source the install destinations from the registry, not hard-coded
 	// path literals — same single-source-of-truth rule the rest of the
-	// codebase follows. agentTargets[0] is Claude, [1] is Codex.
-	claudeSkills := agentTargets[0].skillsRel
-	codexSkills := agentTargets[1].skillsRel
-	codexConfig := agentTargets[1].configRel
+	// codebase follows. Looked up by key because the registry is sorted
+	// alphabetically and the integer offsets are not load-bearing.
+	claudeSkills := agentByKey("claude").skillsRel
+	codexSkills := agentByKey("codex").skillsRel
+	codexConfig := agentByKey("codex").configRel
 	for _, name := range ownedSkills {
 		p := filepath.Join(projectDir, claudeSkills, name)
 		if _, err := os.Stat(p); err != nil {
