@@ -153,11 +153,12 @@ type apiErrorResponse struct {
 // responsibility, and embedding it in every list row would inflate the
 // payload before the user opens any one plan.
 type scopeListItem struct {
-	Slug    string   `json:"slug"`
-	Title   string   `json:"title"`
-	Status  string   `json:"status"`
-	Created string   `json:"created"`
-	Systems []string `json:"systems"`
+	Slug         string   `json:"slug"`
+	Title        string   `json:"title"`
+	Status       string   `json:"status"`
+	Created      string   `json:"created"`
+	Systems      []string `json:"systems"`
+	HasOpenTasks bool     `json:"hasOpenTasks"`
 }
 
 // scopesListResponse wraps the array in an object so the response can
@@ -509,12 +510,14 @@ func readScopesForAPI(staxDir string) []scopeListItem {
 			continue
 		}
 		title, created := readPlanTitleAndCreated(f)
+		body, _ := readPlanBody(f)
 		out = append(out, scopeListItem{
-			Slug:    row.slug,
-			Title:   title,
-			Status:  row.status,
-			Created: created,
-			Systems: append([]string(nil), row.systems...),
+			Slug:         row.slug,
+			Title:        title,
+			Status:       row.status,
+			Created:      created,
+			Systems:      append([]string(nil), row.systems...),
+			HasOpenTasks: strings.Contains(body, "- [ ]"),
 		})
 	}
 	return out

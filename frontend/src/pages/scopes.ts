@@ -13,6 +13,7 @@ type Scope = {
   status: string;
   created: string;
   systems: string[];
+  hasOpenTasks: boolean;
 };
 
 type ScopesResponse = { scopes: Scope[] };
@@ -54,6 +55,10 @@ function renderList(host: HTMLElement, scopes: Scope[]): void {
     const node = tpl("tpl-scope");
     const card = node.querySelector<HTMLAnchorElement>("a");
     if (card) card.href = `/scope?id=${encodeURIComponent(s.slug)}`;
+    if (s.hasOpenTasks) {
+      const icon = node.querySelector<HTMLElement>("i");
+      if (icon) icon.classList.add("error-text");
+    }
     $('[data-slot="title"]', node).textContent = s.title || s.slug;
     const statusEl = $<HTMLSpanElement>('[data-slot="status"]', node);
     if (s.status) {
