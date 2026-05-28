@@ -9,9 +9,10 @@ package main
 // user CLI assistant, not a shared service. The handlers below speak
 // the small JSON API that ships with stax today:
 //
-//   GET /api/hello   — liveness / capability probe; returns the running
-//                      stax version so a UI can confirm the binary it's
-//                      talking to.
+//   GET /api/stats   — liveness / capability probe; returns the
+//                      running stax version plus the project's system
+//                      and scope totals so the UI's home page can
+//                      render its two summary cards in a single hit.
 //   GET /api/systems — reads .stax/_data_systems.yaml from the current
 //                      working directory and returns its parsed
 //                      systems registry as a JSON array. Missing file
@@ -88,12 +89,17 @@ type systemEntry struct {
 	Name string `json:"name"`
 }
 
-// helloResponse is the JSON shape for /api/hello. version pinned to the
-// linker-injected Version constant so a UI knows which binary it's
-// hitting without having to invoke `stax --version` separately.
-type helloResponse struct {
-	Message string `json:"message"`
+// statsResponse is the JSON shape for /api/stats: a liveness probe
+// plus the two counts the UI's home page needs. version is pinned to
+// the linker-injected Version so a UI knows which binary it's hitting
+// without having to invoke `stax --version` separately. systems and
+// scopes are the totals served by /api/systems and /api/scopes
+// respectively — keeping them here means the home page can render
+// "0 systems / 0 scopes" or the live counts with a single round-trip.
+type statsResponse struct {
 	Version string `json:"version"`
+	Systems int    `json:"systems"`
+	Scopes  int    `json:"scopes"`
 }
 
 // systemsResponse wraps the array in an object so the response can grow
@@ -224,13 +230,13 @@ var markdownRenderer = goldmark.New(
 //
 // Route precedence: ServeMux matches longest pattern first, so the
 // explicit `/api/*` registrations take priority over the catch-all `/`
-// static handler — a request for `/api/hello` lands on the JSON
+// static handler — a request for `/api/stats` lands on the JSON
 // handler, not the embedded SPA. Everything else flows through
 // handleFrontend, which adds clean-URL behavior on top of the raw
 // file server (see that function's doc).
 func newServerMux() *http.ServeMux {
 	mux := http.NewServeMux()
-	mux.HandleFunc(apiHelloPath, handleAPIHello)
+	mux.HandleFunc(apiStatsPath, handleAPIStats)
 	mux.HandleFunc(apiSystemsPath, handleAPISystems)
 	mux.HandleFunc(apiScopesPath, handleAPIScopes)
 	mux.HandleFunc(apiScopePath, handleAPIScope)
@@ -297,14 +303,18 @@ func handleFrontend(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
-// handleAPIHello is the simplest endpoint: a JSON `{message, version}`
-// pair. No request-body inspection, no cwd-dependent state — purely a
-// liveness probe a UI can use to confirm the server is up and which
-// stax version it represents.
-func handleAPIHello(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, helloResponse{
-		Message: "hello",
+// handleAPIStats returns the running stax version plus the project's
+// system and scope totals. Doubles as the liveness probe (a 200 here
+// confirms the server is up) and the data source for the home page's
+// two summary cards. Missing files / not-a-project cwds surface as
+// zero counts so the home page renders "0 systems" rather than an
+// error — matches the no-error contract of /api/systems and
+// /api/scopes individually.
+func handleAPIStats(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, statsResponse{
 		Version: Version,
+		Systems: len(readSystemsForAPI(filepath.Join(staxDir, staxSystemsFile))),
+		Scopes:  len(readScopesForAPI(staxDir)),
 	})
 }
 
@@ -399,7 +409,10 @@ func readPlanForAPI(planPath, id string) (planDetail, bool) {
 // fence walk from parsePlan because parsePlan does not surface these
 // two fields.
 func readPlanTitleAndCreated(planPath string) (title, created string) {
-	data, err := os.ReadFile(planPath) // #nosec G304,G703 -- planPath comes from filepath.Glob on staxDir.
+	if !isSafePlanPath(planPath) {
+		return "", ""
+	}
+	data, err := fs.ReadFile(os.DirFS(filepath.Dir(planPath)), filepath.Base(planPath))
 	if err != nil {
 		return "", ""
 	}
@@ -490,6 +503,13 @@ func readScopesForAPI(staxDir string) []scopeListItem {
 // false means the file doesn't exist, doesn't parse, or its body
 // can't be rendered — callers translate that into a 404.
 func readScopeDetail(staxDir, slug string) (scopeDetail, bool) {
+	// Validate slug strictly before composing the on-disk path so user
+	// input (the `?id=<slug>` query parameter) can never reach
+	// os.ReadFile with shell metacharacters or `..` segments. A failed
+	// match returns the same not-found shape an unknown slug would.
+	if !planSlugRe.MatchString(slug) {
+		return scopeDetail{}, false
+	}
 	planPath := filepath.Join(staxDir, slug+planFileExt)
 	row, ok := parsePlan(planPath, io.Discard)
 	if !ok {

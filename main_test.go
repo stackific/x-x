@@ -74,7 +74,7 @@ func TestPrintNotice_ShapeIsInstallerParsable(t *testing.T) {
 // footer. Adding a new subcommand without listing it here will fail the
 // test, prompting a usage-block update.
 //
-// The local-server HTTP routes (/api/hello, /api/systems) are
+// The local-server HTTP routes (/api/stats, /api/systems) are
 // deliberately NOT listed in `-h` output — they're an internal
 // implementation detail behind bare-stax's web UI, not a user surface,
 // so no assertion looks for them here either.
@@ -100,7 +100,7 @@ func TestPrintAbout_IncludesUsage(t *testing.T) {
 		}
 	}
 	// HTTP routes must NOT leak into the help text — pin the absence.
-	for _, banned := range []string{apiHelloPath, apiSystemsPath, serverDisplayURL} {
+	for _, banned := range []string{apiStatsPath, apiSystemsPath, serverDisplayURL} {
 		if strings.Contains(out, banned) {
 			t.Fatalf("about exposes internal server detail %q in %q", banned, out)
 		}

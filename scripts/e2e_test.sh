@@ -40,7 +40,7 @@ readonly PLANS_LIST_OVERFLOW_THRESHOLD=20          # plansListOverflowThreshold
 # `go test` time and fails on byte-level divergence from the Go side.
 readonly STAX_SERVER_LISTEN_ADDR="127.0.0.1:7829"   # serverListenAddr (bind)
 readonly STAX_SERVER_DISPLAY_URL="http://localhost:7829"  # serverDisplayURL (user-facing)
-readonly STAX_API_HELLO_PATH="/api/hello"           # apiHelloPath
+readonly STAX_API_STATS_PATH="/api/stats"           # apiStatsPath
 readonly STAX_API_SYSTEMS_PATH="/api/systems"       # apiSystemsPath
 
 # Bundled skill directory names (skill*Dir in constants.go).
@@ -261,7 +261,7 @@ bg_spawn_stax() {
     extracted_url="$(grep -oE 'Stax server listening on [^[:space:]]+' "$BG_STDOUT" 2>/dev/null | head -1 | awk '{print $NF}')"
     if [ -n "$extracted_url" ]; then
       BG_URL="$extracted_url"
-      if curl -fsS --max-time 1 "${BG_URL}${STAX_API_HELLO_PATH}" >/dev/null 2>&1; then
+      if curl -fsS --max-time 1 "${BG_URL}${STAX_API_STATS_PATH}" >/dev/null 2>&1; then
         return 0
       fi
     fi
@@ -509,7 +509,7 @@ assert_is_dir "lazy-bootstrap skill ${SKILL_SHIP_DIR}" \
 #
 # Bare `stax` starts the loopback HTTP server on
 # ${STAX_SERVER_DISPLAY_URL} and blocks on SIGINT/SIGTERM. Spawn it in
-# the background, probe /api/hello + /api/systems, then SIGTERM the
+# the background, probe /api/stats + /api/systems, then SIGTERM the
 # process. --no-browser is the opt-out for the auto browser launch (the
 # server still starts); we use it here so the spawn cannot pop a window
 # on a dev workstation.
@@ -521,12 +521,13 @@ assert_eq "spawn succeeded" "$?" "0"
 # Curl the URL the spawn actually bound (BG_URL is exported by
 # bg_spawn_stax after extracting it from the listening banner) — the
 # preferred port may have been busy and the server fell forward to an
-# adjacent one. /api/hello carries the running version + a hello
-# message; the liveness probe bg_spawn_stax already waited on
+# adjacent one. /api/stats carries the running version + system/scope
+# totals; the liveness probe bg_spawn_stax already waited on
 # succeeded, so a redundant curl here lets us assert on body shape.
-hello_body="$(curl -fsS --max-time 1 "${BG_URL}${STAX_API_HELLO_PATH}")"
-assert_contains "hello message"  "$hello_body" '"message":"hello"'
-assert_contains "hello version"  "$hello_body" "\"version\":\"${E2E_VERSION}\""
+stats_body="$(curl -fsS --max-time 1 "${BG_URL}${STAX_API_STATS_PATH}")"
+assert_contains "stats version" "$stats_body" "\"version\":\"${E2E_VERSION}\""
+assert_contains "stats systems" "$stats_body" '"systems":'
+assert_contains "stats scopes"  "$stats_body" '"scopes":'
 # stdout carries the listening banner — pin both the URL and the
 # Ctrl-C hint so a reshuffle of runServer's banner shows up here.
 listening_banner="$(cat "$BG_STDOUT")"
@@ -672,7 +673,7 @@ assert_contains "cwd flag listed"     "$combined" "--cwd <path>"
 # Help text MUST NOT leak server internals — the HTTP routes and the
 # listen URL are implementation details behind the web UI, not user
 # surfaces.
-assert_not_contains "no api hello leak"   "$combined" "$STAX_API_HELLO_PATH"
+assert_not_contains "no api stats leak"   "$combined" "$STAX_API_STATS_PATH"
 assert_not_contains "no api systems leak" "$combined" "$STAX_API_SYSTEMS_PATH"
 assert_not_contains "no listen url leak"  "$combined" "$STAX_SERVER_DISPLAY_URL"
 

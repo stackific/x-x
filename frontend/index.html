@@ -1,18 +1,49 @@
-{{#> layout title="Home" page="home" active="home" description="Stax — live data from the Go backend."}}
+{{#> layout title="Home" page="home" active="home" description="Stax — project overview."}}
   <section class="container py-l">
     <h4 class="mb-m">Home</h4>
-    <p class="mb-l">Live response from the Go backend at <code>/api/hello</code>.</p>
 
-    <div id="hello" class="padding round surface-variant" aria-live="polite">
+    <div class="grid mb-l">
+      <a id="card-systems" href="/systems" class="s12 m6 row padding round surface-variant wave no-elevate middle-align">
+        <i class="large" aria-hidden="true">hub</i>
+        <div class="max ml-s">
+          <h3 class="no-margin" id="count-systems">0</h3>
+          <p class="small-text">Systems</p>
+        </div>
+      </a>
+      <a id="card-scopes" href="/scopes" class="s12 m6 row padding round surface-variant wave no-elevate middle-align">
+        <i class="large" aria-hidden="true">flag</i>
+        <div class="max ml-s">
+          <h3 class="no-margin" id="count-scopes">0</h3>
+          <p class="small-text">Scopes</p>
+        </div>
+      </a>
+    </div>
+
+    <h5 class="mb-m">Latest scopes</h5>
+    <div id="latest-scopes" aria-live="polite">
       <p class="small-text">Loading…</p>
     </div>
   </section>
 
-  <template id="tpl-hello">
-    <div>
-      <h6 class="mb-s" data-slot="message"></h6>
-      <pre class="small-text" data-slot="raw"></pre>
-    </div>
+  <template id="tpl-scope">
+    <a class="row padding round surface-variant wave no-elevate mb-s middle-align">
+      <i class="large" aria-hidden="true">flag</i>
+      <h6 class="small no-margin max ml-s" data-slot="title"></h6>
+      <div class="row wrap middle-align" data-slot="systems"></div>
+      <div class="row middle-align small-text ml-s">
+        <span data-slot="created"></span>
+        <span class="mx-s">·</span>
+        <span data-slot="status"></span>
+      </div>
+    </a>
+  </template>
+
+  <template id="tpl-system-link">
+    <a class="chip small no-elevate mr-t" data-stop></a>
+  </template>
+
+  <template id="tpl-empty">
+    <p class="small-text">No scopes yet.</p>
   </template>
 
   <template id="tpl-error">

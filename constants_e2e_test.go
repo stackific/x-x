@@ -72,7 +72,7 @@ func TestE2EShellConstantsMatchGo(t *testing.T) {
 		// probe a different URL than the Go server registers.
 		"STAX_SERVER_LISTEN_ADDR": serverListenAddr,
 		"STAX_SERVER_DISPLAY_URL": serverDisplayURL,
-		"STAX_API_HELLO_PATH":     apiHelloPath,
+		"STAX_API_STATS_PATH":     apiStatsPath,
 		"STAX_API_SYSTEMS_PATH":   apiSystemsPath,
 	}
 

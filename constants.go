@@ -536,7 +536,7 @@ const (
 // next-prefix`, etc.) and the on-disk filename conventions are
 // stable; only the HTTP API and frontend page routes use `scope`.
 const (
-	apiHelloPath   = "/api/hello"
+	apiStatsPath   = "/api/stats"
 	apiSystemsPath = "/api/systems"
 	apiScopesPath  = "/api/scopes"
 	apiScopePath   = "/api/scope"

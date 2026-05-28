@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	iofs "io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -333,7 +334,10 @@ func applyOverflowNarrow(rows []planRow, keywords []string, staxDir string, thre
 // caller can skip them; lintPlanFile surfaces those as per-file findings
 // on its own pass.
 func readPlanBody(path string) (string, bool) {
-	data, err := os.ReadFile(path) // #nosec G304,G703 -- path is composed from a CLI-driven staxDir + slug.
+	if !isSafePlanPath(path) {
+		return "", false
+	}
+	data, err := iofs.ReadFile(os.DirFS(filepath.Dir(path)), filepath.Base(path))
 	if err != nil {
 		return "", false
 	}
@@ -479,7 +483,11 @@ func listPlans(staxDir string, width int, warnW io.Writer) ([]planRow, error) {
 // file lacks frontmatter or is missing a required field — warn-and-skip
 // so a single bad file never aborts the whole `plans list` walk.
 func parsePlan(path string, warnW io.Writer) (planRow, bool) {
-	data, err := os.ReadFile(path) // #nosec G304,G703 -- path is constructed from a CLI-driven ReadDir of staxDir.
+	if !isSafePlanPath(path) {
+		_, _ = fmt.Fprintf(warnW, "warning: %s: contains a parent-directory segment; skipping\n", path)
+		return planRow{}, false
+	}
+	data, err := iofs.ReadFile(os.DirFS(filepath.Dir(path)), filepath.Base(path))
 	if err != nil {
 		_, _ = fmt.Fprintf(warnW, "warning: %s: %v; skipping\n", path, err)
 		return planRow{}, false
@@ -585,7 +593,35 @@ var (
 	// about the `id` and `name` keys; everything else (e.g. `brief`) is
 	// matched and discarded by setRegistryField.
 	registryKVLineRe = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_-]*):\s*(.*)$`)
+	// planSlugRe matches the post-prefix portion of a plan filename:
+	// one-or-more digits, a single hyphen, then a kebab-case slug
+	// (lowercase letters, digits, hyphens only). The /api/scope?id=<slug>
+	// handler validates user input against this regex before joining
+	// the slug into a filesystem path — a successful match guarantees
+	// the value contains no path separators, no `..` segments, and no
+	// shell-meaningful characters, which is what closes the CodeQL
+	// "uncontrolled data in path expression" finding.
+	planSlugRe = regexp.MustCompile(`^\d+-[a-z0-9-]+$`)
 )
+
+// isSafePlanPath rejects any plan-file path that contains a `..`
+// segment after lexical cleaning, so a tainted slug (or future
+// path-derived input) can never escape the project's `.stax/`
+// directory at the os.ReadFile boundary. Absolute paths are allowed
+// because tests legitimately pass `t.TempDir()/.stax/<file>.md`;
+// relative paths are allowed because production callers pass
+// `.stax/<file>.md`. The single thing we forbid is parent-directory
+// traversal — `..` is the only path component that could pull the
+// read out of the directory the caller intends.
+func isSafePlanPath(planPath string) bool {
+	cleaned := filepath.ToSlash(filepath.Clean(planPath))
+	for _, seg := range strings.Split(cleaned, "/") {
+		if seg == ".." {
+			return false
+		}
+	}
+	return true
+}
 
 // loadMaxPlanLines mirrors loadPrefixWidth for the max_plan_lines key in
 // _config.lock. Falls back to defaultMaxPlanLines on any failure.
