@@ -15,11 +15,11 @@ section below maps to something already shipped there.
   Anthropic-compatible endpoint.
 - Two scope workflows: `skills-eval-claude.yml` (project scope) and
   `skills-eval-claude-user-scope.yml` (user scope). They share the
-  same pytest scenarios and differ only in the `X_X_INSTALL_SCOPE`
+  same pytest scenarios and differ only in the `STAX_INSTALL_SCOPE`
   env var.
 - Four pytest scenarios under `skills-evals/tests/` per agent. The
   filename pattern is `test_<agent>_<scenario>.py`; the conftest's
-  `pytest_collection_modifyitems` reads `X_X_AGENT_KEY` (default
+  `pytest_collection_modifyitems` reads `STAX_AGENT_KEY` (default
   `claude`) and deselects every file that doesn't match the active
   agent, so a session runs exactly one backend's collection without
   cross-contamination. Claude's set today:
@@ -44,7 +44,7 @@ section below maps to something already shipped there.
 | `skills_evals/models.py` | DeepSeek wrapper for the judge LLM. Same judge model regardless of the agent under test. |
 | `skills_evals/workspace.py` | `collect_plan_files` / `collect_produced_files` / `collect_tree` / `load_all_plans` — read the filesystem; agent-agnostic. Includes the noise/scaffold exclusion + size-cap logic. |
 | `skills_evals/_logging.py` | Timestamped stderr logger. |
-| `tests/conftest.py` `workspace` fixture | `x-x init` runs the same way for any agent (just pass a different `--agents` value). |
+| `tests/conftest.py` `workspace` fixture | `stax init` runs the same way for any agent (just pass a different `--agents` value). |
 
 ### Agent-specific (clone + adapt)
 
@@ -131,9 +131,9 @@ If the agent picks its routing via different env vars from
 session fixture (Claude does this:
 `os.environ["ANTHROPIC_AUTH_TOKEN"] = api_key`).
 
-The `workspace` fixture already runs `x-x init`. Update its
+The `workspace` fixture already runs `stax init`. Update its
 `--agents` flag if the new agent isn't in the existing list. Set
-`X_X_INSTALL_SCOPE` via env if you want a user-scope variant
+`STAX_INSTALL_SCOPE` via env if you want a user-scope variant
 workflow.
 
 ### 4. Adapt the test scenarios
@@ -252,7 +252,7 @@ validate the agent's natural behavior, not script it.
 ### Don't include vendored deps in the artifact dump
 
 When the agent runs `npm install` or `pip install` for verification
-(per `agents/skills/x-x/SKILL.md:64`), `node_modules/` / `.venv/`
+(per `agents/skills/ship/SKILL.md:64`), `node_modules/` / `.venv/`
 appear in the workspace. The judge shouldn't see vendored code as
 the agent's "deliverable". `workspace.py`'s `NOISE_DIRS` already
 covers the common ones; add new entries as you discover bloat from
@@ -268,7 +268,7 @@ unfixable. Log loudly, fail explicitly with a clear message.
 This repo uses sibling worktrees under `.worktrees/<branch-name>/`.
 Always anchor with `pwd && git rev-parse --show-toplevel` before
 writing files. Absolute paths like
-`/Users/t/work/github/stackific/x-x/...` are wrong — they target the
+`/Users/t/work/github/stackific/stax/...` are wrong — they target the
 main worktree, not the branch you're editing.
 
 ## Cost and time expectations
@@ -295,10 +295,10 @@ main worktree, not the branch you're editing.
 
 ## References
 
-- `agents/skills/x-plan/SKILL.md` — what the planner skill expects
+- `agents/skills/scope/SKILL.md` — what the planner skill expects
   from the agent; Appendix A inside that file documents the
   bidirectional plan-link contract (extends/supersedes)
-- `agents/skills/x-x/SKILL.md` — what the executor skill expects
+- `agents/skills/ship/SKILL.md` — what the executor skill expects
   (review modes, verify-before-flip, etc.)
 - `skills-evals/README.md` — local dev setup
 - `docs/internal/manually-triggered-workflows.md` — workflow

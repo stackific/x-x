@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Stackific Inc.
 #
-# e2e_test.ps1 — End-to-end test driver for the x-x CLI on Windows.
+# e2e_test.ps1 — End-to-end test driver for the stax CLI on Windows.
 #
 # Companion to scripts/e2e_test.sh that targets PowerShell semantics and
 # Windows-specific behavior (no symlinks without Dev Mode, %USERPROFILE%
@@ -48,21 +48,20 @@ $Script:VerboseMode = [bool]$Verbose
 # in constants_e2e_test.go enforces parity for the bash mirror; an analogous
 # Go test should be added if this file's mirror grows much further.
 
-Set-Variable -Option Constant -Name XX_HOME_DIR                    -Value '.x-x'
-Set-Variable -Option Constant -Name XX_CONFIG_FILE                 -Value '.config.json'
-Set-Variable -Option Constant -Name AGENTS_EMBED_ROOT              -Value 'agents'
-Set-Variable -Option Constant -Name SKILLS_SUBDIR                  -Value 'skills'
-Set-Variable -Option Constant -Name PLANS_DIR                      -Value '.x-plans'
-Set-Variable -Option Constant -Name PLANS_CONFIG_LOCK              -Value '_config.lock'
-Set-Variable -Option Constant -Name PLANS_SYSTEMS_FILE             -Value '_data_systems.yaml'
-Set-Variable -Option Constant -Name DEFAULT_PREFIX_WIDTH           -Value 4
-Set-Variable -Option Constant -Name PLANS_LIST_OVERFLOW_THRESHOLD  -Value 20
+Set-Variable -Option Constant -Name STAX_DIR                       -Value '.stax'
+Set-Variable -Option Constant -Name STAX_CONFIG_FILE                -Value '.config.json'
+Set-Variable -Option Constant -Name AGENTS_EMBED_ROOT               -Value 'agents'
+Set-Variable -Option Constant -Name SKILLS_SUBDIR                   -Value 'skills'
+Set-Variable -Option Constant -Name STAX_LOCK_FILE                  -Value '_config.lock'
+Set-Variable -Option Constant -Name STAX_SYSTEMS_FILE               -Value '_data_systems.yaml'
+Set-Variable -Option Constant -Name DEFAULT_PREFIX_WIDTH            -Value 4
+Set-Variable -Option Constant -Name PLANS_LIST_OVERFLOW_THRESHOLD   -Value 20
 
-Set-Variable -Option Constant -Name SKILL_X_PLAN_DIR    -Value 'x-plan'
-Set-Variable -Option Constant -Name SKILL_X_X_DIR       -Value 'x-x'
+Set-Variable -Option Constant -Name SKILL_SCOPE_DIR     -Value 'scope'
+Set-Variable -Option Constant -Name SKILL_SHIP_DIR      -Value 'ship'
 Set-Variable -Option Constant -Name SKILL_MANIFEST_FILE -Value 'SKILL.md'
 
-Set-Variable -Option Constant -Name OWNED_SKILLS -Value @($SKILL_X_PLAN_DIR, $SKILL_X_X_DIR)
+Set-Variable -Option Constant -Name OWNED_SKILLS -Value @($SKILL_SCOPE_DIR, $SKILL_SHIP_DIR)
 
 # Mirrors of agentTargets[*].skillsRel / userSkillsRel / configRel in
 # constants.go. The Go registry is sorted alphabetically by display name
@@ -104,20 +103,20 @@ Set-Variable -Option Constant -Name CODEX_HOOKS_FILE     -Value 'hooks.json'
 Set-Variable -Option Constant -Name E2E_VERSION -Value 'v0.0.0-e2e'
 
 # Compositions so call sites read as plain English.
-$Script:XX_AGENTS_DIR        = Join-Path $XX_HOME_DIR    $AGENTS_EMBED_ROOT
-$Script:XX_AGENTS_SKILLS_DIR = Join-Path $XX_AGENTS_DIR  $SKILLS_SUBDIR
-$Script:PLANS_LOCK_PATH      = Join-Path $PLANS_DIR      $PLANS_CONFIG_LOCK
-$Script:PLANS_SYSTEMS_PATH   = Join-Path $PLANS_DIR      $PLANS_SYSTEMS_FILE
+$Script:STAX_AGENTS_DIR        = Join-Path $STAX_DIR    $AGENTS_EMBED_ROOT
+$Script:STAX_AGENTS_SKILLS_DIR = Join-Path $STAX_AGENTS_DIR  $SKILLS_SUBDIR
+$Script:STAX_LOCK_PATH      = Join-Path $STAX_DIR      $STAX_LOCK_FILE
+$Script:STAX_SYSTEMS_PATH   = Join-Path $STAX_DIR      $STAX_SYSTEMS_FILE
 $Script:CLAUDE_SETTINGS_PATH = Join-Path $CLAUDE_CONFIG_REL $CLAUDE_SETTINGS_FILE
 $Script:CODEX_HOOKS_PATH     = Join-Path $CODEX_CONFIG_REL  $CODEX_HOOKS_FILE
 
 # ---------- locations ----------
 
 $Script:RepoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
-$Script:Sandbox  = Join-Path ([System.IO.Path]::GetTempPath()) "x-x-e2e-$([guid]::NewGuid())"
+$Script:Sandbox  = Join-Path ([System.IO.Path]::GetTempPath()) "stax-e2e-$([guid]::NewGuid())"
 # Build artifact lives inside the sandbox so nothing lands in the repo's
 # working tree. The sandbox is wiped on exit via the trap below.
-$Script:BuildBin = Join-Path $Sandbox 'x-x-e2e.exe'
+$Script:BuildBin = Join-Path $Sandbox 'stax-e2e.exe'
 
 New-Item -ItemType Directory -Force -Path $Sandbox | Out-Null
 
@@ -283,7 +282,7 @@ function Assert-NotExists {
 }
 
 # Symlinks on Windows require either Developer Mode, admin elevation, or
-# SeCreateSymbolicLinkPrivilege. x-x's install path falls back to a copy
+# SeCreateSymbolicLinkPrivilege. stax's install path falls back to a copy
 # on Windows for exactly this reason, so the assertion here checks for the
 # COPY form (regular file/dir, no LinkType) — the inverse of the macOS
 # user-scope assertion in the bash e2e.
@@ -304,7 +303,7 @@ function Assert-IsCopyNotSymlink {
   }
 }
 
-# ---------- x-x runner ----------
+# ---------- stax runner ----------
 #
 # Mirrors the bash harness's `run_capture <stdin> <args...>`. Stores the
 # captured stdout/stderr/exit code in $Script:RunOut / $Script:RunErr /
@@ -351,7 +350,7 @@ function Invoke-XX {
   $stdin  = $Script:NextStdin
   $Script:NextStdin = $null  # one-shot consumption
   # Snapshot the command line so Write-Fail can include it in diagnostics.
-  $Script:LastCmd = "x-x " + ($args -join ' ')
+  $Script:LastCmd = "stax " + ($args -join ' ')
   if ($null -ne $stdin -and $stdin -ne '') {
     $Script:LastCmd += "  (stdin: " + ($stdin -replace '`r', '\\r' -replace '`n', '\\n') + ')'
   }
@@ -406,15 +405,15 @@ function New-FreshProject {
   return $path
 }
 
-# Seeds a project scaffold the way `x-x init --scope project` would: planDir
+# Seeds a project scaffold the way `stax init --scope project` would: planDir
 # with a syntactically-valid lock file and an empty systems registry. Tests
 # that need a "fully initialized" project-marker check to pass use this rather than
 # running real init (which we test separately).
 function Initialize-ProjectScaffold {
   param([Parameter(Mandatory)][string]$Path)
-  $planDir = Join-Path $Path $PLANS_DIR
+  $planDir = Join-Path $Path $STAX_DIR
   New-Item -ItemType Directory -Force -Path $planDir | Out-Null
-  New-Item -ItemType File -Force -Path (Join-Path $planDir $PLANS_SYSTEMS_FILE) | Out-Null
+  New-Item -ItemType File -Force -Path (Join-Path $planDir $STAX_SYSTEMS_FILE) | Out-Null
   $lockJson = @"
 {
   "prefix_width": $DEFAULT_PREFIX_WIDTH,
@@ -422,7 +421,7 @@ function Initialize-ProjectScaffold {
   "review_per": "task"
 }
 "@
-  Set-Content -LiteralPath (Join-Path $planDir $PLANS_CONFIG_LOCK) -Value $lockJson -Encoding ascii
+  Set-Content -LiteralPath (Join-Path $planDir $STAX_LOCK_FILE) -Value $lockJson -Encoding ascii
 }
 
 # Zero-padded prefix helper — mirrors the bash `prefix WIDTH N`. Used by every
@@ -440,7 +439,7 @@ function Format-Prefix {
 # override per test.
 function Write-Plan {
   param(
-    [Parameter(Mandatory)][string]$PlansDir,
+    [Parameter(Mandatory)][string]$StaxDir,
     [Parameter(Mandatory)][string]$Name,
     [Parameter(Mandatory)][string]$Status,
     [Parameter(Mandatory)][string]$Systems   # comma-separated kebab ids
@@ -463,7 +462,7 @@ g
 ## Tasks
 - [ ] The Auth Service shall do a thing.
 "@
-  $fullPath = Join-Path $PlansDir $Name
+  $fullPath = Join-Path $StaxDir $Name
   Set-Content -LiteralPath $fullPath -Value $fm -Encoding ascii
 }
 
@@ -471,7 +470,7 @@ g
 # names. Each name's kebab id is derived by lowercase + space→hyphen.
 function Write-Registry {
   param(
-    [Parameter(Mandatory)][string]$PlansDir,
+    [Parameter(Mandatory)][string]$StaxDir,
     [Parameter(Mandatory)][string]$Names   # "Auth Service,Billing Service"
   )
   $lines = @('systems:')
@@ -484,7 +483,7 @@ function Write-Registry {
     $lines += "    brief: seeded by e2e harness"
   }
   $body = ($lines -join "`n") + "`n"
-  Set-Content -LiteralPath (Join-Path $PlansDir $PLANS_SYSTEMS_FILE) -Value $body -Encoding ascii
+  Set-Content -LiteralPath (Join-Path $StaxDir $STAX_SYSTEMS_FILE) -Value $body -Encoding ascii
 }
 
 # ---------- build ----------
@@ -501,7 +500,7 @@ try {
   Pop-Location
 }
 
-# Now that the build is done, pivot HOME so every subsequent x-x invocation
+# Now that the build is done, pivot HOME so every subsequent stax invocation
 # writes into the sandbox instead of the developer's real user profile.
 Reset-UserHome
 
@@ -519,67 +518,67 @@ Write-Host ''
 
 # ---------- bare invocation ----------
 
-Start-Case 'x-x post-install seeds agents silently'
+Start-Case 'stax post-install seeds agents silently'
 Reset-UserHome
 Invoke-XX post-install
 Assert-Eq       'exit 0'    $RunRC 0
 Assert-Eq       'no stdout' $RunOut ''
 Assert-Eq       'no stderr' $RunErr ''
-$agentsDir = Join-Path $env:USERPROFILE $XX_AGENTS_DIR
+$agentsDir = Join-Path $env:USERPROFILE $STAX_AGENTS_DIR
 Assert-IsDir   'agents tree present' $agentsDir
-Assert-IsDir   'skills subdir'       (Join-Path $env:USERPROFILE $XX_AGENTS_SKILLS_DIR)
+Assert-IsDir   'skills subdir'       (Join-Path $env:USERPROFILE $STAX_AGENTS_SKILLS_DIR)
 foreach ($skill in $OWNED_SKILLS) {
-  Assert-IsDir "bundled skill $skill" (Join-Path $env:USERPROFILE (Join-Path $XX_AGENTS_SKILLS_DIR $skill))
+  Assert-IsDir "bundled skill $skill" (Join-Path $env:USERPROFILE (Join-Path $STAX_AGENTS_SKILLS_DIR $skill))
 }
-Assert-IsFile  'x-x SKILL.md'    (Join-Path $env:USERPROFILE (Join-Path $XX_AGENTS_SKILLS_DIR (Join-Path $SKILL_X_X_DIR $SKILL_MANIFEST_FILE)))
-Assert-IsFile  'x-plan SKILL.md' (Join-Path $env:USERPROFILE (Join-Path $XX_AGENTS_SKILLS_DIR (Join-Path $SKILL_X_PLAN_DIR $SKILL_MANIFEST_FILE)))
-Assert-NotExists 'embed README skipped from disk' (Join-Path $env:USERPROFILE (Join-Path $XX_AGENTS_DIR 'README.md'))
+Assert-IsFile  'stax SKILL.md'    (Join-Path $env:USERPROFILE (Join-Path $STAX_AGENTS_SKILLS_DIR (Join-Path $SKILL_SHIP_DIR $SKILL_MANIFEST_FILE)))
+Assert-IsFile  'scope SKILL.md' (Join-Path $env:USERPROFILE (Join-Path $STAX_AGENTS_SKILLS_DIR (Join-Path $SKILL_SCOPE_DIR $SKILL_MANIFEST_FILE)))
+Assert-NotExists 'embed README skipped from disk' (Join-Path $env:USERPROFILE (Join-Path $STAX_AGENTS_DIR 'README.md'))
 
-# Bare `x-x` on Windows would attempt to open the OS-default browser via
+# Bare `stax` on Windows would attempt to open the OS-default browser via
 # `rundll32 url.dll,FileProtocolHandler https://google.com`. CI runners
 # don't want browser windows spawning mid-test, so every Windows e2e
-# case that previously exercised bare x-x now uses --no-browser, which
+# case that previously exercised bare stax now uses --no-browser, which
 # branches to the same seed-and-exit path as `post-install`.
 
-Start-Case 'x-x --no-browser seeds agents silently'
+Start-Case 'stax --no-browser seeds agents silently'
 Reset-UserHome
 Invoke-XX --no-browser
 Assert-Eq      'exit 0'    $RunRC 0
 Assert-Eq      'no stdout' $RunOut ''
 Assert-Eq      'no stderr' $RunErr ''
-Assert-IsDir   'agents tree present' (Join-Path $env:USERPROFILE $XX_AGENTS_DIR)
+Assert-IsDir   'agents tree present' (Join-Path $env:USERPROFILE $STAX_AGENTS_DIR)
 
-Start-Case 'x-x --no-browser is idempotent (second run does not re-bootstrap)'
-$sentinel = Join-Path $env:USERPROFILE (Join-Path $XX_AGENTS_SKILLS_DIR (Join-Path $SKILL_X_X_DIR $SKILL_MANIFEST_FILE))
+Start-Case 'stax --no-browser is idempotent (second run does not re-bootstrap)'
+$sentinel = Join-Path $env:USERPROFILE (Join-Path $STAX_AGENTS_SKILLS_DIR (Join-Path $SKILL_SHIP_DIR $SKILL_MANIFEST_FILE))
 $firstMtime = (Get-Item -LiteralPath $sentinel).LastWriteTimeUtc
 Start-Sleep -Seconds 1
 Invoke-XX --no-browser
 $secondMtime = (Get-Item -LiteralPath $sentinel).LastWriteTimeUtc
 Assert-Eq 'mtime unchanged across runs' $firstMtime $secondMtime
 
-Start-Case 'x-x --version prints the notice'
+Start-Case 'stax --version prints the notice'
 Invoke-XX --version
 Assert-Eq       'exit 0'          $RunRC 0
-Assert-Contains 'version line'    $RunOut 'x-x by Stackific'
+Assert-Contains 'version line'    $RunOut 'Stax by Stackific'
 Assert-Contains 'version stamp'   $RunOut $E2E_VERSION
 Assert-Contains 'product tagline' $RunOut 'evidence-based'
 Assert-Contains 'copyright line'  $RunOut 'Copyright 2026 Stackific Inc.'
 Assert-Contains 'SPDX line'       $RunOut 'Apache-2.0'
 
-Start-Case 'x-x -h prints the usage block'
+Start-Case 'stax -h prints the usage block'
 Invoke-XX -h
 Assert-Eq       'exit 0'                       $RunRC 0
 Assert-Contains 'usage header'                 $RunOut 'Usage:'
 Assert-Contains 'browser url listed'           $RunOut 'https://google.com'
 Assert-Contains 'no-browser listed'            $RunOut '--no-browser'
-Assert-Contains 'post-install listed'          $RunOut 'x-x post-install'
-Assert-Contains 'init listed'                  $RunOut 'x-x init'
-Assert-Contains 'skills remove --user listed'  $RunOut 'x-x skills remove --user'
-Assert-Contains 'skills remove --project listed' $RunOut 'x-x skills remove --project'
-Assert-Contains 'plans next-prefix listed'     $RunOut 'x-x plans next-prefix'
-Assert-Contains 'plans list listed'            $RunOut 'x-x plans list'
-Assert-Contains 'plans lint listed'            $RunOut 'x-x plans lint'
-Assert-Contains 'plans slugify listed'         $RunOut 'x-x plans slugify'
+Assert-Contains 'post-install listed'          $RunOut 'stax post-install'
+Assert-Contains 'init listed'                  $RunOut 'stax init'
+Assert-Contains 'skills remove --user listed'  $RunOut 'stax skills remove --user'
+Assert-Contains 'skills remove --project listed' $RunOut 'stax skills remove --project'
+Assert-Contains 'plans next-prefix listed'     $RunOut 'stax plans next-prefix'
+Assert-Contains 'plans list listed'            $RunOut 'stax plans list'
+Assert-Contains 'plans lint listed'            $RunOut 'stax plans lint'
+Assert-Contains 'plans slugify listed'         $RunOut 'stax plans slugify'
 
 Start-Case 'unknown subcommand exits 2 with diagnostic'
 Invoke-XX frobnicate
@@ -588,39 +587,39 @@ Assert-Contains 'diagnostic' $RunErr 'unknown subcommand: frobnicate'
 
 # ---------- skills subcommand routing ----------
 
-Start-Case 'x-x skills (no subcommand) prints usage to stderr and exits 2'
+Start-Case 'stax skills (no subcommand) prints usage to stderr and exits 2'
 Invoke-XX skills
 Assert-Eq       'exit 2'        $RunRC 2
-Assert-Contains 'usage header'  $RunErr 'Usage: x-x skills <subcommand>'
+Assert-Contains 'usage header'  $RunErr 'Usage: stax skills <subcommand>'
 Assert-Contains 'remove --user' $RunErr 'remove --user'
 
-Start-Case 'x-x skills <typo> exits 2 with diagnostic'
+Start-Case 'stax skills <typo> exits 2 with diagnostic'
 Invoke-XX skills frobnicate
 Assert-Eq       'exit 2'     $RunRC 2
 Assert-Contains 'diagnostic' $RunErr 'unknown skills subcommand: frobnicate'
 
-Start-Case 'x-x skills remove (no flag) prints usage and exits 2'
+Start-Case 'stax skills remove (no flag) prints usage and exits 2'
 Invoke-XX skills remove
 Assert-Eq       'exit 2'       $RunRC 2
-Assert-Contains 'usage header' $RunErr 'Usage: x-x skills remove'
+Assert-Contains 'usage header' $RunErr 'Usage: stax skills remove'
 
-Start-Case 'x-x skills remove --user --project rejects mutually-exclusive flags'
+Start-Case 'stax skills remove --user --project rejects mutually-exclusive flags'
 Invoke-XX skills remove --user --project
 Assert-Eq       'exit 2'     $RunRC 2
 Assert-Contains 'diagnostic' $RunErr 'mutually exclusive'
 
 # ---------- plans subcommand routing ----------
 
-Start-Case 'x-x plans (no subcommand) prints usage to stderr and exits 2'
+Start-Case 'stax plans (no subcommand) prints usage to stderr and exits 2'
 Invoke-XX plans
 Assert-Eq       'exit 2'       $RunRC 2
-Assert-Contains 'usage header' $RunErr 'Usage: x-x plans <subcommand>'
+Assert-Contains 'usage header' $RunErr 'Usage: stax plans <subcommand>'
 Assert-Contains 'next-prefix'  $RunErr 'next-prefix'
 Assert-Contains 'list'         $RunErr 'list'
 Assert-Contains 'lint'         $RunErr 'lint'
 Assert-Contains 'slugify'      $RunErr 'slugify'
 
-Start-Case 'x-x plans <typo> exits 2 with diagnostic'
+Start-Case 'stax plans <typo> exits 2 with diagnostic'
 Invoke-XX plans frobnicate
 Assert-Eq       'exit 2'     $RunRC 2
 Assert-Contains 'diagnostic' $RunErr 'unknown plans subcommand: frobnicate'
@@ -670,7 +669,7 @@ Invoke-XX plans slugify '!!! ??? ###'
 Assert-Eq       'exit 2'     $RunRC 2
 Assert-Contains 'diagnostic' $RunErr 'no slug-able characters'
 
-Start-Case 'plans slugify works outside an x-x project'
+Start-Case 'plans slugify works outside a stax project'
 $noProject = New-FreshProject
 Push-Location $noProject
 try {
@@ -687,7 +686,7 @@ Push-Location $noProj
 try {
   Invoke-XX plans next-prefix
   Assert-Eq       'exit 2'     $RunRC 2
-  Assert-Contains 'diagnostic' $RunErr 'not an x-x project'
+  Assert-Contains 'diagnostic' $RunErr 'not a stax project'
 } finally { Pop-Location }
 
 Start-Case 'plans list in non-project exits 2 with diagnostic'
@@ -695,7 +694,7 @@ Push-Location $noProj
 try {
   Invoke-XX plans list
   Assert-Eq       'exit 2'     $RunRC 2
-  Assert-Contains 'diagnostic' $RunErr 'not an x-x project'
+  Assert-Contains 'diagnostic' $RunErr 'not a stax project'
 } finally { Pop-Location }
 
 Start-Case 'plans lint in non-project exits 2 with diagnostic'
@@ -703,16 +702,16 @@ Push-Location $noProj
 try {
   Invoke-XX plans lint
   Assert-Eq       'exit 2'     $RunRC 2
-  Assert-Contains 'diagnostic' $RunErr 'not an x-x project'
+  Assert-Contains 'diagnostic' $RunErr 'not a stax project'
 } finally { Pop-Location }
 
 Start-Case 'project-marker-check diagnostic does not leak internal path components'
 Push-Location $noProj
 try {
   Invoke-XX plans list
-  Assert-NotContains 'no plansDir leak'      $RunErr $PLANS_DIR
-  Assert-NotContains 'no lock file leak'     $RunErr $PLANS_CONFIG_LOCK
-  Assert-NotContains 'no registry file leak' $RunErr $PLANS_SYSTEMS_FILE
+  Assert-NotContains 'no .stax/ leak'      $RunErr $STAX_DIR
+  Assert-NotContains 'no lock file leak'     $RunErr $STAX_LOCK_FILE
+  Assert-NotContains 'no registry file leak' $RunErr $STAX_SYSTEMS_FILE
 } finally { Pop-Location }
 
 # ---------- plans next-prefix ----------
@@ -730,10 +729,10 @@ try {
 Start-Case 'plans next-prefix walks past existing plans'
 $projB = New-FreshProject
 Initialize-ProjectScaffold $projB
-$plansDir = Join-Path $projB $PLANS_DIR
-Write-Plan $plansDir '0003-charlie.md' 'valid' 'auth-service'
-Write-Plan $plansDir '0005-echo.md'    'valid' 'auth-service'
-Write-Plan $plansDir '0002-bravo.md'   'valid' 'auth-service'
+$staxDir = Join-Path $projB $STAX_DIR
+Write-Plan $staxDir '0003-charlie.md' 'valid' 'auth-service'
+Write-Plan $staxDir '0005-echo.md'    'valid' 'auth-service'
+Write-Plan $staxDir '0002-bravo.md'   'valid' 'auth-service'
 Push-Location $projB
 try {
   Invoke-XX plans next-prefix
@@ -744,7 +743,7 @@ try {
 Start-Case 'plans next-prefix honors prefix_width pin from _config.lock'
 $projC = New-FreshProject
 Initialize-ProjectScaffold $projC
-$lockC = Join-Path (Join-Path $projC $PLANS_DIR) $PLANS_CONFIG_LOCK
+$lockC = Join-Path (Join-Path $projC $STAX_DIR) $STAX_LOCK_FILE
 Set-Content -LiteralPath $lockC -Value '{"prefix_width":6,"max_plan_lines":30,"review_per":"task"}' -Encoding ascii
 Push-Location $projC
 try {
@@ -766,10 +765,10 @@ try {
 Start-Case 'plans list emits tab-separated rows sorted by prefix descending (default)'
 $projL = New-FreshProject
 Initialize-ProjectScaffold $projL
-$plansDirL = Join-Path $projL $PLANS_DIR
-Write-Plan $plansDirL '0002-bravo.md'   'deprecated' 'billing'
-Write-Plan $plansDirL '0001-alpha.md'   'valid'      'auth,billing'
-Write-Plan $plansDirL '0003-charlie.md' 'superseded' 'auth'
+$staxDirL = Join-Path $projL $STAX_DIR
+Write-Plan $staxDirL '0002-bravo.md'   'deprecated' 'billing'
+Write-Plan $staxDirL '0001-alpha.md'   'valid'      'auth,billing'
+Write-Plan $staxDirL '0003-charlie.md' 'superseded' 'auth'
 Push-Location $projL
 try {
   Invoke-XX plans list
@@ -854,9 +853,9 @@ try {
 Start-Case 'plans list warns on malformed frontmatter but keeps siblings'
 $projWarn = New-FreshProject
 Initialize-ProjectScaffold $projWarn
-$plansDirW = Join-Path $projWarn $PLANS_DIR
-Write-Plan $plansDirW '0002-ok.md' 'valid' 'auth'
-Set-Content -LiteralPath (Join-Path $plansDirW '0001-broken.md') -Value 'not a plan' -Encoding ascii
+$staxDirW = Join-Path $projWarn $STAX_DIR
+Write-Plan $staxDirW '0002-ok.md' 'valid' 'auth'
+Set-Content -LiteralPath (Join-Path $staxDirW '0001-broken.md') -Value 'not a plan' -Encoding ascii
 Push-Location $projWarn
 try {
   Invoke-XX plans list
@@ -868,11 +867,11 @@ try {
 Start-Case 'plans list ignores files that do not match the <prefix>-<slug>.md pattern'
 $projP = New-FreshProject
 Initialize-ProjectScaffold $projP
-$plansDirP = Join-Path $projP $PLANS_DIR
-Write-Plan $plansDirP '0001-keep.md' 'valid' 'auth'
-Set-Content -LiteralPath (Join-Path $plansDirP 'README.md')      -Value 'x' -Encoding ascii
-Set-Content -LiteralPath (Join-Path $plansDirP '123-short.md')   -Value 'x' -Encoding ascii
-Set-Content -LiteralPath (Join-Path $plansDirP '0002-noext')     -Value 'x' -Encoding ascii
+$staxDirP = Join-Path $projP $STAX_DIR
+Write-Plan $staxDirP '0001-keep.md' 'valid' 'auth'
+Set-Content -LiteralPath (Join-Path $staxDirP 'README.md')      -Value 'x' -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirP '123-short.md')   -Value 'x' -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirP '0002-noext')     -Value 'x' -Encoding ascii
 Push-Location $projP
 try {
   Invoke-XX plans list
@@ -885,9 +884,9 @@ try {
 Start-Case 'plans lint passes on a happy-path plan'
 $projLN = New-FreshProject
 Initialize-ProjectScaffold $projLN
-$plansDirLN = Join-Path $projLN $PLANS_DIR
-Write-Registry $plansDirLN 'Auth Service'
-$plan1 = Join-Path $plansDirLN '0001-foo.md'
+$staxDirLN = Join-Path $projLN $STAX_DIR
+Write-Registry $staxDirLN 'Auth Service'
+$plan1 = Join-Path $staxDirLN '0001-foo.md'
 $body1 = @"
 ---
 title: foo
@@ -916,9 +915,9 @@ try {
 Start-Case 'plans lint flags filename slug mismatch with title'
 $projLN2 = New-FreshProject
 Initialize-ProjectScaffold $projLN2
-$plansDirLN2 = Join-Path $projLN2 $PLANS_DIR
-Write-Registry $plansDirLN2 'Auth Service'
-$plan2 = Join-Path $plansDirLN2 '0001-foo.md'
+$staxDirLN2 = Join-Path $projLN2 $STAX_DIR
+Write-Registry $staxDirLN2 'Auth Service'
+$plan2 = Join-Path $staxDirLN2 '0001-foo.md'
 $body2 = @"
 ---
 title: Totally Different
@@ -947,9 +946,9 @@ try {
 Start-Case 'plans lint flags an unknown declared system'
 $projLN3 = New-FreshProject
 Initialize-ProjectScaffold $projLN3
-$plansDirLN3 = Join-Path $projLN3 $PLANS_DIR
-Write-Registry $plansDirLN3 'Auth Service'
-$plan3 = Join-Path $plansDirLN3 '0001-foo.md'
+$staxDirLN3 = Join-Path $projLN3 $STAX_DIR
+Write-Registry $staxDirLN3 'Auth Service'
+$plan3 = Join-Path $staxDirLN3 '0001-foo.md'
 $body3 = @"
 ---
 title: foo
@@ -978,9 +977,9 @@ try {
 Start-Case 'plans lint flags a dangling supersedes link'
 $projLN4 = New-FreshProject
 Initialize-ProjectScaffold $projLN4
-$plansDirLN4 = Join-Path $projLN4 $PLANS_DIR
-Write-Registry $plansDirLN4 'Auth Service'
-$plan4 = Join-Path $plansDirLN4 '0001-foo.md'
+$staxDirLN4 = Join-Path $projLN4 $STAX_DIR
+Write-Registry $staxDirLN4 'Auth Service'
+$plan4 = Join-Path $staxDirLN4 '0001-foo.md'
 $body4 = @"
 ---
 title: foo
@@ -1018,13 +1017,13 @@ try {
                     --prefix-width 4 --max-plan-lines 30 --review-per task
   Assert-Eq       'exit 0'             $RunRC 0
   Assert-IsDir    '.claude/skills present' (Join-Path $projInit $CLAUDE_SKILLS_REL)
-  Assert-IsDir    'bundled x-x skill landed' (Join-Path $projInit (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
-  Assert-IsDir    '.x-plans present' (Join-Path $projInit $PLANS_DIR)
-  Assert-IsFile   '_config.lock written' (Join-Path $projInit $Script:PLANS_LOCK_PATH)
-  Assert-IsFile   '_data_systems.yaml written' (Join-Path $projInit $Script:PLANS_SYSTEMS_PATH)
-  Assert-Contains 'git-commit tip' $RunOut "commit $PLANS_DIR"
+  Assert-IsDir    'bundled stax skill landed' (Join-Path $projInit (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
+  Assert-IsDir    '.stax present' (Join-Path $projInit $STAX_DIR)
+  Assert-IsFile   '_config.lock written' (Join-Path $projInit $Script:STAX_LOCK_PATH)
+  Assert-IsFile   '_data_systems.yaml written' (Join-Path $projInit $Script:STAX_SYSTEMS_PATH)
+  Assert-Contains 'git-commit tip' $RunOut "commit $STAX_DIR"
   # Lock file pins
-  $lockContent = Get-Content -Raw -LiteralPath (Join-Path $projInit $Script:PLANS_LOCK_PATH)
+  $lockContent = Get-Content -Raw -LiteralPath (Join-Path $projInit $Script:STAX_LOCK_PATH)
   Assert-Contains 'lock honors --prefix-width=4'   $lockContent '"prefix_width": 4'
   Assert-Contains 'lock honors --max-plan-lines=30' $lockContent '"max_plan_lines": 30'
   Assert-Contains 'lock honors --review-per=task'   $lockContent '"review_per": "task"'
@@ -1038,8 +1037,8 @@ try {
   Invoke-XX init --scope project --agents 'claude,codex' `
                     --prefix-width 4 --max-plan-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
-  Assert-IsDir 'claude skills tree' (Join-Path $projInitBoth (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
-  Assert-IsDir 'codex skills tree'  (Join-Path $projInitBoth (Join-Path $CODEX_SKILLS_REL  $SKILL_X_X_DIR))
+  Assert-IsDir 'claude skills tree' (Join-Path $projInitBoth (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
+  Assert-IsDir 'codex skills tree'  (Join-Path $projInitBoth (Join-Path $CODEX_SKILLS_REL  $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init --agents claude,codex,opencode installs all three skill trees'
@@ -1050,9 +1049,9 @@ try {
   Invoke-XX init --scope project --agents 'claude,codex,opencode' `
                     --prefix-width 4 --max-plan-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
-  Assert-IsDir 'claude skills tree'   (Join-Path $projInitAll (Join-Path $CLAUDE_SKILLS_REL   $SKILL_X_X_DIR))
-  Assert-IsDir 'codex skills tree'    (Join-Path $projInitAll (Join-Path $CODEX_SKILLS_REL    $SKILL_X_X_DIR))
-  Assert-IsDir 'opencode skills tree' (Join-Path $projInitAll (Join-Path $OPENCODE_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-IsDir 'claude skills tree'   (Join-Path $projInitAll (Join-Path $CLAUDE_SKILLS_REL   $SKILL_SHIP_DIR))
+  Assert-IsDir 'codex skills tree'    (Join-Path $projInitAll (Join-Path $CODEX_SKILLS_REL    $SKILL_SHIP_DIR))
+  Assert-IsDir 'opencode skills tree' (Join-Path $projInitAll (Join-Path $OPENCODE_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init refuses re-run on an already-initialized project'
@@ -1138,8 +1137,8 @@ try {
   Invoke-XX init
   Assert-Eq    'exit 0'                 $RunRC 0
   Assert-IsDir '.claude/skills present' (Join-Path $projInt $CLAUDE_SKILLS_REL)
-  Assert-IsDir '.x-plans present'       (Join-Path $projInit $PLANS_DIR)
-  $lockContentI = Get-Content -Raw -LiteralPath (Join-Path $projInt $Script:PLANS_LOCK_PATH)
+  Assert-IsDir '.stax present'       (Join-Path $projInit $STAX_DIR)
+  $lockContentI = Get-Content -Raw -LiteralPath (Join-Path $projInt $Script:STAX_LOCK_PATH)
   Assert-Contains 'default prefix_width in lock' $lockContentI "`"prefix_width`": $DEFAULT_PREFIX_WIDTH"
   Assert-Contains 'default review_per in lock'   $lockContentI '"review_per": "task"'
 } finally { Pop-Location }
@@ -1154,11 +1153,11 @@ try {
   Invoke-XX init --scope project --agents claude `
                     --prefix-width 4 --max-plan-lines 30 --review-per task
   Assert-Eq    'init exit 0' $RunRC 0
-  Assert-IsDir 'skill present pre-remove' (Join-Path $projSR (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-IsDir 'skill present pre-remove' (Join-Path $projSR (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
   Invoke-XX skills remove --project
   Assert-Eq       'remove exit 0'       $RunRC 0
   Assert-Contains 'summary line'        $RunOut 'Removed'
-  Assert-NotExists 'x-x skill removed'  (Join-Path $projSR (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'stax skill removed'  (Join-Path $projSR (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 Start-Case 'skills remove --user is silent no-op on empty state'
@@ -1178,13 +1177,13 @@ try {
   Invoke-XX init --scope project --agents claude `
                     --prefix-width 4 --max-plan-lines 30 --review-per task
   Assert-Eq 'init exit 0' $RunRC 0
-  # Seed a sibling user-authored skill that x-x must NOT touch.
+  # Seed a sibling user-authored skill that stax must NOT touch.
   $siblingDir = Join-Path $projOW (Join-Path $CLAUDE_SKILLS_REL 'user-authored')
   New-Item -ItemType Directory -Force -Path $siblingDir | Out-Null
   Set-Content -LiteralPath (Join-Path $siblingDir 'SKILL.md') -Value '# user skill' -Encoding ascii
   Invoke-XX skills remove --project
   Assert-Eq        'remove exit 0'              $RunRC 0
-  Assert-NotExists 'x-x skill removed'          (Join-Path $projOW (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'stax skill removed'          (Join-Path $projOW (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-IsDir     'sibling skill survived'     $siblingDir
   Assert-IsFile    'sibling SKILL.md survived'  (Join-Path $siblingDir 'SKILL.md')
 } finally { Pop-Location }
@@ -1195,7 +1194,7 @@ try {
 
 # ---------- copy vs symlink ----------
 
-Start-Case 'user-scope install uses COPY (not symlink) on Windows + seeds .x-plans in cwd'
+Start-Case 'user-scope install uses COPY (not symlink) on Windows + seeds .stax in cwd'
 Reset-UserHome
 # Push to a throwaway dir so the cwd-scaffold assertion has a known scope.
 $userInitCwd = New-FreshProject
@@ -1204,18 +1203,18 @@ try {
   Invoke-XX init --scope user --agents claude `
                     --prefix-width 4 --max-plan-lines 30 --review-per task
   Assert-Eq 'exit 0' $RunRC 0
-  $userClaudeSkill = Join-Path $env:USERPROFILE (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR)
-  Assert-IsCopyNotSymlink 'x-x skill is a copy, not symlink' $userClaudeSkill
-  # User-scope MUST also drop the .x-plans/ scaffold into cwd. Scope only
+  $userClaudeSkill = Join-Path $env:USERPROFILE (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR)
+  Assert-IsCopyNotSymlink 'stax skill is a copy, not symlink' $userClaudeSkill
+  # User-scope MUST also drop the .stax/ scaffold into cwd. Scope only
   # decides where SKILLS land (project tree vs $env:USERPROFILE); the
-  # project marker check keyed on <cwd>/$PLANS_LOCK_PATH is what makes cwd usable
-  # with /x-plan, /x-x, and the `x-x plans *` CLI subcommands.
-  Assert-IsFile 'user-scope seeds _config.lock in cwd' (Join-Path $userInitCwd $Script:PLANS_LOCK_PATH)
-  Assert-IsFile 'user-scope seeds _data_systems.yaml in cwd' (Join-Path $userInitCwd $Script:PLANS_SYSTEMS_PATH)
+  # project marker check keyed on <cwd>/$STAX_LOCK_PATH is what makes cwd usable
+  # with /scope, /ship, and the `stax plans *` CLI subcommands.
+  Assert-IsFile 'user-scope seeds _config.lock in cwd' (Join-Path $userInitCwd $Script:STAX_LOCK_PATH)
+  Assert-IsFile 'user-scope seeds _data_systems.yaml in cwd' (Join-Path $userInitCwd $Script:STAX_SYSTEMS_PATH)
 } finally { Pop-Location }
 
 Start-Case 'user-scope install copies bundled skill content verbatim'
-$copySource = Join-Path $env:USERPROFILE (Join-Path $XX_AGENTS_SKILLS_DIR (Join-Path $SKILL_X_X_DIR $SKILL_MANIFEST_FILE))
+$copySource = Join-Path $env:USERPROFILE (Join-Path $STAX_AGENTS_SKILLS_DIR (Join-Path $SKILL_SHIP_DIR $SKILL_MANIFEST_FILE))
 $copyDest   = Join-Path $userClaudeSkill $SKILL_MANIFEST_FILE
 Assert-IsFile 'source manifest exists' $copySource
 Assert-IsFile 'dest manifest exists'   $copyDest
@@ -1227,7 +1226,7 @@ Assert-Eq 'manifest content matches byte-for-byte' $srcHash $dstHash
 
 Start-Case 'user-scope install lands under %USERPROFILE%, not under $HOME if they differ'
 Reset-UserHome
-# `x-x init` (any scope) seeds <cwd>/.x-plans/_config.lock, so each init
+# `stax init` (any scope) seeds <cwd>/.stax/_config.lock, so each init
 # call needs a fresh project dir — otherwise a leftover lock from an
 # earlier case fails the "already initialized" check.
 $projUP = New-FreshProject
@@ -1241,8 +1240,8 @@ try {
   Invoke-XX init --scope user --agents claude `
                     --prefix-width 4 --max-plan-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
-  Assert-IsDir 'install under USERPROFILE' (Join-Path $env:USERPROFILE (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
-  Assert-NotExists 'NOT under HOME'        (Join-Path $env:HOME (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-IsDir 'install under USERPROFILE' (Join-Path $env:USERPROFILE (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
+  Assert-NotExists 'NOT under HOME'        (Join-Path $env:HOME (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
   # Restore HOME == USERPROFILE for subsequent cases that assume parity.
   $env:HOME = $SandboxHome
 } finally { Pop-Location }
@@ -1252,8 +1251,8 @@ try {
 Start-Case 'plans list tolerates CRLF line endings in plan files'
 $projCR = New-FreshProject
 Initialize-ProjectScaffold $projCR
-$plansDirCR = Join-Path $projCR $PLANS_DIR
-$crlfPath = Join-Path $plansDirCR '0001-crlf.md'
+$staxDirCR = Join-Path $projCR $STAX_DIR
+$crlfPath = Join-Path $staxDirCR '0001-crlf.md'
 # Write plan with explicit CRLF — mimics what Windows editors produce.
 $crlfBody = "---`r`ntitle: crlf`r`nstatus: valid`r`nsystems: [auth]`r`ncreated: 2026-05-23T14:30:00Z`r`n---`r`n`r`n## Goal`r`ng`r`n`r`n## Approach`r`n- A`r`n`r`n## Tasks`r`n- [ ] The Auth Service shall do.`r`n"
 [System.IO.File]::WriteAllText($crlfPath, $crlfBody)
@@ -1272,22 +1271,22 @@ try {
 # name filter. The CLI never produces such names because every plan slug is
 # prefixed with `\d{N}-` (so the basename is `<prefix>-<slug>`, never `CON`),
 # and listPlans / scanHighestPrefix both anchor on that format via regex.
-# This test verifies that anchor: if reserved-name files land in plansDir
+# This test verifies that anchor: if reserved-name files land in .stax/
 # (whatever way), `plans list` ignores them and `plans next-prefix` keeps
 # walking the conforming siblings.
 
-Start-Case 'plans list ignores reserved-name files at the .x-plans/ root'
+Start-Case 'plans list ignores reserved-name files at the .stax/ root'
 $projRes = New-FreshProject
 Initialize-ProjectScaffold $projRes
-$plansDirRes = Join-Path $projRes $PLANS_DIR
-Write-Plan $plansDirRes '0001-foo.md' 'valid' 'auth'
+$staxDirRes = Join-Path $projRes $STAX_DIR
+Write-Plan $staxDirRes '0001-foo.md' 'valid' 'auth'
 # .NET I/O uses \\?\ NT-path prefixing on modern Windows, which bypasses
 # the Win32 reserved-basename block. Track which reserved files we managed
 # to create so the assertion below can't be silently vacuous on a host
 # where every create fails.
 $createdReserved = New-Object System.Collections.Generic.List[string]
 foreach ($reserved in @('CON.md', 'PRN.md', 'AUX.md', 'NUL.md', 'COM1.md', 'LPT1.md')) {
-  $target = Join-Path $plansDirRes $reserved
+  $target = Join-Path $staxDirRes $reserved
   try {
     [System.IO.File]::WriteAllText($target, 'x')
     if (Test-Path -LiteralPath $target -PathType Leaf) {
@@ -1313,8 +1312,8 @@ if ($createdReserved.Count -eq 0) {
 Start-Case 'plans list treats filenames case-insensitively (Windows NTFS default)'
 $projCI = New-FreshProject
 Initialize-ProjectScaffold $projCI
-$plansDirCI = Join-Path $projCI $PLANS_DIR
-Write-Plan $plansDirCI '0001-foo.md' 'valid' 'auth'
+$staxDirCI = Join-Path $projCI $STAX_DIR
+Write-Plan $staxDirCI '0001-foo.md' 'valid' 'auth'
 # Trying to write a sibling differing only in case should hit the same file
 # on NTFS. Just assert the original is reachable both ways.
 Push-Location $projCI
@@ -1338,8 +1337,8 @@ try {
   Invoke-XX init --scope project --agents claude `
                     --prefix-width 4 --max-plan-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
-  Assert-IsDir 'skills present at spaced path' (Join-Path $spacedDir (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
-  Assert-IsFile 'lock present at spaced path'  (Join-Path $spacedDir $Script:PLANS_LOCK_PATH)
+  Assert-IsDir 'skills present at spaced path' (Join-Path $spacedDir (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
+  Assert-IsFile 'lock present at spaced path'  (Join-Path $spacedDir $Script:STAX_LOCK_PATH)
 } finally { Pop-Location }
 
 # ---------- BOM tolerance in _config.lock ----------
@@ -1347,7 +1346,7 @@ try {
 Start-Case 'plans next-prefix tolerates a UTF-8 BOM in _config.lock'
 $projBOM = New-FreshProject
 Initialize-ProjectScaffold $projBOM
-$lockBOM = Join-Path (Join-Path $projBOM $PLANS_DIR) $PLANS_CONFIG_LOCK
+$lockBOM = Join-Path (Join-Path $projBOM $STAX_DIR) $STAX_LOCK_FILE
 $bomBytes = [System.Text.Encoding]::UTF8.GetPreamble() +
             [System.Text.Encoding]::UTF8.GetBytes('{"prefix_width":5,"max_plan_lines":30,"review_per":"task"}')
 [System.IO.File]::WriteAllBytes($lockBOM, $bomBytes)
@@ -1372,7 +1371,7 @@ try {
   Invoke-XX init --scope project --agents claude `
                     --prefix-width 4 --max-plan-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
-  Assert-IsDir 'skills present under fwdslash cwd' (Join-Path $fwdDir (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-IsDir 'skills present under fwdslash cwd' (Join-Path $fwdDir (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 # ---------- plans list: --overflow-keywords + threshold behavior ----------
@@ -1386,7 +1385,7 @@ try {
 # Helper: seed N body-only plans whose body is exactly the supplied content.
 function Write-PlanWithBody {
   param(
-    [Parameter(Mandatory)][string]$PlansDir,
+    [Parameter(Mandatory)][string]$StaxDir,
     [Parameter(Mandatory)][string]$Name,
     [Parameter(Mandatory)][string]$Body
   )
@@ -1397,26 +1396,26 @@ systems: [auth]
 ---
 $Body
 "@
-  Set-Content -LiteralPath (Join-Path $PlansDir $Name) -Value $fm -Encoding ascii
+  Set-Content -LiteralPath (Join-Path $StaxDir $Name) -Value $fm -Encoding ascii
 }
 
 function Add-ManyPlans {
   param(
-    [Parameter(Mandatory)][string]$PlansDir,
+    [Parameter(Mandatory)][string]$StaxDir,
     [Parameter(Mandatory)][int]$Count,
     [string]$Body = 'generic body'
   )
   for ($i = 1; $i -le $Count; $i++) {
     $name = '{0:D4}-plan{1:D3}.md' -f $i, $i
-    Write-PlanWithBody -PlansDir $PlansDir -Name $name -Body "$i $Body"
+    Write-PlanWithBody -StaxDir $StaxDir -Name $name -Body "$i $Body"
   }
 }
 
 Start-Case 'plans list --overflow-keywords is a no-op below threshold'
 $projOK1 = New-FreshProject
 Initialize-ProjectScaffold $projOK1
-$plansDirOK1 = Join-Path $projOK1 $PLANS_DIR
-Add-ManyPlans -PlansDir $plansDirOK1 -Count 5 -Body 'no match here'
+$staxDirOK1 = Join-Path $projOK1 $STAX_DIR
+Add-ManyPlans -StaxDir $staxDirOK1 -Count 5 -Body 'no match here'
 Push-Location $projOK1
 try {
   Invoke-XX plans list --overflow-keywords zzz-never-matches
@@ -1428,11 +1427,11 @@ try {
 Start-Case 'plans list --overflow-keywords engages above threshold, matches body'
 $projOK2 = New-FreshProject
 Initialize-ProjectScaffold $projOK2
-$plansDirOK2 = Join-Path $projOK2 $PLANS_DIR
+$staxDirOK2 = Join-Path $projOK2 $STAX_DIR
 $over = $PLANS_LIST_OVERFLOW_THRESHOLD + 5
-Add-ManyPlans -PlansDir $plansDirOK2 -Count $over -Body 'generic body'
+Add-ManyPlans -StaxDir $staxDirOK2 -Count $over -Body 'generic body'
 # Replace one body with a keyword the harness will look for.
-Write-PlanWithBody -PlansDir $plansDirOK2 -Name '0007-plan007.md' -Body 'this plan covers exponential retry backoff'
+Write-PlanWithBody -StaxDir $staxDirOK2 -Name '0007-plan007.md' -Body 'this plan covers exponential retry backoff'
 Push-Location $projOK2
 try {
   Invoke-XX plans list --overflow-keywords retry
@@ -1445,8 +1444,8 @@ try {
 Start-Case 'plans list --overflow-keywords falls back to top-N when no body matches'
 $projOK3 = New-FreshProject
 Initialize-ProjectScaffold $projOK3
-$plansDirOK3 = Join-Path $projOK3 $PLANS_DIR
-Add-ManyPlans -PlansDir $plansDirOK3 -Count ($PLANS_LIST_OVERFLOW_THRESHOLD + 3) -Body 'nothing relevant here'
+$staxDirOK3 = Join-Path $projOK3 $STAX_DIR
+Add-ManyPlans -StaxDir $staxDirOK3 -Count ($PLANS_LIST_OVERFLOW_THRESHOLD + 3) -Body 'nothing relevant here'
 Push-Location $projOK3
 try {
   Invoke-XX plans list --overflow-keywords zzz-never-matches
@@ -1458,8 +1457,8 @@ try {
 Start-Case 'plans list --overflow-keywords matches body-only (frontmatter ignored)'
 $projOK4 = New-FreshProject
 Initialize-ProjectScaffold $projOK4
-$plansDirOK4 = Join-Path $projOK4 $PLANS_DIR
-Add-ManyPlans -PlansDir $plansDirOK4 -Count ($PLANS_LIST_OVERFLOW_THRESHOLD + 1) -Body 'generic body'
+$staxDirOK4 = Join-Path $projOK4 $STAX_DIR
+Add-ManyPlans -StaxDir $staxDirOK4 -Count ($PLANS_LIST_OVERFLOW_THRESHOLD + 1) -Body 'generic body'
 Push-Location $projOK4
 try {
   # 'auth' appears in every plan's frontmatter (systems: [auth]) but NEVER in body.
@@ -1472,9 +1471,9 @@ try {
 Start-Case 'plans list --overflow-keywords is case-insensitive'
 $projOK5 = New-FreshProject
 Initialize-ProjectScaffold $projOK5
-$plansDirOK5 = Join-Path $projOK5 $PLANS_DIR
-Add-ManyPlans -PlansDir $plansDirOK5 -Count $PLANS_LIST_OVERFLOW_THRESHOLD -Body 'generic body'
-Write-PlanWithBody -PlansDir $plansDirOK5 -Name "$('{0:D4}' -f ($PLANS_LIST_OVERFLOW_THRESHOLD + 1))-extra.md" -Body 'Uppercase MATCH inside body'
+$staxDirOK5 = Join-Path $projOK5 $STAX_DIR
+Add-ManyPlans -StaxDir $staxDirOK5 -Count $PLANS_LIST_OVERFLOW_THRESHOLD -Body 'generic body'
+Write-PlanWithBody -StaxDir $staxDirOK5 -Name "$('{0:D4}' -f ($PLANS_LIST_OVERFLOW_THRESHOLD + 1))-extra.md" -Body 'Uppercase MATCH inside body'
 Push-Location $projOK5
 try {
   Invoke-XX plans list --overflow-keywords match
@@ -1485,10 +1484,10 @@ try {
 Start-Case 'plans list --overflow-keywords accepts multiple terms (OR semantics)'
 $projOK6 = New-FreshProject
 Initialize-ProjectScaffold $projOK6
-$plansDirOK6 = Join-Path $projOK6 $PLANS_DIR
-Add-ManyPlans -PlansDir $plansDirOK6 -Count $PLANS_LIST_OVERFLOW_THRESHOLD -Body 'generic body'
-Write-PlanWithBody -PlansDir $plansDirOK6 -Name "$('{0:D4}' -f ($PLANS_LIST_OVERFLOW_THRESHOLD + 1))-alpha.md" -Body 'mentions webhook only'
-Write-PlanWithBody -PlansDir $plansDirOK6 -Name "$('{0:D4}' -f ($PLANS_LIST_OVERFLOW_THRESHOLD + 2))-bravo.md" -Body 'mentions retry only'
+$staxDirOK6 = Join-Path $projOK6 $STAX_DIR
+Add-ManyPlans -StaxDir $staxDirOK6 -Count $PLANS_LIST_OVERFLOW_THRESHOLD -Body 'generic body'
+Write-PlanWithBody -StaxDir $staxDirOK6 -Name "$('{0:D4}' -f ($PLANS_LIST_OVERFLOW_THRESHOLD + 1))-alpha.md" -Body 'mentions webhook only'
+Write-PlanWithBody -StaxDir $staxDirOK6 -Name "$('{0:D4}' -f ($PLANS_LIST_OVERFLOW_THRESHOLD + 2))-bravo.md" -Body 'mentions retry only'
 Push-Location $projOK6
 try {
   Invoke-XX plans list --overflow-keywords 'webhook,retry'
@@ -1509,20 +1508,20 @@ try {
 Start-Case 'plans list combined --system + --overflow-keywords narrows correctly'
 $projOK7 = New-FreshProject
 Initialize-ProjectScaffold $projOK7
-$plansDirOK7 = Join-Path $projOK7 $PLANS_DIR
+$staxDirOK7 = Join-Path $projOK7 $STAX_DIR
 $over7 = $PLANS_LIST_OVERFLOW_THRESHOLD + 5
 for ($i = 1; $i -le $over7; $i++) {
   $name7 = '{0:D4}-payment{0:D3}.md' -f $i
   $body7 = "---`nstatus: valid`nsystems: [payment-service]`n---`n$i generic body"
-  Set-Content -LiteralPath (Join-Path $plansDirOK7 $name7) -Value $body7 -Encoding ascii
+  Set-Content -LiteralPath (Join-Path $staxDirOK7 $name7) -Value $body7 -Encoding ascii
 }
 $plan7Match = '0007-payment007.md'
 $plan7MatchBody = "---`nstatus: valid`nsystems: [payment-service]`n---`nthis plan covers exponential retry backoff"
-Set-Content -LiteralPath (Join-Path $plansDirOK7 $plan7Match) -Value $plan7MatchBody -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirOK7 $plan7Match) -Value $plan7MatchBody -Encoding ascii
 # An unrelated-system plan with the same body keyword — must be filtered out by --system.
 $plan7Unrelated = '0099-unrelated.md'
 $plan7UnrelatedBody = "---`nstatus: valid`nsystems: [other-system]`n---`nalso mentions retry"
-Set-Content -LiteralPath (Join-Path $plansDirOK7 $plan7Unrelated) -Value $plan7UnrelatedBody -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirOK7 $plan7Unrelated) -Value $plan7UnrelatedBody -Encoding ascii
 Push-Location $projOK7
 try {
   Invoke-XX plans list --system payment-service --overflow-keywords retry
@@ -1543,7 +1542,7 @@ Start-Case 'plans list --status + --system + --overflow-keywords narrows status�
 # (status+system run BEFORE overflow, not after).
 $projSSO = New-FreshProject
 Initialize-ProjectScaffold $projSSO
-$plansDirSSO = Join-Path $projSSO $PLANS_DIR
+$staxDirSSO = Join-Path $projSSO $STAX_DIR
 # Threshold+2 plans, all status=valid + system=payment-service, body
 # WITHOUT the keyword. Two of them (5, 17) get overwritten below with
 # bodies that DO contain "retry".
@@ -1551,20 +1550,20 @@ $overSSO = $PLANS_LIST_OVERFLOW_THRESHOLD + 2
 for ($i = 1; $i -le $overSSO; $i++) {
   $nameSSO = '{0:D4}-plan{1:D3}.md' -f $i, $i
   $bodySSO = "---`nstatus: valid`nsystems: [payment-service]`n---`n$i generic body content"
-  Set-Content -LiteralPath (Join-Path $plansDirSSO $nameSSO) -Value $bodySSO -Encoding ascii
+  Set-Content -LiteralPath (Join-Path $staxDirSSO $nameSSO) -Value $bodySSO -Encoding ascii
 }
 foreach ($matchN in 5, 17) {
   $matchName = '{0:D4}-plan{1:D3}.md' -f $matchN, $matchN
   $matchBody = "---`nstatus: valid`nsystems: [payment-service]`n---`nplan $matchN covers exponential retry backoff"
-  Set-Content -LiteralPath (Join-Path $plansDirSSO $matchName) -Value $matchBody -Encoding ascii
+  Set-Content -LiteralPath (Join-Path $staxDirSSO $matchName) -Value $matchBody -Encoding ascii
 }
 # Cross-filter distractors: each carries "retry" in body but fails one
 # of --status (deprecated) or --system (other-service). Must be dropped
 # BEFORE the overflow narrow ever runs.
 $ssoWrongStatusBody = "---`nstatus: deprecated`nsystems: [payment-service]`n---`ndeprecated plan that mentions retry"
-Set-Content -LiteralPath (Join-Path $plansDirSSO '0098-wrong-status.md') -Value $ssoWrongStatusBody -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirSSO '0098-wrong-status.md') -Value $ssoWrongStatusBody -Encoding ascii
 $ssoWrongSystemBody = "---`nstatus: valid`nsystems: [other-service]`n---`nother-service plan that mentions retry"
-Set-Content -LiteralPath (Join-Path $plansDirSSO '0099-wrong-system.md') -Value $ssoWrongSystemBody -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirSSO '0099-wrong-system.md') -Value $ssoWrongSystemBody -Encoding ascii
 Push-Location $projSSO
 try {
   Invoke-XX plans list --status valid --system payment-service --overflow-keywords retry
@@ -1580,9 +1579,9 @@ try {
 Start-Case 'plans list --order=desc explicit default'
 $projOK8 = New-FreshProject
 Initialize-ProjectScaffold $projOK8
-$plansDirOK8 = Join-Path $projOK8 $PLANS_DIR
-Write-Plan $plansDirOK8 '0001-alpha.md' 'valid' 'auth'
-Write-Plan $plansDirOK8 '0002-bravo.md' 'valid' 'auth'
+$staxDirOK8 = Join-Path $projOK8 $STAX_DIR
+Write-Plan $staxDirOK8 '0001-alpha.md' 'valid' 'auth'
+Write-Plan $staxDirOK8 '0002-bravo.md' 'valid' 'auth'
 Push-Location $projOK8
 try {
   Invoke-XX plans list --order=desc
@@ -1602,10 +1601,10 @@ try {
 Start-Case 'plans list --system <id1>,<id2> OR semantics via comma list'
 $projOK9 = New-FreshProject
 Initialize-ProjectScaffold $projOK9
-$plansDirOK9 = Join-Path $projOK9 $PLANS_DIR
-Write-Plan $plansDirOK9 '0001-a.md' 'valid' 'checkout-service'
-Write-Plan $plansDirOK9 '0002-b.md' 'valid' 'payment-audit-log'
-Write-Plan $plansDirOK9 '0003-c.md' 'valid' 'other-system'
+$staxDirOK9 = Join-Path $projOK9 $STAX_DIR
+Write-Plan $staxDirOK9 '0001-a.md' 'valid' 'checkout-service'
+Write-Plan $staxDirOK9 '0002-b.md' 'valid' 'payment-audit-log'
+Write-Plan $staxDirOK9 '0003-c.md' 'valid' 'other-system'
 Push-Location $projOK9
 try {
   Invoke-XX plans list --system 'checkout-service,payment-audit-log' --order=asc
@@ -1626,9 +1625,9 @@ try {
 Start-Case 'plans list --system matches any element of a multi-id systems array'
 $projOK10 = New-FreshProject
 Initialize-ProjectScaffold $projOK10
-$plansDirOK10 = Join-Path $projOK10 $PLANS_DIR
-Write-Plan $plansDirOK10 '0001-multi.md' 'valid' 'checkout-service,payment-audit-log'
-Write-Plan $plansDirOK10 '0002-other.md' 'valid' 'other-system'
+$staxDirOK10 = Join-Path $projOK10 $STAX_DIR
+Write-Plan $staxDirOK10 '0001-multi.md' 'valid' 'checkout-service,payment-audit-log'
+Write-Plan $staxDirOK10 '0002-other.md' 'valid' 'other-system'
 Push-Location $projOK10
 try {
   Invoke-XX plans list --system payment-audit-log
@@ -1638,12 +1637,12 @@ try {
 
 # ---------- plans lint: full per-check matrix ----------
 
-# Writes a complete, lint-clean plan to plansDir/name with the given status,
+# Writes a complete, lint-clean plan to .stax/name with the given status,
 # inline systems id list, and EARS subject display name. Cases override one
 # field to trip a single finding.
 function Write-FullPlan {
   param(
-    [Parameter(Mandatory)][string]$PlansDir,
+    [Parameter(Mandatory)][string]$StaxDir,
     [Parameter(Mandatory)][string]$Name,
     [Parameter(Mandatory)][string]$Status,
     [Parameter(Mandatory)][string]$SystemIds,
@@ -1667,14 +1666,14 @@ g
 ## Tasks
 - [ ] The $EarsSubject shall do.
 "@
-  Set-Content -LiteralPath (Join-Path $PlansDir $Name) -Value $body -Encoding ascii
+  Set-Content -LiteralPath (Join-Path $StaxDir $Name) -Value $body -Encoding ascii
 }
 
 Start-Case 'plans lint passes on a clean single-system plan'
 $projLNa = New-FreshProject
 Initialize-ProjectScaffold $projLNa
-Write-Registry (Join-Path $projLNa $PLANS_DIR) 'Auth Service'
-Write-FullPlan (Join-Path $projLNa $PLANS_DIR) '0001-foo.md' 'valid' 'auth-service' 'Auth Service'
+Write-Registry (Join-Path $projLNa $STAX_DIR) 'Auth Service'
+Write-FullPlan (Join-Path $projLNa $STAX_DIR) '0001-foo.md' 'valid' 'auth-service' 'Auth Service'
 Push-Location $projLNa
 try {
   Invoke-XX plans lint
@@ -1686,8 +1685,8 @@ try {
 Start-Case 'plans lint passes on a clean multi-system plan'
 $projLNb = New-FreshProject
 Initialize-ProjectScaffold $projLNb
-Write-Registry (Join-Path $projLNb $PLANS_DIR) 'Auth Service,Billing Service'
-$plansDirLNb = Join-Path $projLNb $PLANS_DIR
+Write-Registry (Join-Path $projLNb $STAX_DIR) 'Auth Service,Billing Service'
+$staxDirLNb = Join-Path $projLNb $STAX_DIR
 $body = @"
 ---
 title: foo
@@ -1706,7 +1705,7 @@ g
 - [ ] The Auth Service shall authenticate.
 - [ ] The Billing Service shall invoice.
 "@
-Set-Content -LiteralPath (Join-Path $plansDirLNb '0001-foo.md') -Value $body -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirLNb '0001-foo.md') -Value $body -Encoding ascii
 Push-Location $projLNb
 try {
   Invoke-XX plans lint
@@ -1717,8 +1716,8 @@ try {
 Start-Case 'plans lint flags a bad filename (non-conforming pattern)'
 $projLNc = New-FreshProject
 Initialize-ProjectScaffold $projLNc
-Write-Registry (Join-Path $projLNc $PLANS_DIR) 'Auth Service'
-Write-FullPlan (Join-Path $projLNc $PLANS_DIR) 'BAD-NAME.md' 'valid' 'auth-service' 'Auth Service'
+Write-Registry (Join-Path $projLNc $STAX_DIR) 'Auth Service'
+Write-FullPlan (Join-Path $projLNc $STAX_DIR) 'BAD-NAME.md' 'valid' 'auth-service' 'Auth Service'
 Push-Location $projLNc
 try {
   Invoke-XX plans lint
@@ -1730,8 +1729,8 @@ Start-Case 'plans lint flags a missing _data_systems.yaml entry'
 $projLNd = New-FreshProject
 Initialize-ProjectScaffold $projLNd
 # Registry has only Auth; plan references ghost.
-Write-Registry (Join-Path $projLNd $PLANS_DIR) 'Auth Service'
-Write-FullPlan (Join-Path $projLNd $PLANS_DIR) '0001-foo.md' 'valid' 'ghost-service' 'Ghost Service'
+Write-Registry (Join-Path $projLNd $STAX_DIR) 'Auth Service'
+Write-FullPlan (Join-Path $projLNd $STAX_DIR) '0001-foo.md' 'valid' 'ghost-service' 'Ghost Service'
 Push-Location $projLNd
 try {
   Invoke-XX plans lint
@@ -1742,8 +1741,8 @@ try {
 Start-Case 'plans lint flags an invalid status'
 $projLNe = New-FreshProject
 Initialize-ProjectScaffold $projLNe
-Write-Registry (Join-Path $projLNe $PLANS_DIR) 'Auth Service'
-Write-FullPlan (Join-Path $projLNe $PLANS_DIR) '0001-foo.md' 'bogus' 'auth-service' 'Auth Service'
+Write-Registry (Join-Path $projLNe $STAX_DIR) 'Auth Service'
+Write-FullPlan (Join-Path $projLNe $STAX_DIR) '0001-foo.md' 'bogus' 'auth-service' 'Auth Service'
 Push-Location $projLNe
 try {
   Invoke-XX plans lint
@@ -1754,8 +1753,8 @@ try {
 Start-Case 'plans lint flags a missing title:'
 $projLNf = New-FreshProject
 Initialize-ProjectScaffold $projLNf
-Write-Registry (Join-Path $projLNf $PLANS_DIR) 'Auth Service'
-$plansDirLNf = Join-Path $projLNf $PLANS_DIR
+Write-Registry (Join-Path $projLNf $STAX_DIR) 'Auth Service'
+$staxDirLNf = Join-Path $projLNf $STAX_DIR
 $bodyMissingTitle = @"
 ---
 status: valid
@@ -1772,7 +1771,7 @@ g
 ## Tasks
 - [ ] The Auth Service shall do.
 "@
-Set-Content -LiteralPath (Join-Path $plansDirLNf '0001-foo.md') -Value $bodyMissingTitle -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirLNf '0001-foo.md') -Value $bodyMissingTitle -Encoding ascii
 Push-Location $projLNf
 try {
   Invoke-XX plans lint
@@ -1783,8 +1782,8 @@ try {
 Start-Case 'plans lint flags an empty title:'
 $projLNg = New-FreshProject
 Initialize-ProjectScaffold $projLNg
-Write-Registry (Join-Path $projLNg $PLANS_DIR) 'Auth Service'
-$plansDirLNg = Join-Path $projLNg $PLANS_DIR
+Write-Registry (Join-Path $projLNg $STAX_DIR) 'Auth Service'
+$staxDirLNg = Join-Path $projLNg $STAX_DIR
 $bodyEmptyTitle = @"
 ---
 title: ""
@@ -1802,7 +1801,7 @@ g
 ## Tasks
 - [ ] The Auth Service shall do.
 "@
-Set-Content -LiteralPath (Join-Path $plansDirLNg '0001-foo.md') -Value $bodyEmptyTitle -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirLNg '0001-foo.md') -Value $bodyEmptyTitle -Encoding ascii
 Push-Location $projLNg
 try {
   Invoke-XX plans lint
@@ -1813,8 +1812,8 @@ try {
 Start-Case 'plans lint flags a missing created:'
 $projLNh = New-FreshProject
 Initialize-ProjectScaffold $projLNh
-Write-Registry (Join-Path $projLNh $PLANS_DIR) 'Auth Service'
-$plansDirLNh = Join-Path $projLNh $PLANS_DIR
+Write-Registry (Join-Path $projLNh $STAX_DIR) 'Auth Service'
+$staxDirLNh = Join-Path $projLNh $STAX_DIR
 $bodyMissingCreated = @"
 ---
 title: foo
@@ -1831,7 +1830,7 @@ g
 ## Tasks
 - [ ] The Auth Service shall do.
 "@
-Set-Content -LiteralPath (Join-Path $plansDirLNh '0001-foo.md') -Value $bodyMissingCreated -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirLNh '0001-foo.md') -Value $bodyMissingCreated -Encoding ascii
 Push-Location $projLNh
 try {
   Invoke-XX plans lint
@@ -1842,8 +1841,8 @@ try {
 Start-Case 'plans lint flags a malformed created: timestamp'
 $projLNi = New-FreshProject
 Initialize-ProjectScaffold $projLNi
-Write-Registry (Join-Path $projLNi $PLANS_DIR) 'Auth Service'
-$plansDirLNi = Join-Path $projLNi $PLANS_DIR
+Write-Registry (Join-Path $projLNi $STAX_DIR) 'Auth Service'
+$staxDirLNi = Join-Path $projLNi $STAX_DIR
 $bodyBadCreated = @"
 ---
 title: foo
@@ -1861,7 +1860,7 @@ g
 ## Tasks
 - [ ] The Auth Service shall do.
 "@
-Set-Content -LiteralPath (Join-Path $plansDirLNi '0001-foo.md') -Value $bodyBadCreated -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirLNi '0001-foo.md') -Value $bodyBadCreated -Encoding ascii
 Push-Location $projLNi
 try {
   Invoke-XX plans lint
@@ -1872,8 +1871,8 @@ try {
 Start-Case 'plans lint flags date-only created: (no time component)'
 $projLNj = New-FreshProject
 Initialize-ProjectScaffold $projLNj
-Write-Registry (Join-Path $projLNj $PLANS_DIR) 'Auth Service'
-$plansDirLNj = Join-Path $projLNj $PLANS_DIR
+Write-Registry (Join-Path $projLNj $STAX_DIR) 'Auth Service'
+$staxDirLNj = Join-Path $projLNj $STAX_DIR
 $bodyDateOnly = @"
 ---
 title: foo
@@ -1891,7 +1890,7 @@ g
 ## Tasks
 - [ ] The Auth Service shall do.
 "@
-Set-Content -LiteralPath (Join-Path $plansDirLNj '0001-foo.md') -Value $bodyDateOnly -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirLNj '0001-foo.md') -Value $bodyDateOnly -Encoding ascii
 Push-Location $projLNj
 try {
   Invoke-XX plans lint
@@ -1902,8 +1901,8 @@ try {
 Start-Case 'plans lint flags title-not-first (frontmatter order)'
 $projLNk = New-FreshProject
 Initialize-ProjectScaffold $projLNk
-Write-Registry (Join-Path $projLNk $PLANS_DIR) 'Auth Service'
-$plansDirLNk = Join-Path $projLNk $PLANS_DIR
+Write-Registry (Join-Path $projLNk $STAX_DIR) 'Auth Service'
+$staxDirLNk = Join-Path $projLNk $STAX_DIR
 $bodyOrderTitle = @"
 ---
 status: valid
@@ -1921,7 +1920,7 @@ g
 ## Tasks
 - [ ] The Auth Service shall do.
 "@
-Set-Content -LiteralPath (Join-Path $plansDirLNk '0001-foo.md') -Value $bodyOrderTitle -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirLNk '0001-foo.md') -Value $bodyOrderTitle -Encoding ascii
 Push-Location $projLNk
 try {
   Invoke-XX plans lint
@@ -1932,8 +1931,8 @@ try {
 Start-Case 'plans lint flags created-not-last (frontmatter order)'
 $projLNm = New-FreshProject
 Initialize-ProjectScaffold $projLNm
-Write-Registry (Join-Path $projLNm $PLANS_DIR) 'Auth Service'
-$plansDirLNm = Join-Path $projLNm $PLANS_DIR
+Write-Registry (Join-Path $projLNm $STAX_DIR) 'Auth Service'
+$staxDirLNm = Join-Path $projLNm $STAX_DIR
 $bodyOrderCreated = @"
 ---
 title: foo
@@ -1951,7 +1950,7 @@ g
 ## Tasks
 - [ ] The Auth Service shall do.
 "@
-Set-Content -LiteralPath (Join-Path $plansDirLNm '0001-foo.md') -Value $bodyOrderCreated -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirLNm '0001-foo.md') -Value $bodyOrderCreated -Encoding ascii
 Push-Location $projLNm
 try {
   Invoke-XX plans lint
@@ -1962,8 +1961,8 @@ try {
 Start-Case 'plans lint flags dangling supersedes link'
 $projLNn = New-FreshProject
 Initialize-ProjectScaffold $projLNn
-Write-Registry (Join-Path $projLNn $PLANS_DIR) 'Auth Service'
-$plansDirLNn = Join-Path $projLNn $PLANS_DIR
+Write-Registry (Join-Path $projLNn $STAX_DIR) 'Auth Service'
+$staxDirLNn = Join-Path $projLNn $STAX_DIR
 $bodyDangling = @"
 ---
 title: foo
@@ -1982,7 +1981,7 @@ g
 ## Tasks
 - [ ] The Auth Service shall do.
 "@
-Set-Content -LiteralPath (Join-Path $plansDirLNn '0001-foo.md') -Value $bodyDangling -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirLNn '0001-foo.md') -Value $bodyDangling -Encoding ascii
 Push-Location $projLNn
 try {
   Invoke-XX plans lint
@@ -1993,8 +1992,8 @@ try {
 Start-Case 'plans lint flags dangling extends link'
 $projLNo = New-FreshProject
 Initialize-ProjectScaffold $projLNo
-Write-Registry (Join-Path $projLNo $PLANS_DIR) 'Auth Service'
-$plansDirLNo = Join-Path $projLNo $PLANS_DIR
+Write-Registry (Join-Path $projLNo $STAX_DIR) 'Auth Service'
+$staxDirLNo = Join-Path $projLNo $STAX_DIR
 $bodyDanglingExt = @"
 ---
 title: foo
@@ -2013,7 +2012,7 @@ g
 ## Tasks
 - [ ] The Auth Service shall do.
 "@
-Set-Content -LiteralPath (Join-Path $plansDirLNo '0001-foo.md') -Value $bodyDanglingExt -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirLNo '0001-foo.md') -Value $bodyDanglingExt -Encoding ascii
 Push-Location $projLNo
 try {
   Invoke-XX plans lint
@@ -2024,8 +2023,8 @@ try {
 Start-Case 'plans lint rejects self-supersedes'
 $projLNp = New-FreshProject
 Initialize-ProjectScaffold $projLNp
-Write-Registry (Join-Path $projLNp $PLANS_DIR) 'Auth Service'
-$plansDirLNp = Join-Path $projLNp $PLANS_DIR
+Write-Registry (Join-Path $projLNp $STAX_DIR) 'Auth Service'
+$staxDirLNp = Join-Path $projLNp $STAX_DIR
 $bodySelfSup = @"
 ---
 title: foo
@@ -2044,7 +2043,7 @@ g
 ## Tasks
 - [ ] The Auth Service shall do.
 "@
-Set-Content -LiteralPath (Join-Path $plansDirLNp '0001-foo.md') -Value $bodySelfSup -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirLNp '0001-foo.md') -Value $bodySelfSup -Encoding ascii
 Push-Location $projLNp
 try {
   Invoke-XX plans lint
@@ -2055,8 +2054,8 @@ try {
 Start-Case 'plans lint rejects self-extends'
 $projLNq = New-FreshProject
 Initialize-ProjectScaffold $projLNq
-Write-Registry (Join-Path $projLNq $PLANS_DIR) 'Auth Service'
-$plansDirLNq = Join-Path $projLNq $PLANS_DIR
+Write-Registry (Join-Path $projLNq $STAX_DIR) 'Auth Service'
+$staxDirLNq = Join-Path $projLNq $STAX_DIR
 $bodySelfExt = @"
 ---
 title: foo
@@ -2075,7 +2074,7 @@ g
 ## Tasks
 - [ ] The Auth Service shall do.
 "@
-Set-Content -LiteralPath (Join-Path $plansDirLNq '0001-foo.md') -Value $bodySelfExt -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirLNq '0001-foo.md') -Value $bodySelfExt -Encoding ascii
 Push-Location $projLNq
 try {
   Invoke-XX plans lint
@@ -2086,10 +2085,10 @@ try {
 Start-Case 'plans lint flags missing extends back-link (bidirectional)'
 $projLNr = New-FreshProject
 Initialize-ProjectScaffold $projLNr
-Write-Registry (Join-Path $projLNr $PLANS_DIR) 'Auth Service'
-$plansDirLNr = Join-Path $projLNr $PLANS_DIR
+Write-Registry (Join-Path $projLNr $STAX_DIR) 'Auth Service'
+$staxDirLNr = Join-Path $projLNr $STAX_DIR
 # Plan A extends B. B exists but has no extended_by back-link to A.
-Write-FullPlan $plansDirLNr '0002-bar.md' 'valid' 'auth-service' 'Auth Service'
+Write-FullPlan $staxDirLNr '0002-bar.md' 'valid' 'auth-service' 'Auth Service'
 $bodyAExtB = @"
 ---
 title: foo
@@ -2108,7 +2107,7 @@ g
 ## Tasks
 - [ ] The Auth Service shall do.
 "@
-Set-Content -LiteralPath (Join-Path $plansDirLNr '0001-foo.md') -Value $bodyAExtB -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirLNr '0001-foo.md') -Value $bodyAExtB -Encoding ascii
 Push-Location $projLNr
 try {
   Invoke-XX plans lint
@@ -2119,9 +2118,9 @@ try {
 Start-Case 'plans lint flags missing supersedes back-link (bidirectional)'
 $projLNs = New-FreshProject
 Initialize-ProjectScaffold $projLNs
-Write-Registry (Join-Path $projLNs $PLANS_DIR) 'Auth Service'
-$plansDirLNs = Join-Path $projLNs $PLANS_DIR
-Write-FullPlan $plansDirLNs '0002-bar.md' 'valid' 'auth-service' 'Auth Service'
+Write-Registry (Join-Path $projLNs $STAX_DIR) 'Auth Service'
+$staxDirLNs = Join-Path $projLNs $STAX_DIR
+Write-FullPlan $staxDirLNs '0002-bar.md' 'valid' 'auth-service' 'Auth Service'
 $bodyASupB = @"
 ---
 title: foo
@@ -2140,7 +2139,7 @@ g
 ## Tasks
 - [ ] The Auth Service shall do.
 "@
-Set-Content -LiteralPath (Join-Path $plansDirLNs '0001-foo.md') -Value $bodyASupB -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirLNs '0001-foo.md') -Value $bodyASupB -Encoding ascii
 Push-Location $projLNs
 try {
   Invoke-XX plans lint
@@ -2151,8 +2150,8 @@ try {
 Start-Case 'plans lint passes bidirectional supersedes when both sides linked'
 $projLNt = New-FreshProject
 Initialize-ProjectScaffold $projLNt
-Write-Registry (Join-Path $projLNt $PLANS_DIR) 'Auth Service'
-$plansDirLNt = Join-Path $projLNt $PLANS_DIR
+Write-Registry (Join-Path $projLNt $STAX_DIR) 'Auth Service'
+$staxDirLNt = Join-Path $projLNt $STAX_DIR
 $bodySup = @"
 ---
 title: foo
@@ -2189,8 +2188,8 @@ g
 ## Tasks
 - [ ] The Auth Service shall do.
 "@
-Set-Content -LiteralPath (Join-Path $plansDirLNt '0001-foo.md') -Value $bodySup -Encoding ascii
-Set-Content -LiteralPath (Join-Path $plansDirLNt '0002-bar.md') -Value $bodySupedBy -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirLNt '0001-foo.md') -Value $bodySup -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirLNt '0002-bar.md') -Value $bodySupedBy -Encoding ascii
 Push-Location $projLNt
 try {
   Invoke-XX plans lint
@@ -2201,8 +2200,8 @@ try {
 Start-Case 'plans lint flags EARS subject not in registry'
 $projLNu = New-FreshProject
 Initialize-ProjectScaffold $projLNu
-Write-Registry (Join-Path $projLNu $PLANS_DIR) 'Auth Service'
-$plansDirLNu = Join-Path $projLNu $PLANS_DIR
+Write-Registry (Join-Path $projLNu $STAX_DIR) 'Auth Service'
+$staxDirLNu = Join-Path $projLNu $STAX_DIR
 # Frontmatter declares the id cleanly, but body subject is unregistered.
 $bodyUnknownSubject = @"
 ---
@@ -2221,7 +2220,7 @@ g
 ## Tasks
 - [ ] The Phantom Service shall haunt.
 "@
-Set-Content -LiteralPath (Join-Path $plansDirLNu '0001-foo.md') -Value $bodyUnknownSubject -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirLNu '0001-foo.md') -Value $bodyUnknownSubject -Encoding ascii
 Push-Location $projLNu
 try {
   Invoke-XX plans lint
@@ -2232,8 +2231,8 @@ try {
 Start-Case 'plans lint flags EARS-subject ↔ systems set divergence'
 $projLNv = New-FreshProject
 Initialize-ProjectScaffold $projLNv
-Write-Registry (Join-Path $projLNv $PLANS_DIR) 'Auth Service,Billing Service'
-$plansDirLNv = Join-Path $projLNv $PLANS_DIR
+Write-Registry (Join-Path $projLNv $STAX_DIR) 'Auth Service,Billing Service'
+$staxDirLNv = Join-Path $projLNv $STAX_DIR
 # systems declares Auth, body names Billing — both diff directions fire.
 $bodyDiverge = @"
 ---
@@ -2252,7 +2251,7 @@ g
 ## Tasks
 - [ ] The Billing Service shall invoice.
 "@
-Set-Content -LiteralPath (Join-Path $plansDirLNv '0001-foo.md') -Value $bodyDiverge -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirLNv '0001-foo.md') -Value $bodyDiverge -Encoding ascii
 Push-Location $projLNv
 try {
   Invoke-XX plans lint
@@ -2264,8 +2263,8 @@ try {
 Start-Case 'plans lint flags filename slug not matching slugify(title)'
 $projLNw = New-FreshProject
 Initialize-ProjectScaffold $projLNw
-Write-Registry (Join-Path $projLNw $PLANS_DIR) 'Auth Service'
-$plansDirLNw = Join-Path $projLNw $PLANS_DIR
+Write-Registry (Join-Path $projLNw $STAX_DIR) 'Auth Service'
+$staxDirLNw = Join-Path $projLNw $STAX_DIR
 # Title slugifies to "totally-different" but filename slug is "foo".
 $bodyTitleMismatch = @"
 ---
@@ -2284,7 +2283,7 @@ g
 ## Tasks
 - [ ] The Auth Service shall do.
 "@
-Set-Content -LiteralPath (Join-Path $plansDirLNw '0001-foo.md') -Value $bodyTitleMismatch -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirLNw '0001-foo.md') -Value $bodyTitleMismatch -Encoding ascii
 Push-Location $projLNw
 try {
   Invoke-XX plans lint
@@ -2295,8 +2294,8 @@ try {
 Start-Case 'plans lint flags missing required section ## Goal'
 $projLNx = New-FreshProject
 Initialize-ProjectScaffold $projLNx
-Write-Registry (Join-Path $projLNx $PLANS_DIR) 'Auth Service'
-$plansDirLNx = Join-Path $projLNx $PLANS_DIR
+Write-Registry (Join-Path $projLNx $STAX_DIR) 'Auth Service'
+$staxDirLNx = Join-Path $projLNx $STAX_DIR
 $bodyMissingGoal = @"
 ---
 title: foo
@@ -2311,7 +2310,7 @@ created: 2026-05-23T14:30:00Z
 ## Tasks
 - [ ] The Auth Service shall do.
 "@
-Set-Content -LiteralPath (Join-Path $plansDirLNx '0001-foo.md') -Value $bodyMissingGoal -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirLNx '0001-foo.md') -Value $bodyMissingGoal -Encoding ascii
 Push-Location $projLNx
 try {
   Invoke-XX plans lint
@@ -2323,10 +2322,10 @@ Start-Case 'plans lint flags file exceeding max_plan_lines'
 $projLNy = New-FreshProject
 Initialize-ProjectScaffold $projLNy
 # Pin max_plan_lines=15 so a 30-line file trips the cap.
-$lockY = Join-Path (Join-Path $projLNy $PLANS_DIR) $PLANS_CONFIG_LOCK
+$lockY = Join-Path (Join-Path $projLNy $STAX_DIR) $STAX_LOCK_FILE
 Set-Content -LiteralPath $lockY -Value '{"prefix_width":4,"max_plan_lines":15,"review_per":"task"}' -Encoding ascii
-Write-Registry (Join-Path $projLNy $PLANS_DIR) 'Auth Service'
-$plansDirLNy = Join-Path $projLNy $PLANS_DIR
+Write-Registry (Join-Path $projLNy $STAX_DIR) 'Auth Service'
+$staxDirLNy = Join-Path $projLNy $STAX_DIR
 $bodyLong = @"
 ---
 title: foo
@@ -2352,7 +2351,7 @@ g
 - [ ] The Auth Service shall e.
 - [ ] The Auth Service shall f.
 "@
-Set-Content -LiteralPath (Join-Path $plansDirLNy '0001-foo.md') -Value $bodyLong -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirLNy '0001-foo.md') -Value $bodyLong -Encoding ascii
 Push-Location $projLNy
 try {
   Invoke-XX plans lint
@@ -2363,9 +2362,9 @@ try {
 Start-Case 'plans lint flags missing frontmatter entirely'
 $projLNz = New-FreshProject
 Initialize-ProjectScaffold $projLNz
-Write-Registry (Join-Path $projLNz $PLANS_DIR) 'Auth Service'
-$plansDirLNz = Join-Path $projLNz $PLANS_DIR
-Set-Content -LiteralPath (Join-Path $plansDirLNz '0001-foo.md') -Value "no frontmatter here`n" -Encoding ascii
+Write-Registry (Join-Path $projLNz $STAX_DIR) 'Auth Service'
+$staxDirLNz = Join-Path $projLNz $STAX_DIR
+Set-Content -LiteralPath (Join-Path $staxDirLNz '0001-foo.md') -Value "no frontmatter here`n" -Encoding ascii
 Push-Location $projLNz
 try {
   Invoke-XX plans lint
@@ -2378,7 +2377,7 @@ try {
 Start-Case 'init -h prints init usage to stderr'
 Invoke-XX init -h
 Assert-Eq       'exit 0'                $RunRC 0
-Assert-Contains 'usage header'          $RunErr 'Usage: x-x init'
+Assert-Contains 'usage header'          $RunErr 'Usage: stax init'
 Assert-Contains 'agents flag listed'    $RunErr '--agents'
 Assert-Contains 'scope flag listed'     $RunErr '--scope'
 Assert-Contains 'prefix-width listed'   $RunErr '--prefix-width'
@@ -2393,8 +2392,8 @@ try {
   Invoke-XX init --scope project --agents=claude `
                     --prefix-width 4 --max-plan-lines 30 --review-per task
   Assert-Eq        'exit 0'                  $RunRC 0
-  Assert-IsDir     'claude skills present'   (Join-Path $projF1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
-  Assert-NotExists 'codex skills NOT present' (Join-Path $projF1 (Join-Path $CODEX_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-IsDir     'claude skills present'   (Join-Path $projF1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
+  Assert-NotExists 'codex skills NOT present' (Join-Path $projF1 (Join-Path $CODEX_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init --agents=codex single-agent install'
@@ -2405,8 +2404,8 @@ try {
   Invoke-XX init --scope project --agents=codex `
                     --prefix-width 4 --max-plan-lines 30 --review-per task
   Assert-Eq        'exit 0'                   $RunRC 0
-  Assert-IsDir     'codex skills present'    (Join-Path $projF2 (Join-Path $CODEX_SKILLS_REL $SKILL_X_X_DIR))
-  Assert-NotExists 'claude skills NOT present' (Join-Path $projF2 (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-IsDir     'codex skills present'    (Join-Path $projF2 (Join-Path $CODEX_SKILLS_REL $SKILL_SHIP_DIR))
+  Assert-NotExists 'claude skills NOT present' (Join-Path $projF2 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init --agents=opencode single-agent install'
@@ -2417,9 +2416,9 @@ try {
   Invoke-XX init --scope project --agents=opencode `
                     --prefix-width 4 --max-plan-lines 30 --review-per task
   Assert-Eq        'exit 0'                     $RunRC 0
-  Assert-IsDir     'opencode skills present'    (Join-Path $projF2o (Join-Path $OPENCODE_SKILLS_REL $SKILL_X_X_DIR))
-  Assert-NotExists 'claude skills NOT present'  (Join-Path $projF2o (Join-Path $CLAUDE_SKILLS_REL   $SKILL_X_X_DIR))
-  Assert-NotExists 'codex skills NOT present'   (Join-Path $projF2o (Join-Path $CODEX_SKILLS_REL    $SKILL_X_X_DIR))
+  Assert-IsDir     'opencode skills present'    (Join-Path $projF2o (Join-Path $OPENCODE_SKILLS_REL $SKILL_SHIP_DIR))
+  Assert-NotExists 'claude skills NOT present'  (Join-Path $projF2o (Join-Path $CLAUDE_SKILLS_REL   $SKILL_SHIP_DIR))
+  Assert-NotExists 'codex skills NOT present'   (Join-Path $projF2o (Join-Path $CODEX_SKILLS_REL    $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init --agents=copilot project-scope install'
@@ -2432,9 +2431,9 @@ try {
   Assert-Eq    'exit 0' $RunRC 0
   # Project scope: same `.agents/skills` path Codex uses.
   Assert-IsDir 'copilot project skills present' `
-    (Join-Path $projCP1 (Join-Path $COPILOT_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projCP1 (Join-Path $COPILOT_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'claude skills NOT present' `
-    (Join-Path $projCP1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projCP1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init --agents=copilot --scope=user lands at ~/.agents/skills'
@@ -2449,9 +2448,9 @@ try {
   # spec, one of two official Copilot CLI user-scope paths). Skills land
   # under USERPROFILE, project cwd untouched.
   Assert-IsDir 'copilot user-scope skills landed' `
-    (Join-Path $env:USERPROFILE (Join-Path $COPILOT_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $env:USERPROFILE (Join-Path $COPILOT_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'no install under project cwd' `
-    (Join-Path $projCP2 (Join-Path $COPILOT_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projCP2 (Join-Path $COPILOT_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init --agents=pi project-scope install'
@@ -2466,9 +2465,9 @@ try {
   # documented for pi in pi-mono/packages/coding-agent/docs/skills.md
   # (walks up from cwd through ancestor directories).
   Assert-IsDir 'pi project skills present' `
-    (Join-Path $projPi1 (Join-Path $PI_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projPi1 (Join-Path $PI_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'claude skills NOT present' `
-    (Join-Path $projPi1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projPi1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init --agents=pi --scope=user lands at ~/.agents/skills'
@@ -2484,9 +2483,9 @@ try {
   # alongside `~/.pi/agent/skills/`). Skills land under USERPROFILE,
   # project cwd untouched.
   Assert-IsDir 'pi user-scope skills landed' `
-    (Join-Path $env:USERPROFILE (Join-Path $PI_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $env:USERPROFILE (Join-Path $PI_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'no install under project cwd' `
-    (Join-Path $projPi2 (Join-Path $PI_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projPi2 (Join-Path $PI_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init --agents=cline project-scope install'
@@ -2500,11 +2499,11 @@ try {
   # Cline reads project skills from `.cline\skills` per docs.cline.bot/
   # customization/overview. Sibling agent dirs stay absent.
   Assert-IsDir 'cline project skills present' `
-    (Join-Path $projCL1 (Join-Path $CLINE_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projCL1 (Join-Path $CLINE_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'claude skills NOT present' `
-    (Join-Path $projCL1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projCL1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'codex skills NOT present' `
-    (Join-Path $projCL1 (Join-Path $CODEX_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projCL1 (Join-Path $CODEX_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init --agents=cline --scope=user lands at ~/.cline/skills'
@@ -2518,9 +2517,9 @@ try {
   # User scope: cline's `.cline\skills` resolves relative to $HOME.
   # Skills land under USERPROFILE, project cwd stays untouched.
   Assert-IsDir 'cline user-scope skills landed' `
-    (Join-Path $env:USERPROFILE (Join-Path $CLINE_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $env:USERPROFILE (Join-Path $CLINE_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'no install under project cwd' `
-    (Join-Path $projCL2 (Join-Path $CLINE_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projCL2 (Join-Path $CLINE_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init --agents=omp project-scope install'
@@ -2536,12 +2535,12 @@ try {
   # provider (priority 70 in docs/skills.md) walks the path at every
   # cwd ancestor up to repoRoot.
   Assert-IsDir 'omp project skills present' `
-    (Join-Path $projOmp1 (Join-Path $OMP_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projOmp1 (Join-Path $OMP_SKILLS_REL $SKILL_SHIP_DIR))
   # The paths the OTHER agents claim exclusively must stay absent.
   Assert-NotExists 'claude path NOT present' `
-    (Join-Path $projOmp1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projOmp1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'opencode path NOT present' `
-    (Join-Path $projOmp1 (Join-Path $OPENCODE_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projOmp1 (Join-Path $OPENCODE_SKILLS_REL $SKILL_SHIP_DIR))
   # Per-agent config files of other agents must also stay absent.
   Assert-NotExists 'codex config NOT present' `
     (Join-Path $projOmp1 $CODEX_CONFIG_REL)
@@ -2560,9 +2559,9 @@ try {
   # User scope: omp's `agents` provider scans `$HOME\.agents\skills` —
   # same path Codex and Copilot use at user scope.
   Assert-IsDir 'omp user-scope skills landed' `
-    (Join-Path $env:USERPROFILE (Join-Path $OMP_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $env:USERPROFILE (Join-Path $OMP_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'no install under project cwd' `
-    (Join-Path $projOmp2 (Join-Path $OMP_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projOmp2 (Join-Path $OMP_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init --agents=antigravity project-scope install (shared .agents\skills)'
@@ -2578,13 +2577,13 @@ try {
   # (antigravity.google/docs/skills). Other agents' exclusive paths and
   # config files must stay absent under a single-row install.
   Assert-IsDir 'antigravity project skills present' `
-    (Join-Path $projAg1 (Join-Path $ANTIGRAVITY_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projAg1 (Join-Path $ANTIGRAVITY_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'claude path NOT present' `
-    (Join-Path $projAg1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projAg1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'cline path NOT present' `
-    (Join-Path $projAg1 (Join-Path $CLINE_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projAg1 (Join-Path $CLINE_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'opencode path NOT present' `
-    (Join-Path $projAg1 (Join-Path $OPENCODE_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projAg1 (Join-Path $OPENCODE_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'codex config NOT present' `
     (Join-Path $projAg1 $CODEX_CONFIG_REL)
   Assert-NotExists 'claude config NOT present' `
@@ -2604,11 +2603,11 @@ try {
   # userSkillsRel override is wired up — installing to the wrong path
   # would land files antigravity never reads.
   Assert-IsDir 'antigravity user-scope skills landed' `
-    (Join-Path $env:USERPROFILE (Join-Path $ANTIGRAVITY_USER_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $env:USERPROFILE (Join-Path $ANTIGRAVITY_USER_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'cross-agent ~\.agents\skills NOT touched' `
-    (Join-Path $env:USERPROFILE (Join-Path $CODEX_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $env:USERPROFILE (Join-Path $CODEX_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'no install under project cwd' `
-    (Join-Path $projAg2 (Join-Path $ANTIGRAVITY_USER_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projAg2 (Join-Path $ANTIGRAVITY_USER_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init --agents=continue project-scope install (.continue\skills)'
@@ -2620,11 +2619,11 @@ try {
                     --prefix-width 4 --max-plan-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   Assert-IsDir 'continue project skills present' `
-    (Join-Path $projCont1 (Join-Path $CONTINUE_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projCont1 (Join-Path $CONTINUE_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'claude path NOT present' `
-    (Join-Path $projCont1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projCont1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'codex path NOT present' `
-    (Join-Path $projCont1 (Join-Path $CODEX_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projCont1 (Join-Path $CODEX_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init --agents=continue --scope=user lands at ~\.continue\skills'
@@ -2636,9 +2635,9 @@ try {
                     --prefix-width 4 --max-plan-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   Assert-IsDir 'continue user-scope skills landed' `
-    (Join-Path $env:USERPROFILE (Join-Path $CONTINUE_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $env:USERPROFILE (Join-Path $CONTINUE_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'no install under project cwd' `
-    (Join-Path $projCont2 (Join-Path $CONTINUE_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projCont2 (Join-Path $CONTINUE_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init --agents=cursor project-scope install (shared .agents\skills)'
@@ -2650,11 +2649,11 @@ try {
                     --prefix-width 4 --max-plan-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   Assert-IsDir 'cursor project skills present' `
-    (Join-Path $projCur1 (Join-Path $CURSOR_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projCur1 (Join-Path $CURSOR_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'claude path NOT present' `
-    (Join-Path $projCur1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projCur1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'cline path NOT present' `
-    (Join-Path $projCur1 (Join-Path $CLINE_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projCur1 (Join-Path $CLINE_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init --agents=cursor --scope=user lands at ~\.cursor\skills'
@@ -2670,11 +2669,11 @@ try {
   # cross-agent `~\.agents\skills` must stay clean to prove the
   # override drove the install.
   Assert-IsDir 'cursor user-scope skills landed' `
-    (Join-Path $env:USERPROFILE (Join-Path $CURSOR_USER_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $env:USERPROFILE (Join-Path $CURSOR_USER_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'cross-agent ~\.agents\skills NOT touched' `
-    (Join-Path $env:USERPROFILE (Join-Path $CODEX_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $env:USERPROFILE (Join-Path $CODEX_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'no install under project cwd' `
-    (Join-Path $projCur2 (Join-Path $CURSOR_USER_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projCur2 (Join-Path $CURSOR_USER_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init --agents=kilo project-scope install (.kilocode\skills)'
@@ -2686,11 +2685,11 @@ try {
                     --prefix-width 4 --max-plan-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   Assert-IsDir 'kilo project skills present' `
-    (Join-Path $projKilo1 (Join-Path $KILO_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projKilo1 (Join-Path $KILO_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'claude path NOT present' `
-    (Join-Path $projKilo1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projKilo1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'codex path NOT present' `
-    (Join-Path $projKilo1 (Join-Path $CODEX_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projKilo1 (Join-Path $CODEX_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init --agents=kilo --scope=user lands at ~\.kilocode\skills'
@@ -2702,9 +2701,9 @@ try {
                     --prefix-width 4 --max-plan-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   Assert-IsDir 'kilo user-scope skills landed' `
-    (Join-Path $env:USERPROFILE (Join-Path $KILO_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $env:USERPROFILE (Join-Path $KILO_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'no install under project cwd' `
-    (Join-Path $projKilo2 (Join-Path $KILO_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projKilo2 (Join-Path $KILO_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init --agents=zed project-scope install (shared .agents\skills)'
@@ -2716,11 +2715,11 @@ try {
                     --prefix-width 4 --max-plan-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   Assert-IsDir 'zed project skills present' `
-    (Join-Path $projZed1 (Join-Path $ZED_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projZed1 (Join-Path $ZED_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'claude path NOT present' `
-    (Join-Path $projZed1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projZed1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'cline path NOT present' `
-    (Join-Path $projZed1 (Join-Path $CLINE_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projZed1 (Join-Path $CLINE_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init --agents=zed --scope=user lands at ~\.agents\skills'
@@ -2734,9 +2733,9 @@ try {
   # Zed honors the cross-agent path at BOTH scopes — same as omp/
   # Codex/Copilot/Pi at user scope.
   Assert-IsDir 'zed user-scope skills landed' `
-    (Join-Path $env:USERPROFILE (Join-Path $ZED_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $env:USERPROFILE (Join-Path $ZED_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'no install under project cwd' `
-    (Join-Path $projZed2 (Join-Path $ZED_SKILLS_REL $SKILL_X_X_DIR))
+    (Join-Path $projZed2 (Join-Path $ZED_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init --prefix-width=6 seeds the lock with 6'
@@ -2747,7 +2746,7 @@ try {
   Invoke-XX init --scope project --agents claude `
                     --prefix-width 6 --max-plan-lines 30 --review-per task
   Assert-Eq 'exit 0' $RunRC 0
-  $lockContent = Get-Content -Raw -LiteralPath (Join-Path $projF3 $Script:PLANS_LOCK_PATH)
+  $lockContent = Get-Content -Raw -LiteralPath (Join-Path $projF3 $Script:STAX_LOCK_PATH)
   Assert-Contains 'lock has prefix_width=6'   $lockContent '"prefix_width": 6'
   Invoke-XX plans next-prefix
   Assert-Eq '6-wide prefix on next-prefix' $RunOut '000001'
@@ -2761,7 +2760,7 @@ try {
   Invoke-XX init --scope project --agents claude `
                     --prefix-width 4 --max-plan-lines 50 --review-per task
   Assert-Eq 'exit 0' $RunRC 0
-  $lockContent = Get-Content -Raw -LiteralPath (Join-Path $projF4 $Script:PLANS_LOCK_PATH)
+  $lockContent = Get-Content -Raw -LiteralPath (Join-Path $projF4 $Script:STAX_LOCK_PATH)
   Assert-Contains 'lock has max_plan_lines=50' $lockContent '"max_plan_lines": 50'
 } finally { Pop-Location }
 
@@ -2773,7 +2772,7 @@ try {
   Invoke-XX init --scope project --agents claude `
                     --prefix-width 4 --max-plan-lines 30 --review-per plan
   Assert-Eq 'exit 0' $RunRC 0
-  $lockContent = Get-Content -Raw -LiteralPath (Join-Path $projF5 $Script:PLANS_LOCK_PATH)
+  $lockContent = Get-Content -Raw -LiteralPath (Join-Path $projF5 $Script:STAX_LOCK_PATH)
   Assert-Contains 'lock has review_per=plan' $lockContent '"review_per": "plan"'
 } finally { Pop-Location }
 
@@ -2785,9 +2784,12 @@ try {
   Invoke-XX init --scope user --agents claude `
                     --prefix-width 4 --max-plan-lines 30 --review-per task
   Assert-Eq        'exit 0'                       $RunRC 0
-  Assert-IsDir     'install under USERPROFILE'    (Join-Path $env:USERPROFILE (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
-  Assert-NotExists 'no install under project cwd' (Join-Path $projF6 (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
-  Assert-NotExists 'no plans dir under user scope' (Join-Path $env:USERPROFILE $PLANS_DIR)
+  Assert-IsDir     'install under USERPROFILE'    (Join-Path $env:USERPROFILE (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
+  Assert-NotExists 'no install under project cwd' (Join-Path $projF6 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
+  # $HOME/.stax/ itself exists under user scope — it holds the materialized
+  # embed (binary-owned). The project marker (_config.lock) must NOT leak
+  # there; it lives in cwd's .stax/ only.
+  Assert-NotExists 'no project marker under user home' (Join-Path $env:USERPROFILE (Join-Path $STAX_DIR $STAX_LOCK_FILE))
 } finally { Pop-Location }
 
 Start-Case 'init --agents= (empty value) is rejected'
@@ -2845,7 +2847,7 @@ try {
   $Script:NextStdin = "1,2`n1`n`n`n`n"
   Invoke-XX init
   Assert-Eq 'exit 0' $RunRC 0
-  $lockI1 = Get-Content -Raw -LiteralPath (Join-Path $projI1 $Script:PLANS_LOCK_PATH)
+  $lockI1 = Get-Content -Raw -LiteralPath (Join-Path $projI1 $Script:STAX_LOCK_PATH)
   Assert-Contains 'default prefix_width' $lockI1 "`"prefix_width`": $DEFAULT_PREFIX_WIDTH"
   Assert-Contains 'default max_plan_lines' $lockI1 '"max_plan_lines": 30'
   Assert-Contains 'default review_per task' $lockI1 '"review_per": "task"'
@@ -2859,7 +2861,7 @@ try {
   $Script:NextStdin = "1`n1`n`n`n2`n"
   Invoke-XX init
   Assert-Eq 'exit 0' $RunRC 0
-  $lockI2 = Get-Content -Raw -LiteralPath (Join-Path $projI2 $Script:PLANS_LOCK_PATH)
+  $lockI2 = Get-Content -Raw -LiteralPath (Join-Path $projI2 $Script:STAX_LOCK_PATH)
   Assert-Contains 'review_per plan via prompt' $lockI2 '"review_per": "plan"'
 } finally { Pop-Location }
 
@@ -2871,7 +2873,7 @@ try {
   $Script:NextStdin = "1`n1`n7`n42`n1`n"
   Invoke-XX init
   Assert-Eq 'exit 0' $RunRC 0
-  $lockI3 = Get-Content -Raw -LiteralPath (Join-Path $projI3 $Script:PLANS_LOCK_PATH)
+  $lockI3 = Get-Content -Raw -LiteralPath (Join-Path $projI3 $Script:STAX_LOCK_PATH)
   Assert-Contains 'prefix_width=7'    $lockI3 '"prefix_width": 7'
   Assert-Contains 'max_plan_lines=42' $lockI3 '"max_plan_lines": 42'
 } finally { Pop-Location }
@@ -2983,7 +2985,7 @@ try {
   Assert-Eq 'exit 0' $RunRC 0
   $merged3 = Get-Content -Raw -LiteralPath (Join-Path $projM3 $Script:CLAUDE_SETTINGS_PATH)
   Assert-Contains 'user hook command preserved' $merged3 'my-custom-tool'
-  Assert-Contains 'bundled hook landed'         $merged3 'x-x plans lint'
+  Assert-Contains 'bundled hook landed'         $merged3 'stax plans lint'
 } finally { Pop-Location }
 
 Start-Case 'init merges into an empty settings.json file (seeds it)'
@@ -3028,7 +3030,7 @@ try {
   $merged5 = Get-Content -Raw -LiteralPath (Join-Path $projM5 $Script:CODEX_HOOKS_PATH)
   Assert-Contains 'user-only key preserved' $merged5 '"userOnlyKey": true'
   Assert-Contains 'user tool preserved'     $merged5 'user-tool'
-  Assert-Contains 'bundled hook present'    $merged5 'x-x plans lint'
+  Assert-Contains 'bundled hook present'    $merged5 'stax plans lint'
 } finally { Pop-Location }
 
 # ==========================================================================
@@ -3047,11 +3049,11 @@ try {
   Assert-Eq    'init exit 0' $RunRC 0
   $settingsPath = Join-Path $projU1 $Script:CLAUDE_SETTINGS_PATH
   $beforeContent = Get-Content -Raw -LiteralPath $settingsPath
-  Assert-Contains 'bundled hook present before remove' $beforeContent 'x-x plans lint'
+  Assert-Contains 'bundled hook present before remove' $beforeContent 'stax plans lint'
   Invoke-XX skills remove --project
   Assert-Eq    'remove exit 0' $RunRC 0
   $afterContent = Get-Content -Raw -LiteralPath $settingsPath
-  Assert-NotContains 'bundled hook removed'  $afterContent 'x-x plans lint'
+  Assert-NotContains 'bundled hook removed'  $afterContent 'stax plans lint'
 } finally { Pop-Location }
 
 Start-Case 'skills remove --project leaves user-tweaked hooks alone'
@@ -3065,12 +3067,12 @@ try {
   # Modify the bundled hook command — now it's user-tweaked, deep-equal to
   # the shipped record fails, and the un-merge must leave it alone.
   $settingsPath2 = Join-Path $projU2 $Script:CLAUDE_SETTINGS_PATH
-  (Get-Content -Raw -LiteralPath $settingsPath2).Replace('x-x plans lint', 'x-x plans lint --verbose') |
+  (Get-Content -Raw -LiteralPath $settingsPath2).Replace('stax plans lint', 'stax plans lint --verbose') |
     Set-Content -LiteralPath $settingsPath2 -Encoding ascii
   Invoke-XX skills remove --project
   Assert-Eq 'remove exit 0' $RunRC 0
   $after2 = Get-Content -Raw -LiteralPath $settingsPath2
-  Assert-Contains 'tweaked hook survived' $after2 'x-x plans lint --verbose'
+  Assert-Contains 'tweaked hook survived' $after2 'stax plans lint --verbose'
 } finally { Pop-Location }
 
 Start-Case 'skills remove --project leaves user-authored hooks alone'
@@ -3091,7 +3093,7 @@ try {
   Assert-Eq 'remove exit 0' $RunRC 0
   $after3 = Get-Content -Raw -LiteralPath $settingsPath3
   Assert-Contains    'user-only hook survived' $after3 'user-only-tool'
-  Assert-NotContains 'bundled hook removed'    $after3 'x-x plans lint'
+  Assert-NotContains 'bundled hook removed'    $after3 'stax plans lint'
 } finally { Pop-Location }
 
 Start-Case 'skills remove --project leaves user-authored sibling skills alongside ours'
@@ -3107,15 +3109,15 @@ try {
   Set-Content -LiteralPath (Join-Path $sibling 'SKILL.md') -Value '# user skill' -Encoding ascii
   Invoke-XX skills remove --project
   Assert-Eq        'remove exit 0'              $RunRC 0
-  Assert-NotExists 'x-x skill removed'          (Join-Path $projU4 (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
-  Assert-NotExists 'x-plan skill removed'       (Join-Path $projU4 (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_PLAN_DIR))
+  Assert-NotExists 'stax skill removed'          (Join-Path $projU4 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
+  Assert-NotExists 'scope skill removed'       (Join-Path $projU4 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SCOPE_DIR))
   Assert-IsDir     'sibling skill survived'     $sibling
   Assert-IsFile    'sibling SKILL.md survived'  (Join-Path $sibling 'SKILL.md')
 } finally { Pop-Location }
 
 Start-Case 'skills remove --user removes user-scope install end-to-end'
 Reset-UserHome
-# Fresh project dir so `x-x init`'s cwd-local .x-plans/_config.lock seed
+# Fresh project dir so `stax init`'s cwd-local .stax/_config.lock seed
 # does not trip the "already initialized" check against a leftover from
 # an earlier case.
 $projRMU = New-FreshProject
@@ -3124,8 +3126,8 @@ try {
   Invoke-XX init --scope user --agents 'claude,codex' `
                     --prefix-width 4 --max-plan-lines 30 --review-per task
   Assert-Eq    'init exit 0' $RunRC 0
-  $preClaude = Join-Path $env:USERPROFILE (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR)
-  $preCodex  = Join-Path $env:USERPROFILE (Join-Path $CODEX_SKILLS_REL  $SKILL_X_X_DIR)
+  $preClaude = Join-Path $env:USERPROFILE (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR)
+  $preCodex  = Join-Path $env:USERPROFILE (Join-Path $CODEX_SKILLS_REL  $SKILL_SHIP_DIR)
   Assert-IsDir 'pre-remove claude skill' $preClaude
   Assert-IsDir 'pre-remove codex skill'  $preCodex
   Invoke-XX skills remove --user
@@ -3136,20 +3138,20 @@ try {
 
 # ---------- Windows-specific: PATH separator + drive letters ----------
 
-Start-Case 'INSTALL_LOCAL.ps1 puts the binary under %USERPROFILE%\.x-x'
+Start-Case 'INSTALL_LOCAL.ps1 puts the binary under %USERPROFILE%\.stax'
 Reset-UserHome
 # Simulate having a fresh local build in bin/ — copy the e2e build into
-# %REPO_ROOT%\bin\x-x-windows-amd64.exe so the local installer can find it.
+# %REPO_ROOT%\bin\stax-windows-amd64.exe so the local installer can find it.
 $binDir = Join-Path $RepoRoot 'bin'
 New-Item -ItemType Directory -Force -Path $binDir | Out-Null
 $arch = if ([Environment]::Is64BitProcess) { 'amd64' } else { 'amd64' }
-$localBin = Join-Path $binDir "x-x-windows-$arch.exe"
+$localBin = Join-Path $binDir "stax-windows-$arch.exe"
 Copy-Item -Force -LiteralPath $Script:BuildBin -Destination $localBin
 Push-Location $RepoRoot
 try {
   & pwsh -NoLogo -NonInteractive -File (Join-Path $RepoRoot 'scripts\INSTALL_LOCAL.ps1') 2>&1 | Out-Null
-  $installed = Join-Path $env:USERPROFILE '.x-x\x-x.exe'
-  Assert-IsFile 'binary at $HOME\.x-x\x-x.exe' $installed
+  $installed = Join-Path $env:USERPROFILE '.stax\stax.exe'
+  Assert-IsFile 'binary at $HOME\.stax\stax.exe' $installed
 } finally {
   Pop-Location
   Remove-Item -Force -LiteralPath $localBin -ErrorAction SilentlyContinue
@@ -3160,14 +3162,14 @@ try {
 Start-Case 'plans list does NOT special-case hidden files (returns them in walk output)'
 $projH = New-FreshProject
 Initialize-ProjectScaffold $projH
-$plansDirH = Join-Path $projH $PLANS_DIR
-Write-Plan $plansDirH '0001-keep.md' 'valid' 'auth'
+$staxDirH = Join-Path $projH $STAX_DIR
+Write-Plan $staxDirH '0001-keep.md' 'valid' 'auth'
 # listPlans walks via os.ReadDir + a filename-regex match; it does not
 # consult the Win32 hidden attribute. A user who hides a plan file for
 # their own organizational reasons should still see it in `plans list`,
 # matching POSIX dotfile-handling semantics elsewhere in the CLI.
-$hidden = Join-Path $plansDirH '0002-hidden.md'
-Write-Plan $plansDirH '0002-hidden.md' 'valid' 'auth'
+$hidden = Join-Path $staxDirH '0002-hidden.md'
+Write-Plan $staxDirH '0002-hidden.md' 'valid' 'auth'
 (Get-Item -LiteralPath $hidden).Attributes = 'Hidden'
 Push-Location $projH
 try {
@@ -3182,9 +3184,9 @@ try {
 Start-Case 'plans lint reads a read-only plan file successfully'
 $projRO = New-FreshProject
 Initialize-ProjectScaffold $projRO
-Write-Registry (Join-Path $projRO $PLANS_DIR) 'Auth Service'
-Write-FullPlan (Join-Path $projRO $PLANS_DIR) '0001-foo.md' 'valid' 'auth-service' 'Auth Service'
-$roPath = Join-Path (Join-Path $projRO $PLANS_DIR) '0001-foo.md'
+Write-Registry (Join-Path $projRO $STAX_DIR) 'Auth Service'
+Write-FullPlan (Join-Path $projRO $STAX_DIR) '0001-foo.md' 'valid' 'auth-service' 'Auth Service'
+$roPath = Join-Path (Join-Path $projRO $STAX_DIR) '0001-foo.md'
 (Get-Item -LiteralPath $roPath).Attributes = 'ReadOnly'
 Push-Location $projRO
 try {
@@ -3219,7 +3221,7 @@ if ($shortPath -and $shortPath -ne $candidate) {
     Invoke-XX init --scope project --agents claude `
                       --prefix-width 4 --max-plan-lines 30 --review-per task
     Assert-Eq    'exit 0' $RunRC 0
-    Assert-IsDir 'install at long-name resolution' (Join-Path $candidate (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+    Assert-IsDir 'install at long-name resolution' (Join-Path $candidate (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
   } finally { Pop-Location }
 } else {
   Write-Skip '8.3 short-path generation unavailable on this volume (NtfsDisable8dot3NameCreation likely set)'
@@ -3257,20 +3259,20 @@ Invoke-XX plans slugify '日本語'
 Assert-Eq       'exit 2'     $RunRC 2
 Assert-Contains 'diagnostic' $RunErr 'no slug-able characters'
 
-# ---------- Windows-specific: idempotent re-bootstrap of ~/.x-x/agents ----------
+# ---------- Windows-specific: idempotent re-bootstrap of ~/.stax/agents ----------
 
-Start-Case 'x-x --no-browser repopulates ~/.x-x/agents/ when manually deleted'
+Start-Case 'stax --no-browser repopulates ~/.stax/agents/ when manually deleted'
 Reset-UserHome
 Invoke-XX --no-browser
 Assert-Eq    'first run exit 0' $RunRC 0
-Assert-IsDir 'agents dir present' (Join-Path $env:USERPROFILE $XX_AGENTS_DIR)
-Remove-Item -Recurse -Force -LiteralPath (Join-Path $env:USERPROFILE $XX_AGENTS_DIR)
-Assert-NotExists 'agents dir manually deleted' (Join-Path $env:USERPROFILE $XX_AGENTS_DIR)
+Assert-IsDir 'agents dir present' (Join-Path $env:USERPROFILE $STAX_AGENTS_DIR)
+Remove-Item -Recurse -Force -LiteralPath (Join-Path $env:USERPROFILE $STAX_AGENTS_DIR)
+Assert-NotExists 'agents dir manually deleted' (Join-Path $env:USERPROFILE $STAX_AGENTS_DIR)
 Invoke-XX --no-browser
 Assert-Eq    'second run exit 0' $RunRC 0
-Assert-IsDir 'agents dir restored' (Join-Path $env:USERPROFILE $XX_AGENTS_DIR)
+Assert-IsDir 'agents dir restored' (Join-Path $env:USERPROFILE $STAX_AGENTS_DIR)
 foreach ($skill in $OWNED_SKILLS) {
-  Assert-IsDir "skill $skill repopulated" (Join-Path $env:USERPROFILE (Join-Path $XX_AGENTS_SKILLS_DIR $skill))
+  Assert-IsDir "skill $skill repopulated" (Join-Path $env:USERPROFILE (Join-Path $STAX_AGENTS_SKILLS_DIR $skill))
 }
 
 # ---------- Windows-specific: project-marker-check diagnostic is path-free ----------
@@ -3281,9 +3283,9 @@ Push-Location $noProjW
 try {
   Invoke-XX plans next-prefix
   Assert-Eq       'exit 2'     $RunRC 2
-  Assert-Contains 'banner'     $RunErr 'not an x-x project'
-  Assert-NotContains 'no plans-dir leak'  $RunErr $PLANS_DIR
-  Assert-NotContains 'no x-x init mention is ok' $RunErr 'C:\'
+  Assert-Contains 'banner'     $RunErr 'not a stax project'
+  Assert-NotContains 'no plans-dir leak'  $RunErr $STAX_DIR
+  Assert-NotContains 'no stax init mention is ok' $RunErr 'C:\'
 } finally { Pop-Location }
 
 # ---------- Windows-specific: lock-file parsing tolerates extra whitespace ----------
@@ -3291,7 +3293,7 @@ try {
 Start-Case 'plans next-prefix tolerates pretty-printed _config.lock'
 $projWS = New-FreshProject
 Initialize-ProjectScaffold $projWS
-$lockWS = Join-Path (Join-Path $projWS $PLANS_DIR) $PLANS_CONFIG_LOCK
+$lockWS = Join-Path (Join-Path $projWS $STAX_DIR) $STAX_LOCK_FILE
 $prettyLock = @"
 {
     "prefix_width": 5,
@@ -3312,7 +3314,7 @@ try {
 Start-Case 'plans next-prefix falls back to default on malformed _config.lock'
 $projMal = New-FreshProject
 Initialize-ProjectScaffold $projMal
-$lockMal = Join-Path (Join-Path $projMal $PLANS_DIR) $PLANS_CONFIG_LOCK
+$lockMal = Join-Path (Join-Path $projMal $STAX_DIR) $STAX_LOCK_FILE
 Set-Content -LiteralPath $lockMal -Value '{this is not json' -Encoding ascii
 Push-Location $projMal
 try {
@@ -3326,7 +3328,7 @@ try {
 Start-Case 'plans next-prefix falls back when prefix_width is non-positive'
 $projZ = New-FreshProject
 Initialize-ProjectScaffold $projZ
-$lockZ = Join-Path (Join-Path $projZ $PLANS_DIR) $PLANS_CONFIG_LOCK
+$lockZ = Join-Path (Join-Path $projZ $STAX_DIR) $STAX_LOCK_FILE
 Set-Content -LiteralPath $lockZ -Value '{"prefix_width": 0}' -Encoding ascii
 Push-Location $projZ
 try {
@@ -3379,13 +3381,13 @@ Start-Case 'plans list ignores a filename with a 200-char slug if the prefix for
 # as a visible skip rather than silently passing with no assertion run.
 $projLong = New-FreshProject
 Initialize-ProjectScaffold $projLong
-$plansDirLong = Join-Path $projLong $PLANS_DIR
+$staxDirLong = Join-Path $projLong $STAX_DIR
 $longSlug = 'aaaaaaaaaa' * 20  # 200 chars
 $longName = "0001-$longSlug.md"
-$longFull = Join-Path $plansDirLong $longName
+$longFull = Join-Path $staxDirLong $longName
 $wroteLong = $false
 try {
-  Write-Plan $plansDirLong $longName 'valid' 'auth'
+  Write-Plan $staxDirLong $longName 'valid' 'auth'
   $wroteLong = $true
 } catch {}
 if ($wroteLong) {
@@ -3400,20 +3402,20 @@ if ($wroteLong) {
   Write-Skip 'long-path file creation failed; LongPathsEnabled likely off (registry)'
 }
 
-# ---------- Windows-specific: --version and bare x-x have DIFFERENT contracts ----------
+# ---------- Windows-specific: --version and bare stax have DIFFERENT contracts ----------
 #
-# Until the browser-default landed, bare `x-x` and `x-x --version` shared
+# Until the browser-default landed, bare `stax` and `stax --version` shared
 # runDefault and produced identical notice output. They've since split:
-# --version still prints the installer-parseable notice, while bare x-x
+# --version still prints the installer-parseable notice, while bare stax
 # opens defaultBrowserURL (or, with --no-browser, exits silently). Pin
 # the new divergence so a future refactor that re-unifies them is caught.
 
-Start-Case 'x-x --version output differs from x-x --no-browser'
+Start-Case 'stax --version output differs from stax --no-browser'
 Reset-UserHome
 Invoke-XX --no-browser
 $silentOut = $RunOut
 Invoke-XX --version
-Assert-Contains '--version still prints notice'   $RunOut 'x-x by Stackific'
+Assert-Contains '--version still prints notice'   $RunOut 'Stax by Stackific'
 Assert-Eq       '--no-browser stdout is empty'    $silentOut ''
 if ($RunOut -eq $silentOut) {
   Write-Fail 'contracts diverge' '--version and --no-browser produced identical output; the split has regressed'
@@ -3430,8 +3432,8 @@ if ($RunOut -eq $silentOut) {
 Start-Case 'plans lint flags an empty systems array'
 $projEM = New-FreshProject
 Initialize-ProjectScaffold $projEM
-Write-Registry (Join-Path $projEM $PLANS_DIR) 'Auth Service'
-$plansDirEM = Join-Path $projEM $PLANS_DIR
+Write-Registry (Join-Path $projEM $STAX_DIR) 'Auth Service'
+$staxDirEM = Join-Path $projEM $STAX_DIR
 $bodyEmptySys = @"
 ---
 title: foo
@@ -3449,7 +3451,7 @@ g
 ## Tasks
 - [ ] The Auth Service shall do.
 "@
-Set-Content -LiteralPath (Join-Path $plansDirEM '0001-foo.md') -Value $bodyEmptySys -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirEM '0001-foo.md') -Value $bodyEmptySys -Encoding ascii
 Push-Location $projEM
 try {
   Invoke-XX plans lint
@@ -3460,8 +3462,8 @@ try {
 Start-Case 'plans lint rejects block-form systems frontmatter'
 $projBF = New-FreshProject
 Initialize-ProjectScaffold $projBF
-Write-Registry (Join-Path $projBF $PLANS_DIR) 'Auth Service'
-$plansDirBF = Join-Path $projBF $PLANS_DIR
+Write-Registry (Join-Path $projBF $STAX_DIR) 'Auth Service'
+$staxDirBF = Join-Path $projBF $STAX_DIR
 $bodyBlock = @"
 ---
 title: foo
@@ -3480,7 +3482,7 @@ g
 ## Tasks
 - [ ] The Auth Service shall do.
 "@
-Set-Content -LiteralPath (Join-Path $plansDirBF '0001-foo.md') -Value $bodyBlock -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirBF '0001-foo.md') -Value $bodyBlock -Encoding ascii
 Push-Location $projBF
 try {
   Invoke-XX plans lint
@@ -3491,8 +3493,8 @@ try {
 Start-Case 'plans lint flags a plan missing the ## Tasks section'
 $projNT = New-FreshProject
 Initialize-ProjectScaffold $projNT
-Write-Registry (Join-Path $projNT $PLANS_DIR) 'Auth Service'
-$plansDirNT = Join-Path $projNT $PLANS_DIR
+Write-Registry (Join-Path $projNT $STAX_DIR) 'Auth Service'
+$staxDirNT = Join-Path $projNT $STAX_DIR
 $bodyNoTasks = @"
 ---
 title: foo
@@ -3507,7 +3509,7 @@ g
 ## Approach
 - A
 "@
-Set-Content -LiteralPath (Join-Path $plansDirNT '0001-foo.md') -Value $bodyNoTasks -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirNT '0001-foo.md') -Value $bodyNoTasks -Encoding ascii
 Push-Location $projNT
 try {
   Invoke-XX plans lint
@@ -3518,8 +3520,8 @@ try {
 Start-Case 'plans lint flags a plan missing the ## Approach section'
 $projNA = New-FreshProject
 Initialize-ProjectScaffold $projNA
-Write-Registry (Join-Path $projNA $PLANS_DIR) 'Auth Service'
-$plansDirNA = Join-Path $projNA $PLANS_DIR
+Write-Registry (Join-Path $projNA $STAX_DIR) 'Auth Service'
+$staxDirNA = Join-Path $projNA $STAX_DIR
 $bodyNoAppr = @"
 ---
 title: foo
@@ -3534,7 +3536,7 @@ g
 ## Tasks
 - [ ] The Auth Service shall do.
 "@
-Set-Content -LiteralPath (Join-Path $plansDirNA '0001-foo.md') -Value $bodyNoAppr -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirNA '0001-foo.md') -Value $bodyNoAppr -Encoding ascii
 Push-Location $projNA
 try {
   Invoke-XX plans lint
@@ -3545,8 +3547,8 @@ try {
 Start-Case 'plans lint passes bidirectional extends when both sides linked'
 $projBE = New-FreshProject
 Initialize-ProjectScaffold $projBE
-Write-Registry (Join-Path $projBE $PLANS_DIR) 'Auth Service'
-$plansDirBE = Join-Path $projBE $PLANS_DIR
+Write-Registry (Join-Path $projBE $STAX_DIR) 'Auth Service'
+$staxDirBE = Join-Path $projBE $STAX_DIR
 $bodyExtender = @"
 ---
 title: foo
@@ -3583,8 +3585,8 @@ g
 ## Tasks
 - [ ] The Auth Service shall do.
 "@
-Set-Content -LiteralPath (Join-Path $plansDirBE '0001-foo.md') -Value $bodyExtender -Encoding ascii
-Set-Content -LiteralPath (Join-Path $plansDirBE '0002-bar.md') -Value $bodyExtended -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirBE '0001-foo.md') -Value $bodyExtender -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirBE '0002-bar.md') -Value $bodyExtended -Encoding ascii
 Push-Location $projBE
 try {
   Invoke-XX plans lint
@@ -3595,8 +3597,8 @@ try {
 Start-Case 'plans lint accumulates multiple findings on one file'
 $projMF = New-FreshProject
 Initialize-ProjectScaffold $projMF
-Write-Registry (Join-Path $projMF $PLANS_DIR) 'Auth Service'
-$plansDirMF = Join-Path $projMF $PLANS_DIR
+Write-Registry (Join-Path $projMF $STAX_DIR) 'Auth Service'
+$staxDirMF = Join-Path $projMF $STAX_DIR
 # Multiple violations: bad status, bad created, missing ## Tasks.
 $bodyMulti = @"
 ---
@@ -3612,7 +3614,7 @@ g
 ## Approach
 - A
 "@
-Set-Content -LiteralPath (Join-Path $plansDirMF '0001-foo.md') -Value $bodyMulti -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirMF '0001-foo.md') -Value $bodyMulti -Encoding ascii
 Push-Location $projMF
 try {
   Invoke-XX plans lint
@@ -3625,13 +3627,13 @@ try {
 Start-Case 'plans lint reports per-file summary line on stderr'
 $projSM = New-FreshProject
 Initialize-ProjectScaffold $projSM
-Write-Registry (Join-Path $projSM $PLANS_DIR) 'Auth Service'
-Write-FullPlan (Join-Path $projSM $PLANS_DIR) '0001-foo.md' 'valid' 'auth-service' 'Auth Service'
-Write-FullPlan (Join-Path $projSM $PLANS_DIR) '0002-bar.md' 'valid' 'auth-service' 'Auth Service'
-$plansDirSM = Join-Path $projSM $PLANS_DIR
+Write-Registry (Join-Path $projSM $STAX_DIR) 'Auth Service'
+Write-FullPlan (Join-Path $projSM $STAX_DIR) '0001-foo.md' 'valid' 'auth-service' 'Auth Service'
+Write-FullPlan (Join-Path $projSM $STAX_DIR) '0002-bar.md' 'valid' 'auth-service' 'Auth Service'
+$staxDirSM = Join-Path $projSM $STAX_DIR
 # Wreck one plan with a known-bad status to force "1 ok, 1 failed".
-$badContent = (Get-Content -Raw -LiteralPath (Join-Path $plansDirSM '0002-bar.md')) -replace 'status: valid', 'status: bogus'
-Set-Content -LiteralPath (Join-Path $plansDirSM '0002-bar.md') -Value $badContent -Encoding ascii
+$badContent = (Get-Content -Raw -LiteralPath (Join-Path $staxDirSM '0002-bar.md')) -replace 'status: valid', 'status: bogus'
+Set-Content -LiteralPath (Join-Path $staxDirSM '0002-bar.md') -Value $badContent -Encoding ascii
 Push-Location $projSM
 try {
   Invoke-XX plans lint
@@ -3653,7 +3655,7 @@ try {
 Start-Case 'plans list --status nonexistent returns zero rows'
 $projXS = New-FreshProject
 Initialize-ProjectScaffold $projXS
-Write-Plan (Join-Path $projXS $PLANS_DIR) '0001-alpha.md' 'valid' 'auth'
+Write-Plan (Join-Path $projXS $STAX_DIR) '0001-alpha.md' 'valid' 'auth'
 Push-Location $projXS
 try {
   Invoke-XX plans list --status nope
@@ -3664,8 +3666,8 @@ try {
 Start-Case 'plans list keeps comma-list of statuses without duplicates'
 $projDS = New-FreshProject
 Initialize-ProjectScaffold $projDS
-Write-Plan (Join-Path $projDS $PLANS_DIR) '0001-alpha.md' 'valid' 'auth'
-Write-Plan (Join-Path $projDS $PLANS_DIR) '0002-bravo.md' 'valid' 'auth'
+Write-Plan (Join-Path $projDS $STAX_DIR) '0001-alpha.md' 'valid' 'auth'
+Write-Plan (Join-Path $projDS $STAX_DIR) '0002-bravo.md' 'valid' 'auth'
 Push-Location $projDS
 try {
   Invoke-XX plans list --status 'valid,valid'
@@ -3677,15 +3679,15 @@ try {
 Start-Case 'plans list skips a plan with missing status:'
 $projMS = New-FreshProject
 Initialize-ProjectScaffold $projMS
-$plansDirMS = Join-Path $projMS $PLANS_DIR
+$staxDirMS = Join-Path $projMS $STAX_DIR
 $bodyNoStatus = @"
 ---
 title: foo
 systems: [auth]
 ---
 "@
-Set-Content -LiteralPath (Join-Path $plansDirMS '0001-broken.md') -Value $bodyNoStatus -Encoding ascii
-Write-Plan $plansDirMS '0002-ok.md' 'valid' 'auth'
+Set-Content -LiteralPath (Join-Path $staxDirMS '0001-broken.md') -Value $bodyNoStatus -Encoding ascii
+Write-Plan $staxDirMS '0002-ok.md' 'valid' 'auth'
 Push-Location $projMS
 try {
   Invoke-XX plans list
@@ -3697,15 +3699,15 @@ try {
 Start-Case 'plans list skips a plan with missing systems:'
 $projMSY = New-FreshProject
 Initialize-ProjectScaffold $projMSY
-$plansDirMSY = Join-Path $projMSY $PLANS_DIR
+$staxDirMSY = Join-Path $projMSY $STAX_DIR
 $bodyNoSys = @"
 ---
 title: foo
 status: valid
 ---
 "@
-Set-Content -LiteralPath (Join-Path $plansDirMSY '0001-broken.md') -Value $bodyNoSys -Encoding ascii
-Write-Plan $plansDirMSY '0002-ok.md' 'valid' 'auth'
+Set-Content -LiteralPath (Join-Path $staxDirMSY '0001-broken.md') -Value $bodyNoSys -Encoding ascii
+Write-Plan $staxDirMSY '0002-ok.md' 'valid' 'auth'
 Push-Location $projMSY
 try {
   Invoke-XX plans list
@@ -3717,10 +3719,10 @@ try {
 Start-Case 'plans list emits status verbatim (does not normalize case)'
 $projCS = New-FreshProject
 Initialize-ProjectScaffold $projCS
-$plansDirCS = Join-Path $projCS $PLANS_DIR
+$staxDirCS = Join-Path $projCS $STAX_DIR
 # Use lowercase 'valid' — anything other than the three allowed values gets
 # warned by listPlans (no — only lint enforces allowedness, list emits as-is)
-Write-Plan $plansDirCS '0001-alpha.md' 'valid' 'auth'
+Write-Plan $staxDirCS '0001-alpha.md' 'valid' 'auth'
 Push-Location $projCS
 try {
   Invoke-XX plans list
@@ -3733,11 +3735,11 @@ try {
 Start-Case 'plans next-prefix ignores files whose prefix differs from configured width'
 $projWX = New-FreshProject
 Initialize-ProjectScaffold $projWX
-$plansDirWX = Join-Path $projWX $PLANS_DIR
+$staxDirWX = Join-Path $projWX $STAX_DIR
 # Default width is 4. A 5-digit-prefixed file should be invisible to the
 # 4-wide regex scan.
-Write-Plan $plansDirWX '0003-three.md'  'valid' 'auth'
-Write-Plan $plansDirWX '00099-extra.md' 'valid' 'auth'
+Write-Plan $staxDirWX '0003-three.md'  'valid' 'auth'
+Write-Plan $staxDirWX '00099-extra.md' 'valid' 'auth'
 Push-Location $projWX
 try {
   Invoke-XX plans next-prefix
@@ -3748,13 +3750,13 @@ try {
 Start-Case 'plans next-prefix ignores directories that match the prefix format'
 $projDX = New-FreshProject
 Initialize-ProjectScaffold $projDX
-$plansDirDX = Join-Path $projDX $PLANS_DIR
-Write-Plan $plansDirDX '0001-foo.md' 'valid' 'auth'
+$staxDirDX = Join-Path $projDX $STAX_DIR
+Write-Plan $staxDirDX '0001-foo.md' 'valid' 'auth'
 # A subdir with the prefix format but no `.md` extension. scanHighestPrefix's
 # regex is `^\d{N}-.+\.md$`, so this directory entry can't match and must be
 # silently ignored. Only 0001-foo.md remains as the recognized plan, so the
 # next prefix is 0002.
-New-Item -ItemType Directory -Force -Path (Join-Path $plansDirDX '0050-bar') | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $staxDirDX '0050-bar') | Out-Null
 Push-Location $projDX
 try {
   Invoke-XX plans next-prefix
@@ -3791,12 +3793,12 @@ try {
   Assert-Eq       'exit 0'                    $RunRC 0
   Assert-Contains 'summary line: Removed 0'   $RunOut 'Removed 0'
   # The project install is untouched by --user remove.
-  Assert-IsDir 'project skill still present' (Join-Path $projXP (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-IsDir 'project skill still present' (Join-Path $projXP (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 Start-Case 'skills remove --user touches user-scope hooks.json (codex)'
 Reset-UserHome
-# Fresh project dir so `x-x init`'s cwd-local .x-plans/_config.lock seed
+# Fresh project dir so `stax init`'s cwd-local .stax/_config.lock seed
 # does not trip the "already initialized" check against a leftover from
 # an earlier case.
 $projRMHC = New-FreshProject
@@ -3807,11 +3809,11 @@ try {
   Assert-Eq 'init exit 0' $RunRC 0
   $userHooks = Join-Path $env:USERPROFILE (Join-Path $CODEX_CONFIG_REL $CODEX_HOOKS_FILE)
   $beforeContent = Get-Content -Raw -LiteralPath $userHooks
-  Assert-Contains 'bundled hook present pre-remove' $beforeContent 'x-x plans lint'
+  Assert-Contains 'bundled hook present pre-remove' $beforeContent 'stax plans lint'
   Invoke-XX skills remove --user
   Assert-Eq 'remove exit 0' $RunRC 0
   $afterContent = Get-Content -Raw -LiteralPath $userHooks
-  Assert-NotContains 'bundled hook removed' $afterContent 'x-x plans lint'
+  Assert-NotContains 'bundled hook removed' $afterContent 'stax plans lint'
 } finally { Pop-Location }
 
 # ---------- Windows-specific: encoding and output stability ----------
@@ -3819,7 +3821,7 @@ try {
 Start-Case 'plans list stdout has no UTF-8 BOM'
 $projUB = New-FreshProject
 Initialize-ProjectScaffold $projUB
-Write-Plan (Join-Path $projUB $PLANS_DIR) '0001-alpha.md' 'valid' 'auth'
+Write-Plan (Join-Path $projUB $STAX_DIR) '0001-alpha.md' 'valid' 'auth'
 Push-Location $projUB
 try {
   $tmpStdout = [System.IO.Path]::GetTempFileName()
@@ -3839,7 +3841,7 @@ try {
 Start-Case 'plans list uses LF line endings (not CRLF) on stdout'
 Push-Location $projUB
 try {
-  Write-Plan (Join-Path $projUB $PLANS_DIR) '0002-bravo.md' 'valid' 'auth'
+  Write-Plan (Join-Path $projUB $STAX_DIR) '0002-bravo.md' 'valid' 'auth'
   $tmpStdout2 = [System.IO.Path]::GetTempFileName()
   try {
     & $Script:BuildBin plans list > $tmpStdout2
@@ -3859,9 +3861,9 @@ try {
 Start-Case 'plans list stdout is exactly one trailing newline per row'
 $projNL = New-FreshProject
 Initialize-ProjectScaffold $projNL
-$plansDirNL = Join-Path $projNL $PLANS_DIR
-Write-Plan $plansDirNL '0001-alpha.md' 'valid' 'auth'
-Write-Plan $plansDirNL '0002-bravo.md' 'valid' 'auth'
+$staxDirNL = Join-Path $projNL $STAX_DIR
+Write-Plan $staxDirNL '0001-alpha.md' 'valid' 'auth'
+Write-Plan $staxDirNL '0002-bravo.md' 'valid' 'auth'
 Push-Location $projNL
 try {
   $tmpStdout3 = [System.IO.Path]::GetTempFileName()
@@ -3880,7 +3882,7 @@ try {
 Start-Case 'plans next-prefix output is identical whether invoked via pwsh or cmd.exe'
 $projXP = New-FreshProject
 Initialize-ProjectScaffold $projXP
-Write-Plan (Join-Path $projXP $PLANS_DIR) '0007-foo.md' 'valid' 'auth'
+Write-Plan (Join-Path $projXP $STAX_DIR) '0007-foo.md' 'valid' 'auth'
 Push-Location $projXP
 try {
   $pwshOut = (& $Script:BuildBin plans next-prefix).Trim()
@@ -3921,20 +3923,20 @@ try {
   Invoke-XX init --scope project --agents claude `
                     --prefix-width 4 --max-plan-lines 30 --review-per task
   Assert-Eq 'exit 0' $RunRC 0
-  Assert-NotExists 'no x-x at project root'     (Join-Path $projNB 'x-x')
-  Assert-NotExists 'no x-x.exe at project root' (Join-Path $projNB 'x-x.exe')
+  Assert-NotExists 'no stax at project root'     (Join-Path $projNB 'stax')
+  Assert-NotExists 'no stax.exe at project root' (Join-Path $projNB 'stax.exe')
   Assert-NotExists 'no bin/ at project root'    (Join-Path $projNB 'bin')
 } finally { Pop-Location }
 
 # ---------- Windows-specific: ignore file flagged as system ----------
 
-Start-Case 'plans list ignores .DS_Store-like cruft at the .x-plans/ root'
+Start-Case 'plans list ignores .DS_Store-like cruft at the .stax/ root'
 $projDS = New-FreshProject
 Initialize-ProjectScaffold $projDS
-$plansDirDSL = Join-Path $projDS $PLANS_DIR
-Write-Plan $plansDirDSL '0001-foo.md' 'valid' 'auth'
-Set-Content -LiteralPath (Join-Path $plansDirDSL 'Thumbs.db') -Value 'binary cruft' -Encoding ascii
-Set-Content -LiteralPath (Join-Path $plansDirDSL 'desktop.ini') -Value '[.ShellClassInfo]' -Encoding ascii
+$staxDirDSL = Join-Path $projDS $STAX_DIR
+Write-Plan $staxDirDSL '0001-foo.md' 'valid' 'auth'
+Set-Content -LiteralPath (Join-Path $staxDirDSL 'Thumbs.db') -Value 'binary cruft' -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirDSL 'desktop.ini') -Value '[.ShellClassInfo]' -Encoding ascii
 Push-Location $projDS
 try {
   Invoke-XX plans list
@@ -3946,7 +3948,7 @@ try {
 
 # ---------- Windows-specific: --help equivalent forms ----------
 
-Start-Case 'x-x --help renders the same notice as -h'
+Start-Case 'stax --help renders the same notice as -h'
 Invoke-XX --help
 $helpOut = $RunOut
 Invoke-XX -h
@@ -3954,7 +3956,7 @@ Assert-Eq 'parity between --help and -h' $RunOut $helpOut
 
 # ---------- Windows-specific: plans next-prefix never panics on empty proj dir ----------
 
-Start-Case 'plans next-prefix returns 0001 when .x-plans/ has only the scaffold files'
+Start-Case 'plans next-prefix returns 0001 when .stax/ has only the scaffold files'
 $projOS = New-FreshProject
 Initialize-ProjectScaffold $projOS
 Push-Location $projOS

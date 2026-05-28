@@ -8,7 +8,7 @@
    (deepseek provider via Models.dev), GitHub Copilot CLI (BYOK env
    vars with provider type `anthropic`), and Pi (reads DEEPSEEK_API_KEY
    directly for the `deepseek` provider).
-2. Provide a fresh, isolated `workspace` directory per test — `x-x init`
+2. Provide a fresh, isolated `workspace` directory per test — `stax init`
    runs in it before any skill is invoked.
 
 Everything logs verbosely. Silence is a bug.
@@ -77,7 +77,7 @@ COPILOT_ENV_DEFAULTS = {
 # Pi reads provider credentials directly from `DEEPSEEK_API_KEY` for its
 # `deepseek` provider (packages/coding-agent/docs/providers.md in
 # earendil-works/pi-mono). No additional env mirror is required — the same
-# variable powers the judge LLM, x-x's other backends, and pi. Model
+# variable powers the judge LLM, stax's other backends, and pi. Model
 # selection is passed via `--model deepseek/<id>` from pi_driver.py at
 # spawn time, not from env. Empty dict keeps the per-agent env-setup loop
 # in `_load_dotenv_and_route` uniform across backends.
@@ -96,7 +96,7 @@ CLINE_ENV_DEFAULTS: dict[str, str] = {}
 # Default `claude` keeps the existing Claude tests running unchanged.
 # Workflows targeting other backends (e.g. skills-eval-opencode.yml,
 # skills-eval-copilot.yml, skills-eval-pi.yml, skills-eval-cline.yml,
-# manual-omp-judge.yml) set X_X_AGENT_KEY=<key> to flip both the binary
+# manual-omp-judge.yml) set STAX_AGENT_KEY=<key> to flip both the binary
 # the fixture skips on if missing and the per-agent env defaults that
 # get pointed at DeepSeek.
 VALID_AGENT_KEYS = ("claude", "opencode", "copilot", "pi", "cline", "omp")
@@ -116,7 +116,7 @@ AGENT_ENV_DEFAULTS_FOR_KEY = {
   "cline": CLINE_ENV_DEFAULTS,
   "omp": OMP_ENV_DEFAULTS,
 }
-# Value passed to `x-x init --agents <value>` for each backend. Today
+# Value passed to `stax init --agents <value>` for each backend. Today
 # the binary's agentTargets registry (constants.go) recognizes "claude",
 # "codex", "opencode", "pi", "cline", and "omp" — pi, cline, and omp
 # are first-class entries with their own skillsRel. Copilot is still
@@ -155,13 +155,13 @@ AGENT_USER_SKILLS_REL_FOR_KEY = {
   "omp": Path(".agents") / "skills",
 }
 
-# Which `x-x init --scope` value to use when bootstrapping each test's
+# Which `stax init --scope` value to use when bootstrapping each test's
 # workspace. Default `project` installs skills into <workspace>/.claude/skills/.
-# Set X_X_INSTALL_SCOPE=user (e.g. from skills-eval-claude-user-scope.yml)
+# Set STAX_INSTALL_SCOPE=user (e.g. from skills-eval-claude-user-scope.yml)
 # to install skills into ~/.claude/skills/ — exercises the user-scope path
-# of `x-x init`. Either way, each test gets a virgin sandboxed $HOME (see
+# of `stax init`. Either way, each test gets a virgin sandboxed $HOME (see
 # the `workspace` fixture), so user-scope test N never inherits ~/.claude/
-# state written by test N-1; every `x-x init` starts from an empty $HOME.
+# state written by test N-1; every `stax init` starts from an empty $HOME.
 VALID_SCOPES = ("project", "user")
 
 
@@ -176,11 +176,11 @@ def pytest_collection_modifyitems(items: list[Item]) -> None:
   workspace shape, so collection deselects everything but the active
   agent's files.
 
-  Active agent is `X_X_AGENT_KEY` (default `claude`). After filtering,
+  Active agent is `STAX_AGENT_KEY` (default `claude`). After filtering,
   smoke tests sort first so a wire-format / install / env regression
   fails fast instead of being masked by a scenario timeout.
   """
-  active = os.environ.get("X_X_AGENT_KEY", "claude")
+  active = os.environ.get("STAX_AGENT_KEY", "claude")
   selected: list[Item] = []
   deselected: list[Item] = []
   for item in items:
@@ -212,7 +212,7 @@ def pytest_collection_modifyitems(items: list[Item]) -> None:
 def _load_dotenv_and_route_agent() -> None:
   """Load .env and route the active agent at DeepSeek before tests run.
 
-  The active agent is selected by `X_X_AGENT_KEY` (default `claude`).
+  The active agent is selected by `STAX_AGENT_KEY` (default `claude`).
   Each agent's per-process env requirements are encoded in
   `AGENT_ENV_DEFAULTS_FOR_KEY` — Claude needs the `ANTHROPIC_*` block
   pointed at DeepSeek's compat shim; OpenCode picks up the deepseek
@@ -246,7 +246,7 @@ def _load_dotenv_and_route_agent() -> None:
   )
 
   agent_key = _resolve_agent_key()
-  log("conftest", f"active agent backend: {agent_key} (from X_X_AGENT_KEY)")
+  log("conftest", f"active agent backend: {agent_key} (from STAX_AGENT_KEY)")
 
   # Claude routes via Anthropic-compatible env vars; mirror the DeepSeek
   # key into ANTHROPIC_AUTH_TOKEN so the Anthropic SDK in Claude Code
@@ -275,14 +275,14 @@ def _load_dotenv_and_route_agent() -> None:
     f"{AGENT_BINARY_FOR_KEY[agent_key]} on PATH: "
     f"{shutil.which(AGENT_BINARY_FOR_KEY[agent_key])}",
   )
-  log("conftest", f"x-x on PATH: {shutil.which('x-x')}")
+  log("conftest", f"stax on PATH: {shutil.which('stax')}")
 
 
 def _resolve_agent_key() -> str:
-  key = os.environ.get("X_X_AGENT_KEY", "claude")
+  key = os.environ.get("STAX_AGENT_KEY", "claude")
   if key not in VALID_AGENT_KEYS:
     pytest.fail(
-      f"X_X_AGENT_KEY={key!r} is not one of {VALID_AGENT_KEYS}",
+      f"STAX_AGENT_KEY={key!r} is not one of {VALID_AGENT_KEYS}",
       pytrace=False,
     )
   return key
@@ -290,44 +290,44 @@ def _resolve_agent_key() -> str:
 
 @pytest.fixture
 def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-  """A throwaway directory with `x-x init` already run inside it.
+  """A throwaway directory with `stax init` already run inside it.
 
-  The init scope is read from X_X_INSTALL_SCOPE (default "project") so
+  The init scope is read from STAX_INSTALL_SCOPE (default "project") so
   the same test suite can be driven against both
-  `x-x init --scope project` (skills land under <ws>/<agent-skills-rel>/)
-  and `x-x init --scope user` (skills land under $HOME/<agent-skills-rel>/).
-  X_X_AGENT_KEY (default "claude") selects which agent's `--agents <key>`
-  value to pass to `x-x init` (via `AGENT_INIT_VALUE_FOR_KEY`) and which
+  `stax init --scope project` (skills land under <ws>/<agent-skills-rel>/)
+  and `stax init --scope user` (skills land under $HOME/<agent-skills-rel>/).
+  STAX_AGENT_KEY (default "claude") selects which agent's `--agents <key>`
+  value to pass to `stax init` (via `AGENT_INIT_VALUE_FOR_KEY`) and which
   binary to require on PATH — per-agent workflows
   (.github/workflows/manual-<agent>-*judge.yml) reuse this same pytest
   collection by flipping that env var.
 
   $HOME (and $USERPROFILE on Windows) is redirected to a per-test
-  sandboxed directory before `x-x init` runs, so every test sees a
+  sandboxed directory before `stax init` runs, so every test sees a
   virgin user-scope state. Without this, user-scope test N would
-  inherit ~/.x-x/agents/, ~/.claude/skills/, and ~/.agents/skills/
+  inherit ~/.stax/agents/, ~/.claude/skills/, and ~/.agents/skills/
   populated by test N-1, and the asymmetry between project-scope
   (fresh per test from tmp_path) and user-scope (carries state) would
   let a latent dependency on pre-install state pass undetected. The
-  compiled x-x and agent CLI binaries live outside $HOME (typically
+  compiled stax and agent CLI binaries live outside $HOME (typically
   under $(go env GOPATH)/bin and the node tool cache), so the sandbox
   does not affect binary resolution.
   """
-  if shutil.which("x-x") is None:
-    pytest.skip("`x-x` not on PATH — install it with `go install .` from repo root")
+  if shutil.which("stax") is None:
+    pytest.skip("`stax` not on PATH — install it with `go install .` from repo root")
 
   agent_key = _resolve_agent_key()
   agent_bin = AGENT_BINARY_FOR_KEY[agent_key]
   if shutil.which(agent_bin) is None:
     pytest.skip(f"`{agent_bin}` not on PATH — install the {agent_key} CLI first")
 
-  scope = os.environ.get("X_X_INSTALL_SCOPE", "project")
+  scope = os.environ.get("STAX_INSTALL_SCOPE", "project")
   if scope not in VALID_SCOPES:
     pytest.fail(
-      f"X_X_INSTALL_SCOPE={scope!r} is not one of {VALID_SCOPES}",
+      f"STAX_INSTALL_SCOPE={scope!r} is not one of {VALID_SCOPES}",
       pytrace=False,
     )
-  log("conftest", f"x-x init scope: {scope} (from X_X_INSTALL_SCOPE)")
+  log("conftest", f"stax init scope: {scope} (from STAX_INSTALL_SCOPE)")
 
   sandboxed_home = tmp_path / "home"
   sandboxed_home.mkdir()
@@ -347,7 +347,7 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     ["git", "config", "user.email", "ci@example.com"],
     ["git", "config", "user.name", "CI"],
     [
-      "x-x", "init",
+      "stax", "init",
       "--scope", scope,
       "--agents", init_value,
       "--prefix-width", "4",

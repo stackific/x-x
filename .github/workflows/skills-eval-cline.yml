@@ -4,7 +4,7 @@ name: skills eval / cline
 # skills-eval-opencode.yml but targets Cline CLI via DeepSeek routed
 # through cline's first-class `deepseek` provider. The loop:
 #
-#   1. Install Cline CLI (npm `cline`); install x-x to PATH.
+#   1. Install Cline CLI (npm `cline`); install stax to PATH.
 #   2. Sync the uv-managed skills-evals project.
 #   3. Run `uv run pytest tests/test_cline_*`. The tests:
 #        a. Spawn `cline --yolo --json -c <ws> -t <s>` per skill
@@ -13,7 +13,7 @@ name: skills eval / cline
 #           `<ws>/.cline/skills/<skill>/SKILL.md` into the prompt
 #           because cline does not resolve slash commands in headless
 #           mode — same workaround the opencode driver used before
-#           sst/opencode#2348 landed. `x-x init --agents cline` (now a
+#           sst/opencode#2348 landed. `stax init --agents cline` (now a
 #           first-class entry in agentTargets) writes the SKILL.md
 #           tree exactly where the driver reads it.
 #        b. Provider routing comes from cline's on-disk auth state
@@ -40,12 +40,12 @@ jobs:
     timeout-minutes: 60
 
     env:
-      # X_X_AGENT_KEY tells the skills-evals conftest which backend's
+      # STAX_AGENT_KEY tells the skills-evals conftest which backend's
       # tests to collect (`test_cline_*`), which binary to require on
       # PATH (`cline`), and which `--agents <key>` value to pass to
-      # `x-x init` (`cline` — first-class entry in agentTargets, lands
+      # `stax init` (`cline` — first-class entry in agentTargets, lands
       # skills at `.cline/skills/` per docs.cline.bot).
-      X_X_AGENT_KEY: cline
+      STAX_AGENT_KEY: cline
 
       # Cline reads its DeepSeek routing from its on-disk auth state,
       # not from process env. DEEPSEEK_API_KEY is what the workspace
@@ -61,12 +61,12 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # `go install .` lands a release-flavored x-x in $(go env GOPATH)/bin.
+      # `go install .` lands a release-flavored stax in $(go env GOPATH)/bin.
       # The setup-go action puts that directory on PATH.
-      - name: install x-x to PATH
+      - name: install stax to PATH
         run: |
           go install .
-          x-x --version
+          stax --version
 
       # Cline CLI requires Node 22+.
       - uses: actions/setup-node@v6

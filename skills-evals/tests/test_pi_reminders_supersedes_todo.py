@@ -7,9 +7,9 @@ headless path. Each skill invocation is `pi --mode json -p "/skill:<name>
 <task>"`; Pi resolves the SKILL.md by frontmatter `name:`.
 
 Sequence:
-  1. x-plan a todo list app.
-  2. x-plan a reminders app that SUPERSEDES the todo plan.
-  3. x-x — executes the queue; per agents/skills/x-x/SKILL.md step 3.4,
+  1. scope a todo list app.
+  2. scope a reminders app that SUPERSEDES the todo plan.
+  3. stax — executes the queue; per agents/skills/ship/SKILL.md step 3.4,
      when the executor finishes the successor plan it flips the
      predecessor's `status: valid` → `status: superseded` and appends
      the successor slug to the predecessor's `superseded_by:` array.
@@ -54,12 +54,12 @@ def test_pi_reminders_supersedes_todo(
   # --- Plan 1: todo list ---
   todo_run = drive_command(
     workspace,
-    "x-plan",
+    "scope",
     TODO_TASK,
-    transcript_path=transcripts / "x-plan-todo.jsonl",
+    transcript_path=transcripts / "scope-todo.jsonl",
   )
   assert todo_run.exit_code == 0, (
-    f"pi exited {todo_run.exit_code} during /x-plan todo; "
+    f"pi exited {todo_run.exit_code} during /scope todo; "
     f"timed_out={todo_run.timed_out}; stderr:\n{todo_run.stderr_tail}"
   )
   assert todo_run.completed
@@ -68,12 +68,12 @@ def test_pi_reminders_supersedes_todo(
   # --- Plan 2: reminders (supersedes todo) ---
   reminders_run = drive_command(
     workspace,
-    "x-plan",
+    "scope",
     REMINDERS_TASK,
-    transcript_path=transcripts / "x-plan-reminders.jsonl",
+    transcript_path=transcripts / "scope-reminders.jsonl",
   )
   assert reminders_run.exit_code == 0, (
-    f"pi exited {reminders_run.exit_code} during /x-plan reminders; "
+    f"pi exited {reminders_run.exit_code} during /scope reminders; "
     f"timed_out={reminders_run.timed_out}; stderr:\n{reminders_run.stderr_tail}"
   )
   assert reminders_run.completed
@@ -82,12 +82,12 @@ def test_pi_reminders_supersedes_todo(
   # --- Execute ---
   exec_run = drive_command(
     workspace,
-    "x-x",
+    "ship",
     "",
-    transcript_path=transcripts / "x-x.jsonl",
+    transcript_path=transcripts / "stax.jsonl",
   )
   assert exec_run.exit_code == 0, (
-    f"pi exited {exec_run.exit_code} during /x-x; "
+    f"pi exited {exec_run.exit_code} during /ship; "
     f"timed_out={exec_run.timed_out}; stderr:\n{exec_run.stderr_tail}"
   )
   assert exec_run.completed
@@ -102,7 +102,7 @@ def test_pi_reminders_supersedes_todo(
   todo_plan, reminders_plan = plans  # numeric prefix asc
 
   assert todo_plan.frontmatter.get("status") == "superseded", (
-    f"todo plan should be status=superseded after /x-x ran the "
+    f"todo plan should be status=superseded after /ship ran the "
     f"successor, got {todo_plan.frontmatter.get('status')!r}"
   )
   superseded_by = todo_plan.frontmatter.get("superseded_by") or []

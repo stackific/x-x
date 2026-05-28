@@ -1,6 +1,6 @@
 name: skills eval / cline (user scope)
 
-# Identical to skills-eval-cline.yml EXCEPT for X_X_INSTALL_SCOPE.
+# Identical to skills-eval-cline.yml EXCEPT for STAX_INSTALL_SCOPE.
 
 on:
   workflow_dispatch:
@@ -14,8 +14,8 @@ jobs:
     timeout-minutes: 60
 
     env:
-      X_X_AGENT_KEY: cline
-      X_X_INSTALL_SCOPE: user
+      STAX_AGENT_KEY: cline
+      STAX_INSTALL_SCOPE: user
 
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 
@@ -27,10 +27,10 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: install x-x to PATH
+      - name: install stax to PATH
         run: |
           go install .
-          x-x --version
+          stax --version
 
       - uses: actions/setup-node@v6
         with:

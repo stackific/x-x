@@ -2,21 +2,21 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Stackific Inc.
 #
-# INSTALL.sh — Download and install the latest x-x release on macOS or Linux.
+# INSTALL.sh — Download and install the latest stax release on macOS or Linux.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/stackific/x-x/main/scripts/INSTALL.sh | sh
-#   curl -fsSL https://raw.githubusercontent.com/stackific/x-x/main/scripts/INSTALL.sh | INSTALL_DIR=/usr/local/bin sh
+#   curl -fsSL https://raw.githubusercontent.com/stackific/stax/main/scripts/INSTALL.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/stackific/stax/main/scripts/INSTALL.sh | INSTALL_DIR=/usr/local/bin sh
 #
 # Environment overrides:
-#   INSTALL_DIR  Destination directory (default: $HOME/.x-x)
+#   INSTALL_DIR  Destination directory (default: $HOME/.stax)
 #   VERSION      Specific release tag, e.g. v0.1.0 (default: latest)
 
 set -eu
 
-REPO="stackific/x-x"
-BINARY="x-x"
-INSTALL_DIR="${INSTALL_DIR:-$HOME/.x-x}"
+REPO="stackific/stax"
+BINARY="stax"
+INSTALL_DIR="${INSTALL_DIR:-$HOME/.stax}"
 VERSION="${VERSION:-latest}"
 
 info() { printf '==> %s\n' "$*"; }
@@ -100,16 +100,16 @@ mkdir -p "${INSTALL_DIR}"
 mv "${tmpdir}/${asset}" "${INSTALL_DIR}/${BINARY}"
 chmod +x "${INSTALL_DIR}/${BINARY}"
 
-config_dir="${HOME}/.x-x"
+config_dir="${HOME}/.stax"
 mkdir -p "${config_dir}"
 chmod 700 "${config_dir}"
 
-# Seed the update-check config. The CLI reads ~/.x-x/.config.json on every run
+# Seed the update-check config. The CLI reads ~/.stax/.config.json on every run
 # and consults the GitHub API at most once per 24h to nudge stale installs.
 # Writing last_checked=<now> here means the first post-install invocation
 # does not probe the network.
-# `x-x --version` prints the full notice block; the version itself is the
-# last whitespace-separated token on the first line ("x-x by Stackific, v0.1.0").
+# `stax --version` prints the full notice block; the version itself is the
+# last whitespace-separated token on the first line ("stax by Stackific, v0.1.0").
 installed_version=$("${INSTALL_DIR}/${BINARY}" --version 2>/dev/null | awk 'NR==1 { print $NF; exit }')
 [ -n "$installed_version" ] || installed_version=unknown
 # Escape any double-quotes / backslashes in the version string so the JSON
@@ -142,7 +142,7 @@ ensure_on_path() {
   esac
 
   rc=$(rc_file_for_shell)
-  marker="# x-x installer: PATH"
+  marker="# stax installer: PATH"
   if [ -f "$rc" ] && grep -qF "$marker" "$rc"; then
     info "${INSTALL_DIR} already added to $rc"
   else
@@ -167,12 +167,12 @@ ensure_on_path() {
 
 # Seed the bundled agents/ library from the binary's embed. `post-install`
 # is the dedicated installer subcommand: it triggers the lazy first-run
-# write to ~/.x-x/agents/ and exits silently, NEVER opening a browser. We
-# must not use bare `x-x` here — that branch opens https://google.com in
+# write to ~/.stax/agents/ and exits silently, NEVER opening a browser. We
+# must not use bare `stax` here — that branch opens https://google.com in
 # the user's default browser, which would pop a window mid-install. The
 # 24h update check (still bound to every invocation) handles refreshes
 # from then on.
-info "Seeding ~/.x-x/agents/ from binary"
+info "Seeding ~/.stax/agents/ from binary"
 "${INSTALL_DIR}/${BINARY}" post-install >/dev/null
 
 if ensure_on_path; then

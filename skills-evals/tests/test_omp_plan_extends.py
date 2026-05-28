@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Stackific Inc.
-"""End-to-end: drive omp through two /skill:x-plan calls (extends mechanic).
+"""End-to-end: drive omp through two /skill:scope calls (extends mechanic).
 
 Mirror of test_claude_plan_extends.py against the omp driver. Per
-agents/skills/x-plan/SKILL.md step 2a + step 3, when a new plan
+agents/skills/scope/SKILL.md step 2a + step 3, when a new plan
 "extends" a predecessor (rather than supersedes it):
   - the new plan's frontmatter gets `extends: [<predecessor-slug>]`
   - the predecessor's frontmatter gets `extended_by: [<new-slug>]`
@@ -11,7 +11,7 @@ agents/skills/x-plan/SKILL.md step 2a + step 3, when a new plan
     a state change — unlike supersedes)
 
 This test asserts both sides of that bidirectional link without
-running /skill:x-x (extends does not cause any execution-time state change).
+running /skill:stax (extends does not cause any execution-time state change).
 """
 
 from __future__ import annotations
@@ -35,39 +35,39 @@ def test_omp_plan_extends(workspace: Path, tmp_path: Path) -> None:
   # --- Plan A: the base todo app ---
   a_run = drive_skill(
     workspace,
-    f"/skill:x-plan {BASE_TASK}",
-    transcript_path=transcripts / "x-plan-a.jsonl",
+    f"/skill:scope {BASE_TASK}",
+    transcript_path=transcripts / "scope-a.jsonl",
   )
   assert a_run.exit_code == 0, (
-    f"omp exited {a_run.exit_code} during /skill:x-plan A; "
+    f"omp exited {a_run.exit_code} during /skill:scope A; "
     f"timed_out={a_run.timed_out}; stderr:\n{a_run.stderr_tail}"
   )
   assert a_run.completed, (
-    f"/skill:x-plan A did not complete cleanly: turns={a_run.turns} "
+    f"/skill:scope A did not complete cleanly: turns={a_run.turns} "
     f"yes_replies={a_run.yes_replies} timed_out={a_run.timed_out}"
   )
   assert a_run.turns < DEFAULT_MAX_TURNS, (
-    f"/skill:x-plan A hit the max_turns cap ({DEFAULT_MAX_TURNS}) — gate "
-    f"kept firing. Inspect {transcripts / 'x-plan-a.jsonl'}."
+    f"/skill:scope A hit the max_turns cap ({DEFAULT_MAX_TURNS}) — gate "
+    f"kept firing. Inspect {transcripts / 'scope-a.jsonl'}."
   )
 
   # --- Plan B: extension of plan A ---
   b_run = drive_skill(
     workspace,
-    f"/skill:x-plan {EXTENSION_TASK}",
-    transcript_path=transcripts / "x-plan-b.jsonl",
+    f"/skill:scope {EXTENSION_TASK}",
+    transcript_path=transcripts / "scope-b.jsonl",
   )
   assert b_run.exit_code == 0, (
-    f"omp exited {b_run.exit_code} during /skill:x-plan B; "
+    f"omp exited {b_run.exit_code} during /skill:scope B; "
     f"timed_out={b_run.timed_out}; stderr:\n{b_run.stderr_tail}"
   )
   assert b_run.completed, (
-    f"/skill:x-plan B did not complete cleanly: turns={b_run.turns} "
+    f"/skill:scope B did not complete cleanly: turns={b_run.turns} "
     f"yes_replies={b_run.yes_replies} timed_out={b_run.timed_out}"
   )
   assert b_run.turns < DEFAULT_MAX_TURNS, (
-    f"/skill:x-plan B hit the max_turns cap ({DEFAULT_MAX_TURNS}) — gate "
-    f"kept firing. Inspect {transcripts / 'x-plan-b.jsonl'}."
+    f"/skill:scope B hit the max_turns cap ({DEFAULT_MAX_TURNS}) — gate "
+    f"kept firing. Inspect {transcripts / 'scope-b.jsonl'}."
   )
 
   # --- Verify plan mechanics ---

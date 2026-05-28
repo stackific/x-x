@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Stackific Inc.
-"""End-to-end: drive omp through /skill:x-plan + /skill:x-x for a TODO app.
+"""End-to-end: drive omp through /skill:scope + /skill:stax for a TODO app.
 
 Mirror of test_claude_todo.py against the omp (oh-my-pi) driver. Same
 TASK string, same judges, same thresholds — the only differences are
@@ -10,10 +10,10 @@ oh-my-pi packages/coding-agent/src/extensibility/skills.ts
 `getSkillSlashCommandName`), not `/<name>`.
 
 Flow per the user's spec:
-  1. Invoke /skill:x-plan with the TODO task. Auto-reply 'yes' until
+  1. Invoke /skill:scope with the TODO task. Auto-reply 'yes' until
      the planner stops asking.
-  2. PlanJudge scores the plan file that landed under .x-plans/.
-  3. Invoke /skill:x-x. Auto-reply 'yes' until the executor stops asking.
+  2. PlanJudge scores the plan file that landed under .stax/.
+  3. Invoke /skill:stax. Auto-reply 'yes' until the executor stops asking.
   4. ArtifactJudge scores the files the executor produced.
 
 Both judges are DeepEval GEval metrics backed by DeepSeek. A test
@@ -30,31 +30,31 @@ from skills_evals.omp_driver import DEFAULT_MAX_TURNS, drive_skill
 
 TASK = "build me a single HTML and localStorage-based todo list app"
 
-PLAN_PROMPT = f"/skill:x-plan {TASK}"
-EXEC_PROMPT = "/skill:x-x"
+PLAN_PROMPT = f"/skill:scope {TASK}"
+EXEC_PROMPT = "/skill:stax"
 
 
 def test_omp_builds_todo_app(workspace: Path, tmp_path: Path) -> None:
   transcripts = tmp_path / "transcripts"
 
-  # --- /skill:x-plan ---
+  # --- /skill:scope ---
   plan_run = drive_skill(
     workspace,
     PLAN_PROMPT,
-    transcript_path=transcripts / "x-plan.jsonl",
+    transcript_path=transcripts / "scope.jsonl",
   )
   assert plan_run.exit_code == 0, (
-    f"omp exited {plan_run.exit_code} during /skill:x-plan; "
+    f"omp exited {plan_run.exit_code} during /skill:scope; "
     f"timed_out={plan_run.timed_out}; stderr tail:\n{plan_run.stderr_tail}"
   )
   assert plan_run.completed, (
-    f"/skill:x-plan did not complete cleanly: turns={plan_run.turns} "
+    f"/skill:scope did not complete cleanly: turns={plan_run.turns} "
     f"yes_replies={plan_run.yes_replies} timed_out={plan_run.timed_out}"
   )
   assert plan_run.turns < DEFAULT_MAX_TURNS, (
-    f"/skill:x-plan hit the max_turns cap ({DEFAULT_MAX_TURNS}) — the "
+    f"/skill:scope hit the max_turns cap ({DEFAULT_MAX_TURNS}) — the "
     f"planner kept asking for confirmation past what we expected. "
-    f"Inspect {transcripts / 'x-plan.jsonl'} to see what it was asking."
+    f"Inspect {transcripts / 'scope.jsonl'} to see what it was asking."
   )
 
   plan_judgment = PlanJudge().evaluate(TASK, workspace)
@@ -64,21 +64,21 @@ def test_omp_builds_todo_app(workspace: Path, tmp_path: Path) -> None:
     f"reason={plan_judgment.reason}"
   )
 
-  # --- /skill:x-x ---
+  # --- /skill:stax ---
   exec_run = drive_skill(
     workspace,
     EXEC_PROMPT,
-    transcript_path=transcripts / "x-x.jsonl",
+    transcript_path=transcripts / "stax.jsonl",
   )
   assert exec_run.exit_code == 0, (
-    f"omp exited {exec_run.exit_code} during /skill:x-x; "
+    f"omp exited {exec_run.exit_code} during /skill:stax; "
     f"timed_out={exec_run.timed_out}; stderr tail:\n{exec_run.stderr_tail}"
   )
   assert exec_run.completed, (
-    f"/skill:x-x did not complete cleanly: turns={exec_run.turns} "
+    f"/skill:stax did not complete cleanly: turns={exec_run.turns} "
     f"yes_replies={exec_run.yes_replies} timed_out={exec_run.timed_out}"
   )
-  # No turn-cap assertion for /skill:x-x: the executor legitimately needs
+  # No turn-cap assertion for /skill:stax: the executor legitimately needs
   # many turns (one per plan-boundary review under --review-per plan,
   # plus whatever intermediate gates the agent emits). Downstream
   # exit_code / completed / ArtifactJudge assertions cover correctness;

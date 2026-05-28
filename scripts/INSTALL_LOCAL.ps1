@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Stackific Inc.
 #
-# INSTALL_LOCAL.ps1 — Install the locally-built x-x binary on Windows.
+# INSTALL_LOCAL.ps1 — Install the locally-built stax binary on Windows.
 #
 # Companion to INSTALL.ps1 that skips the GitHub-release download path and
 # uses an artifact already on disk under .\bin\ (produced by `task build`).
@@ -12,9 +12,9 @@
 #   $env:BIN_DIR = 'C:\path\to\bin'; .\scripts\INSTALL_LOCAL.ps1
 #
 # Environment overrides:
-#   BIN_DIR      Directory holding x-x-windows-<arch>.exe artifacts
+#   BIN_DIR      Directory holding stax-windows-<arch>.exe artifacts
 #                (default: <repo>\bin, derived from this script's location)
-#   INSTALL_DIR  Destination directory (default: $HOME\.x-x)
+#   INSTALL_DIR  Destination directory (default: $HOME\.stax)
 
 [CmdletBinding()]
 param()
@@ -22,8 +22,8 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$binary     = 'x-x'
-$installDir = if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { Join-Path $HOME '.x-x' }
+$binary     = 'stax'
+$installDir = if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { Join-Path $HOME '.stax' }
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $binDir    = if ($env:BIN_DIR) { $env:BIN_DIR } else { Join-Path $scriptDir '..\bin' }
@@ -51,7 +51,7 @@ New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 # for repeat installs and the other-arch sibling file.
 Copy-Item -Force -Path $sourcePath -Destination $dest
 
-$configDir = Join-Path $HOME '.x-x'
+$configDir = Join-Path $HOME '.stax'
 New-Item -ItemType Directory -Force -Path $configDir | Out-Null
 
 # Seed the update-check config so the first post-install invocation does
@@ -72,7 +72,7 @@ $configJson = [ordered]@{
 Set-Content -Path $configPath -Value $configJson -Encoding ascii
 
 # Persist on the user PATH (visible to every new shell) and patch the
-# current session so `x-x` is callable without restarting PowerShell.
+# current session so `stax` is callable without restarting PowerShell.
 # SetEnvironmentVariable writes the registry directly, sidestepping the
 # 1024/2047-char truncation that `setx` imposes.
 $userPath  = [Environment]::GetEnvironmentVariable('Path', 'User')
@@ -86,11 +86,11 @@ if (($env:Path -split ';') -notcontains $installDir) {
   $env:Path = "$installDir;$env:Path"
 }
 
-# Seed ~/.x-x/agents/ from the binary's embed via a bare invocation. Same
+# Seed ~/.stax/agents/ from the binary's embed via a bare invocation. Same
 # trick the release installer uses; refreshes are handled by the 24h
 # update check from then on.
-Info "Seeding ~/.x-x/agents/ from binary"
+Info "Seeding ~/.stax/agents/ from binary"
 & $dest | Out-Null
-if ($LASTEXITCODE -ne 0) { Die "x-x first-run seed failed" }
+if ($LASTEXITCODE -ne 0) { Die "stax first-run seed failed" }
 
 Info "Installed. Run: $binary --help"

@@ -1,42 +1,42 @@
 # Usage
 
 ```
-x-x [subcommand] [flags]
+stax [subcommand] [flags]
 ```
 
-Running `x-x` with no arguments opens <https://google.com> in the OS-default browser (no-op on a headless box — see `x-x` below). Use one of the subcommands below to do work.
+Running `stax` with no arguments opens <https://google.com> in the OS-default browser (no-op on a headless box — see `stax` below). Use one of the subcommands below to do work.
 
 ## Commands
 
 | Command                       | Description                                                          |
 | ----------------------------- | -------------------------------------------------------------------- |
-| `x-x`                         | Open <https://google.com> in the OS-default browser. Skipped automatically when no desktop session is detected (Linux without `DISPLAY` / `WAYLAND_DISPLAY`); in that case a diagnostic is written to stderr. |
-| `x-x --no-browser`            | Same as bare `x-x` but skip the browser launch. Exits silently after seeding `~/.x-x/agents/` on first run. Use this in CI or any scripted invocation that should not pop a window. |
-| `x-x post-install`            | Installer hook subcommand. Triggers the first-run write of `~/.x-x/agents/` and exits silently. `INSTALL.sh` / `INSTALL.ps1` use this; end users normally do not. Takes no arguments. |
-| `x-x init [--agents ...] [--scope ...] [--prefix-width N] [--max-plan-lines N] [--review-per task\|plan]` | Install bundled agent skills + seed the project's `.x-plans/` scaffold. |
-| `x-x skills remove --user`     | Uninstall bundled x-x skillss from your user scope (`$HOME`).         |
-| `x-x skills remove --project`  | Uninstall bundled x-x skillss from the current directory.             |
-| `x-x plans next-prefix`        | Print the next unused zero-padded plan prefix for `./.x-plans`.       |
-| `x-x plans list`               | List plans in `./.x-plans` with slug, status, and declared systems.   |
-| `x-x plans lint`               | Validate every plan file in `./.x-plans` against the project schema.  |
-| `x-x plans slugify "<title>"`  | Print the kebab-case slug for a plan title.                          |
-| `x-x --version`               | Print the version notice and exit. This is what `INSTALL.sh` / `INSTALL.ps1` parse to seed `~/.x-x/.config.json`. |
+| `stax`                         | Open <https://google.com> in the OS-default browser. Skipped automatically when no desktop session is detected (Linux without `DISPLAY` / `WAYLAND_DISPLAY`); in that case a diagnostic is written to stderr. |
+| `stax --no-browser`            | Same as bare `stax` but skip the browser launch. Exits silently after seeding `~/.stax/agents/` on first run. Use this in CI or any scripted invocation that should not pop a window. |
+| `stax post-install`            | Installer hook subcommand. Triggers the first-run write of `~/.stax/agents/` and exits silently. `INSTALL.sh` / `INSTALL.ps1` use this; end users normally do not. Takes no arguments. |
+| `stax init [--agents ...] [--scope ...] [--prefix-width N] [--max-plan-lines N] [--review-per task\|plan]` | Install bundled agent skills + seed the project's `.stax/` scaffold. |
+| `stax skills remove --user`     | Uninstall bundled stax skillss from your user scope (`$HOME`).         |
+| `stax skills remove --project`  | Uninstall bundled stax skillss from the current directory.             |
+| `stax plans next-prefix`        | Print the next unused zero-padded plan prefix for `./.stax`.       |
+| `stax plans list`               | List plans in `./.stax` with slug, status, and declared systems.   |
+| `stax plans lint`               | Validate every plan file in `./.stax` against the project schema.  |
+| `stax plans slugify "<title>"`  | Print the kebab-case slug for a plan title.                          |
+| `stax --version`               | Print the version notice and exit. This is what `INSTALL.sh` / `INSTALL.ps1` parse to seed `~/.stax/.config.json`. |
 
-### `x-x init`
+### `stax init`
 
-Installs every bundled skill into the locations each agent looks for, then seeds the project's `.x-plans/` scaffold.
+Installs every bundled skill into the locations each agent looks for, then seeds the project's `.stax/` scaffold.
 
 When stdin is a terminal, prompts use arrow-key select / multiselect with Shift+Tab back-navigation. When stdin is piped or redirected, the same questions fall back to line-by-line prompts.
 
 #### Prompts
 
 1. **Which agents?** Multi-select over every registered agent. List is sorted alphabetically by display name. Blank line accepts the default (all agents).
-2. **Which scope?** Project (`<cwd>/...`) or user (`$HOME/...`). `.x-plans/` is always seeded in cwd regardless of scope — that's the project marker.
+2. **Which scope?** Project (`<cwd>/...`) or user (`$HOME/...`). `.stax/` is always seeded in cwd regardless of scope — that's the project marker.
 3. **Prefix width for plan files** — zero-padded width for plan filenames (width `4` → `0001-foo.md`). Default: `4`.
-4. **Maximum lines per plan** — cap enforced by `x-x plans lint`. Keeps AI agents on a short leash. Default: `30`.
+4. **Maximum lines per plan** — cap enforced by `stax plans lint`. Keeps AI agents on a short leash. Default: `30`.
 5. **Pause for review after every…** — `task` (tight loop, more interruptions) or `plan` (looser loop, larger diffs). Default: `task`.
 
-Values 3–5 land in `.x-plans/_config.lock` and become the lock-file pins. Re-running `x-x init` later does NOT refresh them (Cargo.lock / package-lock.json semantics). Never manually edit `.x-plans/_config.lock`.
+Values 3–5 land in `.stax/_config.lock` and become the lock-file pins. Re-running `stax init` later does NOT refresh them (Cargo.lock / package-lock.json semantics). Never manually edit `.stax/_config.lock`.
 
 #### Flags (non-interactive twins)
 
@@ -77,14 +77,14 @@ Key path conventions:
 
 #### Install behavior
 
-- **macOS / Linux at user scope** — skills are symlinks into `~/.x-x/agents/skills/`, so refreshes to the bundled tree propagate to every project at once.
-- **Windows (and project scope everywhere)** — skills are copied. Re-running `x-x init` overwrites the bundled skill directories with the current release.
+- **macOS / Linux at user scope** — skills are symlinks into `~/.stax/agents/skills/`, so refreshes to the bundled tree propagate to every project at once.
+- **Windows (and project scope everywhere)** — skills are copied. Re-running `stax init` overwrites the bundled skill directories with the current release.
 - **Agent-specific config files** (e.g. `~/.claude/settings.json`) are seeded only when absent. Existing files are left alone.
-- **Windows / WSL2** — `~` resolves to `%USERPROFILE%`, so `~/.claude/skills/` becomes `%USERPROFILE%\.claude\skills\`. Inside WSL2, paths resolve against the WSL home (`/home/<user>/...`) — install x-x with `INSTALL.sh` from inside WSL to land in the WSL filesystem.
+- **Windows / WSL2** — `~` resolves to `%USERPROFILE%`, so `~/.claude/skills/` becomes `%USERPROFILE%\.claude\skills\`. Inside WSL2, paths resolve against the WSL home (`/home/<user>/...`) — install stax with `INSTALL.sh` from inside WSL to land in the WSL filesystem.
 
-### `x-x skills remove --user`
+### `stax skills remove --user`
 
-Walks every user-scope skills root and removes every entry whose name matches the bundled-skill allowlist (`x-plan`, `x-x` today). Roots walked:
+Walks every user-scope skills root and removes every entry whose name matches the bundled-skill allowlist (`scope`, `ship` today). Roots walked:
 
 ```
 ~/.claude/skills/
@@ -99,9 +99,9 @@ Walks every user-scope skills root and removes every entry whose name matches th
 
 The name is the only criterion — symlink targets are not consulted, which means an entry named the same as a bundled skill *will* be removed even if you authored it yourself. Rename any local skill that collides with a bundled one before running this command.
 
-In addition to deleting bundled skill directories, `skill remove` un-merges hook records `x-x init` previously deep-merged into each agent's JSON config (`~/.claude/settings.json`, `~/.codex/hooks.json`):
+In addition to deleting bundled skill directories, `skill remove` un-merges hook records `stax init` previously deep-merged into each agent's JSON config (`~/.claude/settings.json`, `~/.codex/hooks.json`):
 
-- Subtraction is per-record and uses deep-equality against the currently bundled file under `~/.x-x/agents/<agent>/`.
+- Subtraction is per-record and uses deep-equality against the currently bundled file under `~/.stax/agents/<agent>/`.
 - A record that byte-equals one of ours is dropped.
 - A user-tweaked variant (different command, different matcher) is preserved.
 - The file, its top-level non-hook keys, user-added event keys, and any user-authored sibling entries under the same event key all stay.
@@ -110,51 +110,51 @@ The following are never touched:
 
 - Folders whose name is not on the bundled-skill allowlist (your own skills sitting alongside ours).
 - Anything in the agent config files outside of their `"hooks"` subtree — top-level keys like `"fastMode"` and any user-authored content. Empty arrays or event-key maps left behind by the un-merge are kept as-is; we subtract records, not containers.
-- The `.x-plans/` scaffold in cwd. Once `init` writes it (at any scope), it's yours.
+- The `.stax/` scaffold in cwd. Once `init` writes it (at any scope), it's yours.
 - Parent directories (`.claude/`, `.codex/`, `.cline/`, `.continue/`, `.cursor/`, `.kilocode/`, `.gemini/antigravity/`). Only the `skills/` (or `commands/`) subdirectory under each may be removed, and only when it is empty after cleanup.
 
-### `x-x skills remove --project`
+### `stax skills remove --project`
 
-Same logic as `--user`, but rooted at the current working directory instead of `$HOME`. Run it from the project where you originally did `x-x init`.
+Same logic as `--user`, but rooted at the current working directory instead of `$HOME`. Run it from the project where you originally did `stax init`.
 
 `--user` and `--project` are mutually exclusive; exactly one must be passed.
 
 ### Project-scope marker check
 
-Every `x-x plans` subcommand and `x-x skills remove --project` require `./.x-plans/` to exist — it's how `x-x` recognizes the current directory as an x-x project. If it's missing, the command prints a two-line diagnostic on stderr and exits `2`:
+Every `stax plans` subcommand and `stax skills remove --project` require `./.stax/` to exist — it's how `stax` recognizes the current directory as a stax project. If it's missing, the command prints a two-line diagnostic on stderr and exits `2`:
 
 ```
-error: not an x-x project: no .x-plans/ in <cwd>
-run `x-x init` to initialize the current directory as an x-x project.
+error: not a stax project: no .stax/ in <cwd>
+run `stax init` to initialize the current directory as a stax project.
 ```
 
 It runs *after* per-subcommand flag/positional validation, so a usage error (unknown flag, stray positional) still wins the diagnostic and gives the user the most actionable feedback first.
 
-### `x-x plans next-prefix`
+### `stax plans next-prefix`
 
-Prints the next available zero-padded numeric prefix for a new plan file in `./.x-plans`, e.g. `00004`. Takes no arguments — the directory is not user-configurable.
+Prints the next available zero-padded numeric prefix for a new plan file in `./.stax`, e.g. `00004`. Takes no arguments — the directory is not user-configurable.
 
 ```bash
-x-x plans next-prefix
+stax plans next-prefix
 ```
 
-The prefix width is read from `.x-plans/_config.lock` (`prefix_width`), which `x-x init` seeds to `4`. Missing lock file → falls back to the same default.
+The prefix width is read from `.stax/_config.lock` (`prefix_width`), which `stax init` seeds to `4`. Missing lock file → falls back to the same default.
 
-### `x-x plans list`
+### `stax plans list`
 
-Lists every plan in `./.x-plans` whose filename matches `<prefix>-<slug>.md`, one tab-separated row per plan:
+Lists every plan in `./.stax` whose filename matches `<prefix>-<slug>.md`, one tab-separated row per plan:
 
 ```
 <slug>\t<status>\t<id1>,<id2>,...
 ```
 
-The third column lists the kebab-case `id:` of every system the plan declares in its frontmatter `systems:` array (the `id:` keys from `.x-plans/_data_systems.yaml`).
+The third column lists the kebab-case `id:` of every system the plan declares in its frontmatter `systems:` array (the `id:` keys from `.stax/_data_systems.yaml`).
 
 Flags (all repeatable / comma-aware where applicable):
 
 - `--status NAME[,NAME...]` — keep only plans whose `status:` matches.
-- `--system ID` — keep only plans whose `systems:` array contains `ID` (OR semantics across multiple `--system` flags). `ID` is the kebab `id:` from `.x-plans/_data_systems.yaml`, not the display name. The flag does not validate the requested id against the registry — an unknown id simply matches zero plans.
-- `--order asc|desc` — sort by zero-padded prefix. Default `desc` (latest first). Use `--order=asc` when sequential / oldest-first iteration matters (e.g. `/x-x` ground-truth lookup).
+- `--system ID` — keep only plans whose `systems:` array contains `ID` (OR semantics across multiple `--system` flags). `ID` is the kebab `id:` from `.stax/_data_systems.yaml`, not the display name. The flag does not validate the requested id against the registry — an unknown id simply matches zero plans.
+- `--order asc|desc` — sort by zero-padded prefix. Default `desc` (latest first). Use `--order=asc` when sequential / oldest-first iteration matters (e.g. `/ship` ground-truth lookup).
 - `--overflow-keywords TERM[,...]` — case-insensitive literal substring(s). **Engages only when** the post-`--status`/`--system` row count exceeds `planListOverflowThreshold` (default 20, in `constants.go`). At or below the threshold the flag is a no-op — the caller pays nothing for declaring an unused narrow.
 
 Overflow-narrow behavior, when it engages:
@@ -165,18 +165,18 @@ Overflow-narrow behavior, when it engages:
 - Keywords are literal substrings; regex metacharacters carry no special meaning (`.` is a dot, `*` is a star).
 
 ```bash
-x-x plans list
-x-x plans list --status valid
-x-x plans list --status valid,superseded --system auth-service
-x-x plans list --order=asc                                  # /x-x sequential execution
-x-x plans list --status valid --system payment-service --overflow-keywords webhook,retry  # narrow on overflow
+stax plans list
+stax plans list --status valid
+stax plans list --status valid,superseded --system auth-service
+stax plans list --order=asc                                  # /ship sequential execution
+stax plans list --status valid --system payment-service --overflow-keywords webhook,retry  # narrow on overflow
 ```
 
-Files matching the filename pattern but missing frontmatter, `status:`, or `systems:` produce a warning on stderr and are skipped (they don't fail the command — for that, use `x-x plans lint`).
+Files matching the filename pattern but missing frontmatter, `status:`, or `systems:` produce a warning on stderr and are skipped (they don't fail the command — for that, use `stax plans lint`).
 
-### `x-x plans lint`
+### `stax plans lint`
 
-Validates every `*.md` plan file in `./.x-plans` against the contract.
+Validates every `*.md` plan file in `./.stax` against the contract.
 
 **Filename + length checks:**
 
@@ -189,7 +189,7 @@ Validates every `*.md` plan file in `./.x-plans` against the contract.
 - YAML frontmatter is present and valid.
 - Mandatory `title:` (first key) and `created:` (last key, ISO 8601 UTC timestamp `YYYY-MM-DDTHH:MM:SSZ`).
 - `status:` is one of the allowed values.
-- Every id in `systems:` is a known `id:` in `.x-plans/_data_systems.yaml`.
+- Every id in `systems:` is a known `id:` in `.stax/_data_systems.yaml`.
 - Every slug in `supersedes:` / `superseded_by:` / `extends:` / `extended_by:` resolves to a sibling plan and is not the plan itself.
 - `supersedes` ↔ `superseded_by` and `extends` ↔ `extended_by` back-links are symmetric across plans.
 
@@ -199,17 +199,17 @@ Validates every `*.md` plan file in `./.x-plans` against the contract.
 - The set of EARS subject names (each resolved to its registry id) equals the declared `systems:` id set exactly.
 
 ```bash
-x-x plans lint
+stax plans lint
 ```
 
-Findings go to stdout (one per line, prefixed with the file path); the `<ok>/<failed>` summary goes to stderr. Exit 0 if every file passes, exit 1 if any failed. The project-scope marker check above still applies, so a missing `./.x-plans/` exits `2` rather than passing silently.
+Findings go to stdout (one per line, prefixed with the file path); the `<ok>/<failed>` summary goes to stderr. Exit 0 if every file passes, exit 1 if any failed. The project-scope marker check above still applies, so a missing `./.stax/` exits `2` rather than passing silently.
 
-### `x-x plans slugify "<title>"`
+### `stax plans slugify "<title>"`
 
-Prints the kebab-case slug for a plan title — lowercase the input, replace every run of non-`[a-z0-9]` characters with a single `-`, and trim leading/trailing dashes. The author and `x-x plans lint` use the same algorithm, so call this command when picking the filename for a new plan rather than slugifying by eye.
+Prints the kebab-case slug for a plan title — lowercase the input, replace every run of non-`[a-z0-9]` characters with a single `-`, and trim leading/trailing dashes. The author and `stax plans lint` use the same algorithm, so call this command when picking the filename for a new plan rather than slugifying by eye.
 
 ```bash
-x-x plans slugify "Add payment retry policy"   # → add-payment-retry-policy
+stax plans slugify "Add payment retry policy"   # → add-payment-retry-policy
 ```
 
 Takes exactly one positional argument; quote titles that contain spaces or shell metacharacters. Exits `2` when the argument is missing, when multiple arguments are passed, or when the title contains no characters that survive slugification. No project-scope marker check — slugify is a pure transform and runs from anywhere.
@@ -217,23 +217,23 @@ Takes exactly one positional argument; quote titles that contain spaces or shell
 ## Examples
 
 ```bash
-x-x                              # opens https://google.com (or stderr diagnostic if headless)
-x-x --no-browser                 # same, but skip the browser launch (silent)
-x-x post-install                 # installer hook: seed ~/.x-x/agents/ silently
-x-x --version                    # prints e.g. v0.1.0 (installer-parseable notice)
+stax                              # opens https://google.com (or stderr diagnostic if headless)
+stax --no-browser                 # same, but skip the browser launch (silent)
+stax post-install                 # installer hook: seed ~/.stax/agents/ silently
+stax --version                    # prints e.g. v0.1.0 (installer-parseable notice)
 
-x-x init                              # huh wizard (TTY) or line prompts (piped); five questions
-x-x init --agents claude --scope user # skip pickers; the three plan-tooling prompts still ask
-x-x init --agents claude,codex --scope project \
+stax init                              # huh wizard (TTY) or line prompts (piped); five questions
+stax init --agents claude --scope user # skip pickers; the three plan-tooling prompts still ask
+stax init --agents claude,codex --scope project \
          --prefix-width 6 --max-plan-lines 50 --review-per plan  # fully non-interactive
 
-x-x skills remove --user               # uninstall what `x-x init` (user scope) wrote
-x-x skills remove --project            # uninstall what `x-x init` (project scope) wrote here
+stax skills remove --user               # uninstall what `stax init` (user scope) wrote
+stax skills remove --project            # uninstall what `stax init` (project scope) wrote here
 
-x-x plans next-prefix                  # prints e.g. 00004
-x-x plans list --status valid          # tab-separated rows of every valid plan
-x-x plans lint                         # lints every .x-plans/*.md against the schema
-x-x plans slugify "My new plan"        # prints e.g. my-new-plan
+stax plans next-prefix                  # prints e.g. 00004
+stax plans list --status valid          # tab-separated rows of every valid plan
+stax plans lint                         # lints every .stax/*.md against the schema
+stax plans slugify "My new plan"        # prints e.g. my-new-plan
 ```
 
 ## Exit codes
@@ -242,11 +242,11 @@ x-x plans slugify "My new plan"        # prints e.g. my-new-plan
 | ---- | ---------------------------------------------------------------- |
 | `0`  | Success.                                                         |
 | `1`  | Runtime error (file I/O, missing source, etc.).                  |
-| `2`  | Bad invocation: unknown subcommand, missing/incompatible flag, or project-scope command run outside an x-x project (no `.x-plans/`). |
+| `2`  | Bad invocation: unknown subcommand, missing/incompatible flag, or project-scope command run outside a stax project (no `.stax/`). |
 
 ## Telemetry
 
-`x-x` fires anonymous usage pings at `https://stackific.com/x-x/t` so the project can see which subcommands are exercised and which agents users install.
+`stax` fires anonymous usage pings at `https://stackific.com/stax/t` so the project can see which subcommands are exercised and which agents users install.
 
 Each ping carries: event name, CLI version, OS, arch, CI flag, and a per-process random session id. It does **not** carry file contents, paths, project identifiers, or any persistent machine id. See `docs/internal/telemetry.md` for the full schema and privacy guarantees.
 
@@ -257,4 +257,4 @@ Opt out by setting **either** of these env vars to any non-empty value:
 | `DO_NOT_TRACK` | [consoledonottrack.com](https://consoledonottrack.com/) — industry-standard. |
 | `DISABLE_TELEMETRY` | Project-specific escape hatch. |
 
-Example: `DO_NOT_TRACK=1 x-x init ...` (or export it from your shell rc to disable for every invocation).
+Example: `DO_NOT_TRACK=1 stax init ...` (or export it from your shell rc to disable for every invocation).

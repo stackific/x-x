@@ -22,9 +22,9 @@ func TestHasDesktopFor(t *testing.T) {
 		wayland string
 		want    bool
 	}{
-		// macOS / Windows are always desktop-capable from x-x's point of
+		// macOS / Windows are always desktop-capable from stax's point of
 		// view — server-only edge cases (Windows Server Core, headless
-		// macOS) are not the audience for an interactive bare-x-x run.
+		// macOS) are not the audience for an interactive bare-stax run.
 		{"darwin always true", "darwin", "", "", true},
 		{"darwin ignores DISPLAY", "darwin", ":0", "", true},
 		{"windows always true", "windows", "", "", true},

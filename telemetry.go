@@ -4,7 +4,7 @@
 package main
 
 // telemetry is the anonymous-usage-ping subsystem. The CLI fires named
-// events at https://stackific.com/x-x/t over HTTP POST with a flat
+// events at https://stackific.com/stax/t over HTTP POST with a flat
 // JSON body (Content-Type: application/json). POST keeps the payload
 // out of intermediary access logs (CDN, proxies) that routinely log
 // full URLs, and lets the wire format grow without URL-encoding
@@ -39,11 +39,11 @@ import (
 )
 
 // telemetryURL is the production endpoint. Overridable at runtime via
-// the X_X_TELEMETRY_ENDPOINT env var so unit tests can point at an
+// the STAX_TELEMETRY_ENDPOINT env var so unit tests can point at an
 // httptest.Server. The backend at this URL is not yet implemented —
 // see docs/internal/telemetry.md for the wire-format contract a
 // future backend must honor.
-const telemetryURL = "https://stackific.com/x-x/t"
+const telemetryURL = "https://stackific.com/stax/t"
 
 // telemetryHTTPTimeout caps each individual ping. Short enough that a
 // hung endpoint never delays a CLI command past noticeable latency,
@@ -63,7 +63,7 @@ const telemetryFlushTimeout = 2 * time.Second
 const (
 	telemetryEnvDoNotTrack = "DO_NOT_TRACK"
 	telemetryEnvDisable    = "DISABLE_TELEMETRY"
-	telemetryEnvEndpoint   = "X_X_TELEMETRY_ENDPOINT"
+	telemetryEnvEndpoint   = "STAX_TELEMETRY_ENDPOINT"
 )
 
 // telemetryClient is the shared HTTP client. Single client per process
@@ -79,7 +79,7 @@ var telemetryWG sync.WaitGroup
 
 // telemetrySessionID is a per-process random hex string set once at
 // package init. Lets the backend group events emitted by one CLI
-// invocation (e.g. `x-x init` firing both `init` and a downstream
+// invocation (e.g. `stax init` firing both `init` and a downstream
 // `update_apply`) without enabling cross-session tracking — a fresh
 // process always gets a fresh id.
 var telemetrySessionID = newTelemetrySessionID()
@@ -205,7 +205,7 @@ func telemetryEnabled() bool {
 }
 
 // telemetryEndpoint returns the URL to ping. Honors
-// X_X_TELEMETRY_ENDPOINT for test overrides; falls back to the
+// STAX_TELEMETRY_ENDPOINT for test overrides; falls back to the
 // production URL otherwise.
 func telemetryEndpoint() string {
 	if v := os.Getenv(telemetryEnvEndpoint); v != "" {

@@ -8,7 +8,7 @@ binary-install / env-var / BYOK-routing / auth-state issue, not a skill
 issue. If only this passes but the scenario tests fail, the failure is
 specific to how Cline CLI handles the inlined SKILL.md prompt.
 
-The check is intentionally minimal: trivial prompt, no `x-x init`, no
+The check is intentionally minimal: trivial prompt, no `stax init`, no
 SKILL inlining. We assert cline emitted at least one NDJSON event and
 exited cleanly.
 """
@@ -32,7 +32,7 @@ def test_cline_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
   # Sandbox $HOME and seed cline auth here too — the smoke test
   # intentionally bypasses the `workspace` fixture (which would also
-  # run `x-x init`, polluting the bare workspace), so the auth seeding
+  # run `stax init`, polluting the bare workspace), so the auth seeding
   # the fixture does for scenario tests has to be repeated inline.
   # Without this, cline falls back to its built-in cline.bot account +
   # qwen3.7-max and the very first call fails with "Unauthorized".

@@ -8,7 +8,7 @@ fails, the failure is a wire-format / version / API-key / install issue
 — not a skill issue. If only this passes but the scenario tests fail,
 the issue is specific to skill behavior under pi.
 
-The check is intentionally minimal: trivial prompt, no `x-x init`, no
+The check is intentionally minimal: trivial prompt, no `stax init`, no
 skill invocation. We only assert the run ended cleanly with exit 0 and
 the wire produced at least one parseable event.
 """

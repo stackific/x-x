@@ -16,12 +16,12 @@ continuation loop), not the OpenCode driver (single-process + stream-json
 in via stdin), with the OpenCode-style event parsing on top.
 
 Slash-command form: skills land in omp as `/skill:<name>` slash commands,
-not `/<name>`. The bundled `x-plan` skill ships in `.claude/skills/x-plan/
-SKILL.md` with `name: x-plan` in its frontmatter; omp's claude.ts
+not `/<name>`. The bundled `scope` skill ships in `.claude/skills/scope/
+SKILL.md` with `name: scope` in its frontmatter; omp's claude.ts
 discovery loads it and `getSkillSlashCommandName(skill)` in
 `packages/coding-agent/src/extensibility/skills.ts` registers it under
-the name `skill:x-plan`. Invoking it from the CLI is therefore
-`omp -p "/skill:x-plan <task>"` — sending `/x-plan ...` would land as
+the name `skill:scope`. Invoking it from the CLI is therefore
+`omp -p "/skill:scope <task>"` — sending `/scope ...` would land as
 literal text and the LLM would hallucinate a missing command.
 
 Flags exercised (all documented in `packages/coding-agent/src/cli/args.ts`
@@ -93,13 +93,13 @@ DEFAULT_MODEL = "deepseek/deepseek-v4-pro"
 #
 # Without it, the first eval runs stranded on:
 #
-#   1. Empty `_data_systems.yaml` — x-plan SKILL.md Appendix C step 4
+#   1. Empty `_data_systems.yaml` — scope SKILL.md Appendix C step 4
 #      says "STOP. Propose a new system to the user. On approval, add
 #      to _data_systems.yaml. Then continue." The propose-and-wait
 #      wording doesn't always surface as `Reply yes` so the auto-yes
 #      regex misses it and omp goes idle.
 #
-#   2. Destructive-overwrite checkpoints in /x-x — when a plan would
+#   2. Destructive-overwrite checkpoints in /ship — when a plan would
 #      replace an existing artifact (e.g. reminders.html on top of
 #      todo.html), the model emits a meta-message ("FYI: I'll review
 #      the whole plan with you at once") and goes idle waiting for
@@ -271,7 +271,7 @@ def drive_skill(
 def _augment_prompt(prompt: str) -> str:
   """Append CI_DIRECTIVE so it lands after omp's slash-command expansion.
 
-  For a slash command like `/skill:x-plan <task>`, omp's
+  For a slash command like `/skill:scope <task>`, omp's
   expandSlashCommand substitutes the SKILL.md body and appends the user
   args via appendInlineArgsFallback when no `$ARGUMENTS` placeholder is
   present. So an argument string of `<task> + CI_DIRECTIVE` lands at the
@@ -280,7 +280,7 @@ def _augment_prompt(prompt: str) -> str:
   For raw prompts (smoke test), the directive just gets appended.
   """
   if prompt.startswith("/"):
-    # Split into head ("/skill:x-plan") and rest ("<task>"); append
+    # Split into head ("/skill:scope") and rest ("<task>"); append
     # CI_DIRECTIVE to the rest so it survives slash expansion.
     space_idx = prompt.find(" ")
     if space_idx == -1:

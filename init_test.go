@@ -105,23 +105,23 @@ func TestPromptScope_Empty(t *testing.T) {
 
 // ---------- project marker check ----------
 
-// seedProject creates a fully initialized x-x project scaffold inside
-// dir (plansDir/, the empty systems registry, and the config lock) so
+// seedProject creates a fully initialized stax project scaffold inside
+// dir (staxDir/, the empty systems registry, and the config lock) so
 // checkProject() returns nil. Used by every test that needs the check
 // to pass without invoking the full runInit flow.
 func seedProject(t *testing.T, dir string) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Join(dir, plansDir), 0o700); err != nil {
-		t.Fatalf("seed plansDir: %v", err)
+	if err := os.MkdirAll(filepath.Join(dir, staxDir), 0o700); err != nil {
+		t.Fatalf("seed staxDir: %v", err)
 	}
-	for _, name := range []string{plansSystemsFile, plansConfigLockFile} {
-		if err := os.WriteFile(filepath.Join(dir, plansDir, name), nil, 0o600); err != nil {
+	for _, name := range []string{staxSystemsFile, staxLockFile} {
+		if err := os.WriteFile(filepath.Join(dir, staxDir, name), nil, 0o600); err != nil {
 			t.Fatalf("seed %s: %v", name, err)
 		}
 	}
 }
 
-// TestCheckProject_FullyInitialized is the happy path: with plansDir AND
+// TestCheckProject_FullyInitialized is the happy path: with staxDir AND
 // both scaffold files present, the check passes and project-level
 // subcommands proceed.
 func TestCheckProject_FullyInitialized(t *testing.T) {
@@ -134,7 +134,7 @@ func TestCheckProject_FullyInitialized(t *testing.T) {
 }
 
 // TestCheckProject_MissingDir pins the failure trigger when the
-// directory itself is absent. The error must mention "not an x-x project"
+// directory itself is absent. The error must mention "not a stax project"
 // (the wording the e2e suite asserts on) and must NOT leak any internal
 // path component — the banner is deliberately path-free so users aren't
 // told to look for files they don't need to know about.
@@ -142,28 +142,28 @@ func TestCheckProject_MissingDir(t *testing.T) {
 	chdir(t, t.TempDir())
 	err := checkProject()
 	if err == nil {
-		t.Fatal("expected error when plansDir is missing")
+		t.Fatal("expected error when staxDir is missing")
 	}
-	if !strings.Contains(err.Error(), "not an x-x project") {
-		t.Fatalf("message = %q, want it to mention 'not an x-x project'", err.Error())
+	if !strings.Contains(err.Error(), "not a stax project") {
+		t.Fatalf("message = %q, want it to mention 'not a stax project'", err.Error())
 	}
-	if strings.Contains(err.Error(), plansDir) {
-		t.Fatalf("message %q leaks internal path %q", err.Error(), plansDir)
+	if strings.Contains(err.Error(), staxDir) {
+		t.Fatalf("message %q leaks internal path %q", err.Error(), staxDir)
 	}
 }
 
 // TestCheckProject_PlanIsFileNotDir hardens the check against the
-// pathological case where `.x-plans` exists but as a regular file — must
+// pathological case where `.stax` exists but as a regular file — must
 // still fail, since `os.ReadDir` on a file would crash the downstream
 // plan-list / next-prefix logic.
 func TestCheckProject_PlanIsFileNotDir(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, plansDir), nil, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, staxDir), nil, 0o600); err != nil {
 		t.Fatalf("seed file: %v", err)
 	}
 	chdir(t, dir)
 	if err := checkProject(); err == nil {
-		t.Fatal("expected error when plansDir is a regular file")
+		t.Fatal("expected error when staxDir is a regular file")
 	}
 }
 
@@ -176,7 +176,7 @@ func TestCheckProject_PlanIsFileNotDir(t *testing.T) {
 func TestCheckProject_SystemsFileNotRequired(t *testing.T) {
 	dir := t.TempDir()
 	seedProject(t, dir)
-	if err := os.Remove(filepath.Join(dir, plansDir, plansSystemsFile)); err != nil {
+	if err := os.Remove(filepath.Join(dir, staxDir, staxSystemsFile)); err != nil {
 		t.Fatalf("remove systems: %v", err)
 	}
 	chdir(t, dir)
@@ -191,7 +191,7 @@ func TestCheckProject_SystemsFileNotRequired(t *testing.T) {
 func TestCheckProject_MissingLockFile(t *testing.T) {
 	dir := t.TempDir()
 	seedProject(t, dir)
-	if err := os.Remove(filepath.Join(dir, plansDir, plansConfigLockFile)); err != nil {
+	if err := os.Remove(filepath.Join(dir, staxDir, staxLockFile)); err != nil {
 		t.Fatalf("remove lock: %v", err)
 	}
 	chdir(t, dir)
@@ -199,8 +199,8 @@ func TestCheckProject_MissingLockFile(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when lock file is missing")
 	}
-	if strings.Contains(err.Error(), plansConfigLockFile) {
-		t.Fatalf("message %q leaks internal path %q", err.Error(), plansConfigLockFile)
+	if strings.Contains(err.Error(), staxLockFile) {
+		t.Fatalf("message %q leaks internal path %q", err.Error(), staxLockFile)
 	}
 }
 
@@ -350,7 +350,7 @@ func TestResolveAgents_FlagBeatsPrompt(t *testing.T) {
 
 // TestResolveAgents_EmptyFlagPromptsAndDefaults covers the inverse: no
 // flag → fall into the prompt → empty input → all agents. End-to-end
-// form of the "user runs `x-x init --scope project` piping nothing" path.
+// form of the "user runs `stax init --scope project` piping nothing" path.
 func TestResolveAgents_EmptyFlagPromptsAndDefaults(t *testing.T) {
 	// Empty flag → prompt path → empty input → all agents.
 	got, err := resolveAgents(nil, strings.NewReader(""))
@@ -773,7 +773,7 @@ func TestListSkills_EmptyDir(t *testing.T) {
 // TestWriteIfAbsent is the "create exactly once" primitive: second call
 // MUST NOT clobber. This is what makes the plan scaffold's
 // `_data_systems.yaml` and `_config.lock` honor user edits across
-// re-runs of `x-x init`.
+// re-runs of `stax init`.
 func TestWriteIfAbsent(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "f.txt")
@@ -829,10 +829,10 @@ func TestWritePlansScaffold(t *testing.T) {
 	if err := writePlansScaffold(dir, defaultInitConfig()); err != nil {
 		t.Fatalf("writePlansScaffold: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, plansDir, plansSystemsFile)); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, staxDir, staxSystemsFile)); err != nil {
 		t.Fatalf("missing systems file: %v", err)
 	}
-	lockPath := filepath.Join(dir, plansDir, plansConfigLockFile)
+	lockPath := filepath.Join(dir, staxDir, staxLockFile)
 	body, err := os.ReadFile(lockPath)
 	if err != nil {
 		t.Fatalf("read lock: %v", err)
@@ -864,7 +864,7 @@ func TestWritePlansScaffold_HonorsConfig(t *testing.T) {
 	if err := writePlansScaffold(dir, cfg); err != nil {
 		t.Fatalf("writePlansScaffold: %v", err)
 	}
-	body, err := os.ReadFile(filepath.Join(dir, plansDir, plansConfigLockFile))
+	body, err := os.ReadFile(filepath.Join(dir, staxDir, staxLockFile))
 	if err != nil {
 		t.Fatalf("read lock: %v", err)
 	}
@@ -883,7 +883,7 @@ func TestWritePlansScaffold_HonorsConfig(t *testing.T) {
 
 // TestWritePlansScaffold_Idempotent is the lock-file semantics check:
 // once a user has pinned values (Cargo.lock / package-lock.json
-// analog), a subsequent `x-x init` must NOT refresh them. This is what
+// analog), a subsequent `stax init` must NOT refresh them. This is what
 // keeps long-lived projects on their original prefix width / line caps.
 func TestWritePlansScaffold_Idempotent(t *testing.T) {
 	dir := t.TempDir()
@@ -891,7 +891,7 @@ func TestWritePlansScaffold_Idempotent(t *testing.T) {
 		t.Fatalf("first: %v", err)
 	}
 	// Mutate the lock so we can verify re-run does not overwrite it.
-	lockPath := filepath.Join(dir, plansDir, plansConfigLockFile)
+	lockPath := filepath.Join(dir, staxDir, staxLockFile)
 	if err := os.WriteFile(lockPath, []byte("USER\n"), 0o600); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -924,7 +924,7 @@ func TestInstallSkill_Copy(t *testing.T) {
 
 // TestInstallSkill_Symlink is the user-scope POSIX strategy:
 // useSymlink=true produces a symbolic link rather than a copy, so the
-// `~/.x-x/agents/` refresh flow propagates to every project at once.
+// `~/.stax/agents/` refresh flow propagates to every project at once.
 // Skipped on Windows where os.Symlink requires Developer Mode.
 func TestInstallSkill_Symlink(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -946,7 +946,7 @@ func TestInstallSkill_Symlink(t *testing.T) {
 }
 
 // TestInstallSkill_OverwritesExistingDir pins the "RemoveAll + recreate"
-// semantics introduced after we ripped out the .x-x-managed marker:
+// semantics introduced after we ripped out the .stax-managed marker:
 // re-running init must replace any stale skill content cleanly without
 // asking permission. Stale files MUST NOT survive.
 func TestInstallSkill_OverwritesExistingDir(t *testing.T) {
@@ -1257,7 +1257,7 @@ func TestMergeJSON_TypeMismatchExistingWins(t *testing.T) {
 // TestMergeJSON_Idempotent ensures running the merge twice over the
 // same bundled value is a no-op: the second pass adds nothing because
 // every bundled entry already deep-equals an existing one. This is the
-// invariant that makes back-to-back `x-x init` runs safe.
+// invariant that makes back-to-back `stax init` runs safe.
 func TestMergeJSON_Idempotent(t *testing.T) {
 	existing := map[string]any{"hooks": map[string]any{"Stop": []any{"x"}}}
 	bundled := map[string]any{"hooks": map[string]any{"Stop": []any{"x"}}}
@@ -1282,10 +1282,10 @@ func TestMergeJSONFile_RealBundle_AdditiveAndIdempotent(t *testing.T) {
   "fastMode": true,
   "hooks": {
     "PostToolUse": [
-      {"matcher": "Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": "x-x plans lint"}]}
+      {"matcher": "Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": "stax plans lint"}]}
     ],
     "Stop": [
-      {"matcher": "", "hooks": [{"type": "command", "command": "x-x plans lint"}]}
+      {"matcher": "", "hooks": [{"type": "command", "command": "stax plans lint"}]}
     ]
   }
 }`)
@@ -1384,7 +1384,7 @@ func TestInstallAgentConfig_NestedFile(t *testing.T) {
 
 // TestRunInit_ProjectScope_EndToEnd exercises the full project-scope
 // init from a fresh empty dir: every bundled skill lands under each
-// agent target's skills subdir, plus the .x-plans/ scaffold is seeded.
+// agent target's skills subdir, plus the .stax/ scaffold is seeded.
 // This is the broadest integration test in the unit suite.
 func TestRunInit_ProjectScope_EndToEnd(t *testing.T) {
 	pinHome(t)
@@ -1407,10 +1407,10 @@ func TestRunInit_ProjectScope_EndToEnd(t *testing.T) {
 		}
 	}
 	// Plan scaffold seeded.
-	if _, err := os.Stat(filepath.Join(projectDir, plansDir, plansConfigLockFile)); err != nil {
+	if _, err := os.Stat(filepath.Join(projectDir, staxDir, staxLockFile)); err != nil {
 		t.Fatalf("missing lock: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(projectDir, plansDir, plansSystemsFile)); err != nil {
+	if _, err := os.Stat(filepath.Join(projectDir, staxDir, staxSystemsFile)); err != nil {
 		t.Fatalf("missing systems file: %v", err)
 	}
 }
@@ -1479,18 +1479,18 @@ func TestRunInit_UserScope_EndToEnd(t *testing.T) {
 		}
 	}
 
-	// User-scope MUST also drop the .x-plans/ scaffold into cwd. Scope
+	// User-scope MUST also drop the .stax/ scaffold into cwd. Scope
 	// only decides where SKILLS land (project tree vs $HOME); the project
-	// check keyed on `<cwd>/.x-plans/_config.lock` is what makes cwd usable
-	// with `/x-plan`, `/x-x`, and the `x-x plans *` CLI subcommands. A
+	// check keyed on `<cwd>/.stax/_config.lock` is what makes cwd usable
+	// with `/scope`, `/ship`, and the `stax plans *` CLI subcommands. A
 	// user-scope install that left cwd un-scaffolded produced skills with
 	// nowhere to anchor plans — every subsequent command tripped the
-	// `not an x-x project` check.
-	lockPath := filepath.Join(cwd, plansDir, plansConfigLockFile)
+	// `not a stax project` check.
+	lockPath := filepath.Join(cwd, staxDir, staxLockFile)
 	if _, err := os.Stat(lockPath); err != nil {
 		t.Fatalf("user-scope init did not seed %s in cwd: %v", lockPath, err)
 	}
-	systemsPath := filepath.Join(cwd, plansDir, plansSystemsFile)
+	systemsPath := filepath.Join(cwd, staxDir, staxSystemsFile)
 	if _, err := os.Stat(systemsPath); err != nil {
 		t.Fatalf("user-scope init did not seed %s in cwd: %v", systemsPath, err)
 	}
@@ -1527,7 +1527,7 @@ func TestRunInit_InteractivePrompt(t *testing.T) {
 	t.Cleanup(func() { os.Stdin = origStdin })
 
 	runInit(nil)
-	if _, err := os.Stat(filepath.Join(projectDir, plansDir, plansConfigLockFile)); err != nil {
+	if _, err := os.Stat(filepath.Join(projectDir, staxDir, staxLockFile)); err != nil {
 		t.Fatalf("interactive init didn't seed plan scaffold: %v", err)
 	}
 }
@@ -1559,7 +1559,7 @@ func TestRunInit_AllFlags(t *testing.T) {
 		"--review-per", reviewPerPlan,
 	})
 
-	body, err := os.ReadFile(filepath.Join(projectDir, plansDir, plansConfigLockFile))
+	body, err := os.ReadFile(filepath.Join(projectDir, staxDir, staxLockFile))
 	if err != nil {
 		t.Fatalf("read lock: %v", err)
 	}

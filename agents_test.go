@@ -25,7 +25,7 @@ func pinHome(t *testing.T) string {
 }
 
 // TestAgentsTarget confirms agentsTarget composes the path from $HOME +
-// xxHomeDir + agentsEmbedRoot rather than hard-coding any segment. A
+// staxDir + agentsEmbedRoot rather than hard-coding any segment. A
 // rename of any of those three constants must show up here.
 func TestAgentsTarget(t *testing.T) {
 	home := pinHome(t)
@@ -33,14 +33,14 @@ func TestAgentsTarget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("agentsTarget: %v", err)
 	}
-	want := filepath.Join(home, xxHomeDir, agentsEmbedRoot)
+	want := filepath.Join(home, staxDir, agentsEmbedRoot)
 	if got != want {
 		t.Fatalf("agentsTarget = %q, want %q", got, want)
 	}
 }
 
 // TestEnsureAgentsDir_Materializes covers the cold-start lazy bootstrap:
-// when ~/.x-x/agents/ doesn't exist, the first call must create it and
+// when ~/.stax/agents/ doesn't exist, the first call must create it and
 // populate the embedded skill tree. Checks at least one known skill dir
 // lands so an empty-embed regression would fail.
 func TestEnsureAgentsDir_Materializes(t *testing.T) {
@@ -48,27 +48,27 @@ func TestEnsureAgentsDir_Materializes(t *testing.T) {
 	if err := ensureBundledAgents(); err != nil {
 		t.Fatalf("ensureBundledAgents: %v", err)
 	}
-	target := filepath.Join(home, xxHomeDir, agentsEmbedRoot)
+	target := filepath.Join(home, staxDir, agentsEmbedRoot)
 	if _, err := os.Stat(target); err != nil {
 		t.Fatalf("expected %s to exist: %v", target, err)
 	}
 	// Sanity-check one bundled skill landed.
-	if _, err := os.Stat(filepath.Join(target, skillsSubdir, skillXXDir)); err != nil {
-		t.Fatalf("expected bundled skill %s: %v", skillXXDir, err)
+	if _, err := os.Stat(filepath.Join(target, skillsSubdir, skillShipDir)); err != nil {
+		t.Fatalf("expected bundled skill %s: %v", skillShipDir, err)
 	}
 }
 
 // TestEnsureAgentsDir_Idempotent verifies the second-call no-op contract:
-// once ~/.x-x/agents/ exists, ensureBundledAgents must NOT re-materialize
+// once ~/.stax/agents/ exists, ensureBundledAgents must NOT re-materialize
 // (we plant a sentinel and check it survives). This is what lets every
-// bare `x-x` invocation be cheap.
+// bare `stax` invocation be cheap.
 func TestEnsureAgentsDir_Idempotent(t *testing.T) {
 	home := pinHome(t)
 	if err := ensureBundledAgents(); err != nil {
 		t.Fatalf("first ensureBundledAgents: %v", err)
 	}
 	// Drop a sentinel file to detect an unwanted re-materialize.
-	sentinel := filepath.Join(home, xxHomeDir, agentsEmbedRoot, "sentinel")
+	sentinel := filepath.Join(home, staxDir, agentsEmbedRoot, "sentinel")
 	if err := os.WriteFile(sentinel, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write sentinel: %v", err)
 	}
@@ -81,15 +81,15 @@ func TestEnsureAgentsDir_Idempotent(t *testing.T) {
 }
 
 // TestMaterializeAgents_Force_Clobbers pins the `overwrite=true` semantics
-// used by `x-x bootstrap` and the 24h refresh path: any stale content
-// under ~/.x-x/agents/ must be wiped before the embed is rewritten, so
+// used by `stax bootstrap` and the 24h refresh path: any stale content
+// under ~/.stax/agents/ must be wiped before the embed is rewritten, so
 // the result is byte-identical to the binary's bundle.
 func TestMaterializeAgents_Force_Clobbers(t *testing.T) {
 	home := pinHome(t)
 	if err := writeBundledAgents(false); err != nil {
 		t.Fatalf("writeBundledAgents(false): %v", err)
 	}
-	sentinel := filepath.Join(home, xxHomeDir, agentsEmbedRoot, "sentinel")
+	sentinel := filepath.Join(home, staxDir, agentsEmbedRoot, "sentinel")
 	if err := os.WriteFile(sentinel, []byte("x"), 0o600); err != nil {
 		t.Fatalf("write sentinel: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestMaterializeAgents_SkipsEmbedReadme(t *testing.T) {
 		t.Fatalf("writeBundledAgents: %v", err)
 	}
 	// skipFromEmbed lists README.md at the embed root.
-	stray := filepath.Join(home, xxHomeDir, agentsEmbedRoot, "README.md")
+	stray := filepath.Join(home, staxDir, agentsEmbedRoot, "README.md")
 	if _, err := os.Stat(stray); !os.IsNotExist(err) {
 		t.Fatalf("expected agents/README.md to be skipped, got err=%v", err)
 	}
@@ -126,7 +126,7 @@ func TestMaterializeAgents_PopulatesAllBundledSkills(t *testing.T) {
 		t.Fatalf("writeBundledAgents: %v", err)
 	}
 	for _, skill := range ownedSkills {
-		p := filepath.Join(home, xxHomeDir, agentsEmbedRoot, skillsSubdir, skill)
+		p := filepath.Join(home, staxDir, agentsEmbedRoot, skillsSubdir, skill)
 		info, err := os.Stat(p)
 		if err != nil {
 			t.Fatalf("missing bundled skill %s: %v", skill, err)
@@ -145,7 +145,7 @@ func TestCopyEmbeddedFile_CreatesParentDirs(t *testing.T) {
 	home := pinHome(t)
 	// Reuse a real embedded file path. embed.FS uses forward slashes
 	// regardless of OS, so path.Join (not filepath.Join) is correct here.
-	srcEmbed := path.Join(agentsEmbedRoot, skillsSubdir, skillXXDir, skillManifestFile)
+	srcEmbed := path.Join(agentsEmbedRoot, skillsSubdir, skillShipDir, skillManifestFile)
 	if _, err := embeddedAgents.Open(srcEmbed); err != nil {
 		t.Skipf("embed missing %s (no bundled manifest to round-trip): %v", srcEmbed, err)
 	}

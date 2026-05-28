@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Stackific Inc.
-"""End-to-end: drive Copilot through two /x-plan calls that exercise
+"""End-to-end: drive Copilot through two /scope calls that exercise
 the extends mechanic.
 
 Mirrors test_claude_plan_extends.py — same TASK strings, same plan-file
-assertions. Per agents/skills/x-plan/SKILL.md step 2a + step 3, a plan
+assertions. Per agents/skills/scope/SKILL.md step 2a + step 3, a plan
 that extends a predecessor must:
   - write `extends: [<predecessor-slug>]` into the new plan's frontmatter
   - write `extended_by: [<new-slug>]` into the predecessor's frontmatter
@@ -33,39 +33,39 @@ def test_copilot_plan_extends(copilot_workspace: Path, tmp_path: Path) -> None:
   # --- Plan A: the base todo app ---
   a_run = drive_skill(
     copilot_workspace,
-    f"/x-plan {BASE_TASK}",
-    transcript_path=transcripts / "x-plan-a.txt",
+    f"/scope {BASE_TASK}",
+    transcript_path=transcripts / "scope-a.txt",
   )
   assert a_run.exit_code == 0, (
-    f"copilot exited {a_run.exit_code} during /x-plan A; "
+    f"copilot exited {a_run.exit_code} during /scope A; "
     f"timed_out={a_run.timed_out}; stderr:\n{a_run.stderr_tail}"
   )
   assert a_run.completed, (
-    f"/x-plan A did not complete cleanly: lines={a_run.events_received} "
+    f"/scope A did not complete cleanly: lines={a_run.events_received} "
     f"timed_out={a_run.timed_out}"
   )
   assert a_run.turns < DEFAULT_MAX_TURNS, (
-    f"/x-plan A hit the max_turns cap ({DEFAULT_MAX_TURNS}) — gate kept "
-    f"firing. Inspect {transcripts / 'x-plan-a.txt'}."
+    f"/scope A hit the max_turns cap ({DEFAULT_MAX_TURNS}) — gate kept "
+    f"firing. Inspect {transcripts / 'scope-a.txt'}."
   )
 
   # --- Plan B: extension of plan A ---
   b_run = drive_skill(
     copilot_workspace,
-    f"/x-plan {EXTENSION_TASK}",
-    transcript_path=transcripts / "x-plan-b.txt",
+    f"/scope {EXTENSION_TASK}",
+    transcript_path=transcripts / "scope-b.txt",
   )
   assert b_run.exit_code == 0, (
-    f"copilot exited {b_run.exit_code} during /x-plan B; "
+    f"copilot exited {b_run.exit_code} during /scope B; "
     f"timed_out={b_run.timed_out}; stderr:\n{b_run.stderr_tail}"
   )
   assert b_run.completed, (
-    f"/x-plan B did not complete cleanly: lines={b_run.events_received} "
+    f"/scope B did not complete cleanly: lines={b_run.events_received} "
     f"timed_out={b_run.timed_out}"
   )
   assert b_run.turns < DEFAULT_MAX_TURNS, (
-    f"/x-plan B hit the max_turns cap ({DEFAULT_MAX_TURNS}) — gate kept "
-    f"firing. Inspect {transcripts / 'x-plan-b.txt'}."
+    f"/scope B hit the max_turns cap ({DEFAULT_MAX_TURNS}) — gate kept "
+    f"firing. Inspect {transcripts / 'scope-b.txt'}."
   )
 
   # --- Verify plan mechanics ---

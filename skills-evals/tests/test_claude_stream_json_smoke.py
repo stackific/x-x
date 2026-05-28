@@ -7,7 +7,7 @@ fails, the failure is a protocol-format / version / API-key issue — not a
 skill issue. If only this test passes but test_claude_todo fails, the
 issue is specific to how the skills behave under stream-json input.
 
-The check is intentionally minimal: trivial prompt, no `x-x init`, no
+The check is intentionally minimal: trivial prompt, no `stax init`, no
 skill invocation. We only assert the agent emitted at least one text
 block, the run ended cleanly, and the process exited 0.
 """

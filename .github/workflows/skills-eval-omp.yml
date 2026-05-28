@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 60
 
     env:
-      X_X_AGENT_KEY: omp
+      STAX_AGENT_KEY: omp
 
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 
@@ -36,10 +36,10 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: install x-x to PATH
+      - name: install stax to PATH
         run: |
           go install .
-          x-x --version
+          stax --version
 
       # omp ships an autodetecting installer (Bun-based source path or
       # standalone binary) at omp.sh/install; binary lives at ~/.omp/bin

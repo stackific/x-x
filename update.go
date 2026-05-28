@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// updateConfig mirrors the on-disk structure of ~/.x-x/.config.json. The
+// updateConfig mirrors the on-disk structure of ~/.stax/.config.json. The
 // installer writes this file with the freshly-installed version and the
 // current epoch; the CLI reads and updates it from then on. The struct
 // tags lock the JSON key names so future field additions can't accidentally
@@ -33,7 +33,7 @@ func (c updateConfig) lastCheckedTime() time.Time {
 	return time.Unix(c.LastChecked, 0)
 }
 
-// configPath returns the absolute path to ~/.x-x/.config.json. Centralized
+// configPath returns the absolute path to ~/.stax/.config.json. Centralized
 // so installer and CLI agree, and so a future relocation only touches one
 // function. Mirrors agentsTarget's structure.
 func configPath() (string, error) {
@@ -44,7 +44,7 @@ func configPath() (string, error) {
 		// "no config available" and silently skip the update check.
 		return "", err
 	}
-	return filepath.Join(home, xxHomeDir, xxConfigFile), nil
+	return filepath.Join(home, staxDir, staxConfigFile), nil
 }
 
 // loadUpdateConfig reads .config.json off disk. Any error (missing file,
@@ -83,7 +83,7 @@ func saveUpdateConfig(path string, c updateConfig) error {
 	return os.WriteFile(path, body, 0o600)
 }
 
-// maybeNotifyUpdate consults ~/.x-x/.config.json and — at most once per 24
+// maybeNotifyUpdate consults ~/.stax/.config.json and — at most once per 24
 // hours — asks GitHub for the latest release. If a newer tag is available
 // it prints a prominent upgrade nudge to stderr.
 //
@@ -116,12 +116,12 @@ func maybeNotifyUpdate() {
 		return
 	}
 
-	// 24h cadence reached → also rewrite $HOME/<xxHomeDir>/agents from the
+	// 24h cadence reached → also rewrite $HOME/<staxDir>/agents from the
 	// binary's embed. This keeps the global skill library in lockstep with
 	// whatever binary version is currently installed: if the user upgraded
 	// since the last check, the new embed lands here. Scope is strictly
 	// the global tree — project-level skills under .claude/, .agents/,
-	// .codex/ are owned by `x-x init` and never touched here. Failure is
+	// .codex/ are owned by `stax init` and never touched here. Failure is
 	// logged but never fatal; the update check is opportunistic.
 	refreshErr := writeBundledAgents(true)
 	if refreshErr != nil {
@@ -188,7 +188,7 @@ func maybeNotifyUpdate() {
 	// makes the block stand out from preceding command output.
 	fmt.Fprintln(os.Stderr)
 	fmt.Fprintln(os.Stderr, "=== UPDATE AVAILABLE ===")
-	fmt.Fprintf(os.Stderr, "A new x-x version is available: %s (you have %s)\n", latest, c.Version)
+	fmt.Fprintf(os.Stderr, "A new stax version is available: %s (you have %s)\n", latest, c.Version)
 	fmt.Fprintln(os.Stderr, "Strongly recommended: re-run the installer to update.")
 	// Both install URLs are surfaced — the user picks the one matching
 	// their shell. The URLs come from constants.go so they stay in lockstep

@@ -1,21 +1,21 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Stackific Inc.
-"""End-to-end: drive Cline through /x-plan + /x-x for a TODO app task.
+"""End-to-end: drive Cline through /scope + /ship for a TODO app task.
 
 Mirror of test_claude_todo.py, adapted for Cline's headless model.
 Cline's `--yolo` CLI is a one-shot subprocess that auto-approves every
 tool call and does NOT resolve slash commands from disk in headless
 mode, so the driver inlines SKILL.md off `<workspace>/.cline/skills/`
-into the prompt. `x-x init --agents cline` (a first-class entry in
+into the prompt. `stax init --agents cline` (a first-class entry in
 constants.go agentTargets) is what placed those SKILL.md files where
 the driver reads them, per docs.cline.bot/customization/overview.
 
 Flow per the user's spec:
-  1. Invoke the x-plan skill with the TODO task. The CI directive
+  1. Invoke the scope skill with the TODO task. The CI directive
      baked into the inlined prompt instructs the model to auto-approve
      every gate the SKILL TEMPLATE describes.
-  2. PlanJudge scores the plan file that landed under .x-plans/.
-  3. Invoke the x-x skill. Same auto-approve directive.
+  2. PlanJudge scores the plan file that landed under .stax/.
+  3. Invoke the stax skill. Same auto-approve directive.
   4. ArtifactJudge scores the files the executor produced.
 
 Both judges are DeepEval GEval metrics backed by DeepSeek. A test
@@ -36,25 +36,25 @@ TASK = "build me a single HTML and localStorage-based todo list app"
 def test_cline_builds_todo_app(workspace: Path, tmp_path: Path) -> None:
   transcripts = tmp_path / "transcripts"
 
-  # --- /x-plan ---
+  # --- /scope ---
   plan_run = drive_skill(
     workspace,
-    "x-plan",
+    "scope",
     TASK,
-    transcript_path=transcripts / "x-plan.jsonl",
+    transcript_path=transcripts / "scope.jsonl",
   )
   assert plan_run.exit_code == 0, (
-    f"cline exited {plan_run.exit_code} during /x-plan; "
+    f"cline exited {plan_run.exit_code} during /scope; "
     f"timed_out={plan_run.timed_out}; stderr tail:\n{plan_run.stderr_tail}"
   )
   assert plan_run.completed, (
-    f"/x-plan did not complete cleanly: turns={plan_run.turns} "
+    f"/scope did not complete cleanly: turns={plan_run.turns} "
     f"yes_replies={plan_run.yes_replies} timed_out={plan_run.timed_out}"
   )
   assert plan_run.turns < DEFAULT_MAX_TURNS, (
-    f"/x-plan hit the max_turns cap ({DEFAULT_MAX_TURNS}) — the "
+    f"/scope hit the max_turns cap ({DEFAULT_MAX_TURNS}) — the "
     f"planner kept asking for confirmation past what we expected. "
-    f"Inspect {transcripts / 'x-plan.jsonl'} to see what it was asking."
+    f"Inspect {transcripts / 'scope.jsonl'} to see what it was asking."
   )
 
   plan_judgment = PlanJudge().evaluate(TASK, workspace)
@@ -64,22 +64,22 @@ def test_cline_builds_todo_app(workspace: Path, tmp_path: Path) -> None:
     f"reason={plan_judgment.reason}"
   )
 
-  # --- /x-x ---
+  # --- /ship ---
   exec_run = drive_skill(
     workspace,
-    "x-x",
+    "ship",
     "",
-    transcript_path=transcripts / "x-x.jsonl",
+    transcript_path=transcripts / "stax.jsonl",
   )
   assert exec_run.exit_code == 0, (
-    f"cline exited {exec_run.exit_code} during /x-x; "
+    f"cline exited {exec_run.exit_code} during /ship; "
     f"timed_out={exec_run.timed_out}; stderr tail:\n{exec_run.stderr_tail}"
   )
   assert exec_run.completed, (
-    f"/x-x did not complete cleanly: turns={exec_run.turns} "
+    f"/ship did not complete cleanly: turns={exec_run.turns} "
     f"yes_replies={exec_run.yes_replies} timed_out={exec_run.timed_out}"
   )
-  # No turn-cap assertion for /x-x: legitimate execution under
+  # No turn-cap assertion for /ship: legitimate execution under
   # --review-per plan can legitimately use more turns than the cap; the
   # supersede flip is asserted directly in test_cline_reminders... via
   # plan-frontmatter inspection. Downstream exit_code/completed/judge

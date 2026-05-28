@@ -2,16 +2,16 @@
 # Copyright 2026 Stackific Inc.
 """Read an eval workspace and render it as plain text for an LLM judge.
 
-The workspace is whatever directory `x-x init` was run in followed by a
+The workspace is whatever directory `stax init` was run in followed by a
 planner/executor loop. Two categories of paths get excluded from what the
 judge sees:
 
-  - Scaffold dirs (`.x-plans/`, `.claude/`, …) — installed by `x-x init`
+  - Scaffold dirs (`.stax/`, `.claude/`, …) — installed by `stax init`
     before the agent runs; not the agent's deliverable.
   - Noise dirs (`node_modules/`, `.venv/`, `__pycache__/`, build outputs,
     …) — the agent may legitimately create these as a side effect (e.g.
     running `npm install jsdom` to smoke-test the HTML it just wrote per
-    /x-x's verify-before-flip rule). Vendored deps and build caches
+    /ship's verify-before-flip rule). Vendored deps and build caches
     aren't the agent's deliverable either, and they routinely blow the
     judge's context budget (one prior CI run dumped 11 MB of
     node_modules and got rejected with a 400 from DeepSeek's 1M-token cap).
@@ -28,8 +28,8 @@ from pathlib import Path
 
 import yaml
 
-# Installed by `x-x init` before the planner/executor runs.
-SCAFFOLD_DIRS = {".x-plans", ".claude", ".agents", ".git", ".codex", ".x-x"}
+# Installed by `stax init` before the planner/executor runs.
+SCAFFOLD_DIRS = {".stax", ".claude", ".agents", ".git", ".codex"}
 
 # Dirs the agent may create as a side effect (vendored deps, virtualenvs,
 # build outputs, caches). Not scaffold, but not the deliverable either.
@@ -66,14 +66,14 @@ def _is_excluded(rel: Path) -> bool:
 
 
 def collect_plan_files(workspace: Path) -> str:
-  """Concatenated text of every <prefix>-<slug>.md under .x-plans/.
+  """Concatenated text of every <prefix>-<slug>.md under .stax/.
 
   Underscore-prefixed registry files (_data_systems.yaml, _config.lock)
   are skipped — they're scaffold, not plans.
   """
-  plans_dir = workspace / ".x-plans"
+  plans_dir = workspace / ".stax"
   if not plans_dir.is_dir():
-    return "(no .x-plans/ directory)"
+    return "(no .stax/ directory)"
   chunks = []
   for p in sorted(plans_dir.glob("*.md")):
     if p.name.startswith("_"):
@@ -115,7 +115,7 @@ def collect_produced_files(workspace: Path) -> str:
 def collect_tree(workspace: Path) -> str:
   """One line per file/dir; excluded top-level dirs are collapsed.
 
-  `.x-plans/` is the one scaffold dir whose contents stay visible — the
+  `.stax/` is the one scaffold dir whose contents stay visible — the
   judge needs to see plan filenames in the tree. Everything else in
   SCAFFOLD_DIRS or NOISE_DIRS is shown as a single collapsed line at
   its top level; nested matches (e.g. `pkg/node_modules/foo`) are
@@ -131,7 +131,7 @@ def collect_tree(workspace: Path) -> str:
     if not rel.parts:
       continue
     top = rel.parts[0]
-    if top in EXCLUDED_DIRS and top != ".x-plans":
+    if top in EXCLUDED_DIRS and top != ".stax":
       if top in seen_collapsed:
         continue
       seen_collapsed.add(top)
@@ -173,14 +173,14 @@ class ParsedPlan:
 
 
 def load_all_plans(workspace: Path) -> list[ParsedPlan]:
-  """Parse every <prefix>-<slug>.md under .x-plans/, sorted by filename.
+  """Parse every <prefix>-<slug>.md under .stax/, sorted by filename.
 
   Underscore-prefixed registry files (_data_systems.yaml, _config.lock)
   are skipped — they're scaffold, not plans. A file that doesn't open
   with a `---` frontmatter block is skipped; the caller can assert
   `len(plans) == N` to catch a malformed result.
   """
-  plans_dir = workspace / ".x-plans"
+  plans_dir = workspace / ".stax"
   if not plans_dir.is_dir():
     return []
   out: list[ParsedPlan] = []

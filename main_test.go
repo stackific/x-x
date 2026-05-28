@@ -58,7 +58,7 @@ func TestPrintNotice_ShapeIsInstallerParsable(t *testing.T) {
 			tokens[len(tokens)-1], Version)
 	}
 	for _, want := range []string{
-		"x-x by Stackific",
+		"Stax by Stackific",
 		"Copyright 2026 Stackific Inc.",
 		"SPDX-License-Identifier: Apache-2.0",
 	} {
@@ -70,25 +70,25 @@ func TestPrintNotice_ShapeIsInstallerParsable(t *testing.T) {
 
 // TestPrintAbout_IncludesUsage guards the user-facing command catalog —
 // every subcommand surface advertised in docs/public/reference.md must also
-// appear in `x-x -h` output. Adding a new subcommand without listing it
+// appear in `stax -h` output. Adding a new subcommand without listing it
 // here will fail the test, prompting a usage-block update.
 func TestPrintAbout_IncludesUsage(t *testing.T) {
 	out := captureStdout(t, printAbout)
 	for _, want := range []string{
 		"Usage:",
-		// Bare x-x opens https://google.com — the URL itself must appear
-		// so a user reading `x-x -h` sees what will happen, not just
+		// Bare stax opens https://google.com — the URL itself must appear
+		// so a user reading `stax -h` sees what will happen, not just
 		// "open a browser".
 		"https://google.com",
 		"--no-browser",
 		"post-install",
-		"x-x init",
-		"x-x skills remove --user",
-		"x-x skills remove --project",
-		"x-x plans next-prefix",
-		"x-x plans list",
-		"x-x plans lint",
-		"x-x --version",
+		"stax init",
+		"stax skills remove --user",
+		"stax skills remove --project",
+		"stax plans next-prefix",
+		"stax plans list",
+		"stax plans lint",
+		"stax --version",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("about missing %q in %q", want, out)

@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Stackific Inc.
-"""End-to-end: drive Cline through two /x-plan calls that exercise
+"""End-to-end: drive Cline through two /scope calls that exercise
 the extends mechanic.
 
 Mirrors test_claude_plan_extends.py — same TASK strings, same plan-file
-assertions. Per agents/skills/x-plan/SKILL.md step 2a + step 3, a plan
+assertions. Per agents/skills/scope/SKILL.md step 2a + step 3, a plan
 that extends a predecessor must:
   - write `extends: [<predecessor-slug>]` into the new plan's frontmatter
   - write `extended_by: [<new-slug>]` into the predecessor's frontmatter
@@ -33,41 +33,41 @@ def test_cline_plan_extends(workspace: Path, tmp_path: Path) -> None:
   # --- Plan A: the base todo app ---
   a_run = drive_skill(
     workspace,
-    "x-plan",
+    "scope",
     BASE_TASK,
-    transcript_path=transcripts / "x-plan-a.jsonl",
+    transcript_path=transcripts / "scope-a.jsonl",
   )
   assert a_run.exit_code == 0, (
-    f"cline exited {a_run.exit_code} during /x-plan A; "
+    f"cline exited {a_run.exit_code} during /scope A; "
     f"timed_out={a_run.timed_out}; stderr:\n{a_run.stderr_tail}"
   )
   assert a_run.completed, (
-    f"/x-plan A did not complete cleanly: turns={a_run.turns} "
+    f"/scope A did not complete cleanly: turns={a_run.turns} "
     f"timed_out={a_run.timed_out}"
   )
   assert a_run.turns < DEFAULT_MAX_TURNS, (
-    f"/x-plan A hit the max_turns cap ({DEFAULT_MAX_TURNS}) — gate kept "
-    f"firing. Inspect {transcripts / 'x-plan-a.jsonl'}."
+    f"/scope A hit the max_turns cap ({DEFAULT_MAX_TURNS}) — gate kept "
+    f"firing. Inspect {transcripts / 'scope-a.jsonl'}."
   )
 
   # --- Plan B: extension of plan A ---
   b_run = drive_skill(
     workspace,
-    "x-plan",
+    "scope",
     EXTENSION_TASK,
-    transcript_path=transcripts / "x-plan-b.jsonl",
+    transcript_path=transcripts / "scope-b.jsonl",
   )
   assert b_run.exit_code == 0, (
-    f"cline exited {b_run.exit_code} during /x-plan B; "
+    f"cline exited {b_run.exit_code} during /scope B; "
     f"timed_out={b_run.timed_out}; stderr:\n{b_run.stderr_tail}"
   )
   assert b_run.completed, (
-    f"/x-plan B did not complete cleanly: turns={b_run.turns} "
+    f"/scope B did not complete cleanly: turns={b_run.turns} "
     f"timed_out={b_run.timed_out}"
   )
   assert b_run.turns < DEFAULT_MAX_TURNS, (
-    f"/x-plan B hit the max_turns cap ({DEFAULT_MAX_TURNS}) — gate kept "
-    f"firing. Inspect {transcripts / 'x-plan-b.jsonl'}."
+    f"/scope B hit the max_turns cap ({DEFAULT_MAX_TURNS}) — gate kept "
+    f"firing. Inspect {transcripts / 'scope-b.jsonl'}."
   )
 
   # --- Verify plan mechanics ---

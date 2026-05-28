@@ -33,13 +33,13 @@ const (
 	scopeUser    initScope = 2
 )
 
-// runInit is the entry point for `x-x init`. The flow:
+// runInit is the entry point for `stax init`. The flow:
 //  1. Print intro line.
 //  2. Prompt for scope (project vs user).
-//  3. Ensure ~/.x-x/agents/ is materialized (lazy bootstrap).
-//  4. Enumerate skills under ~/.x-x/agents/skills/.
+//  3. Ensure ~/.stax/agents/ is materialized (lazy bootstrap).
+//  4. Enumerate skills under ~/.stax/agents/skills/.
 //  5. For each registered agent: install skills + per-agent config files.
-//  6. Drop the .x-plans/ scaffold (idempotent — only writes missing files).
+//  6. Drop the .stax/ scaffold (idempotent — only writes missing files).
 //
 // Per-skill or per-target failures print to stderr but don't abort the
 // whole run, so a single permissions glitch on one agent's dir doesn't
@@ -57,13 +57,13 @@ func runInit(args []string) {
 	scopeFlag := flags.String("scope", "", "project|user — skip the scope picker")
 	// --prefix-width / --max-plan-lines / --review-per are the
 	// non-interactive twins of the three plan-tooling prompts. Pass them
-	// (alongside --agents and --scope) to drive `x-x init` end-to-end
+	// (alongside --agents and --scope) to drive `stax init` end-to-end
 	// without touching the wizard or line prompts.
 	prefixWidthFlag := flags.Int("prefix-width", 0, "zero-padded width for plan prefixes (positive integer; default seeds the project default)")
-	maxPlanLinesFlag := flags.Int("max-plan-lines", 0, "line-count ceiling enforced by `x-x plans lint` (positive integer; default seeds the project default)")
+	maxPlanLinesFlag := flags.Int("max-plan-lines", 0, "line-count ceiling enforced by `stax plans lint` (positive integer; default seeds the project default)")
 	reviewPerFlag := flags.String("review-per", "", "task|plan — pause for review after every task or every plan")
 	flags.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: x-x init [--agents claude,codex] [--scope project|user]")
+		fmt.Fprintln(os.Stderr, "Usage: stax init [--agents claude,codex] [--scope project|user]")
 		fmt.Fprintln(os.Stderr, "             [--prefix-width N] [--max-plan-lines N] [--review-per task|plan]")
 		fmt.Fprintln(os.Stderr, "  Installs the bundled agent skill library for Claude Code and Codex CLI.")
 	}
@@ -94,7 +94,7 @@ func runInit(args []string) {
 		fmt.Fprintln(os.Stderr, projectAlreadyInitBanner)
 		os.Exit(2)
 	}
-	fmt.Printf("Setting up x-x in %s\n\n", cwd)
+	fmt.Printf("Setting up stax in %s\n\n", cwd)
 
 	cfg, err := resolveInitConfig(initFlags{
 		agents:       agentsFlag,
@@ -108,7 +108,7 @@ func runInit(args []string) {
 	}
 
 	// Source must exist before we can read skill names from it. This is
-	// a no-op when ~/.x-x/agents/ already exists; otherwise it materializes
+	// a no-op when ~/.stax/agents/ already exists; otherwise it materializes
 	// the embed.FS to disk on the fly.
 	if err := ensureBundledAgents(); err != nil {
 		exitErr(err)
@@ -117,7 +117,7 @@ func runInit(args []string) {
 	if err != nil {
 		exitErr(err)
 	}
-	// Skills live in ~/.x-x/agents/skills/. Per-agent config (claude/,
+	// Skills live in ~/.stax/agents/skills/. Per-agent config (claude/,
 	// codex/, …) lives in sibling directories under agentsRoot — see
 	// installForTarget for the per-agent config branch.
 	skillsSource := filepath.Join(agentsRoot, skillsSubdir)
@@ -138,12 +138,12 @@ func runInit(args []string) {
 
 	// Link strategy is decided once per run:
 	//   user scope + non-Windows → symlinks (auto-refresh when
-	//     ~/.x-x/agents/ updates)
+	//     ~/.stax/agents/ updates)
 	//   anything else (Windows, project scope) → copies
 	// Windows is excluded from symlinks because os.Symlink requires
 	// Developer Mode or admin elevation by default. Project scope is
 	// excluded because the resulting dir often gets committed to git;
-	// symlinks pointing into ~/.x-x/ would break for teammates.
+	// symlinks pointing into ~/.stax/ would break for teammates.
 	useSymlink := cfg.scope == scopeUser && runtime.GOOS != "windows"
 	strategy := "copy"
 	if useSymlink {
@@ -158,14 +158,14 @@ func runInit(args []string) {
 		installForTarget(&cfg.agents[i], skills, scopeRoot, skillsSource, agentsRoot, useSymlink, cfg.scope)
 	}
 
-	// `.x-plans/` scaffold lives in cwd regardless of scope. Scope only
+	// `.stax/` scaffold lives in cwd regardless of scope. Scope only
 	// decides where SKILLS land (project tree vs $HOME); the project marker
-	// check keyed on `<cwd>/.x-plans/_config.lock` is what makes cwd usable
-	// with `/x-plan`, `/x-x`, and the `x-x plans *` CLI subcommands. A
+	// check keyed on `<cwd>/.stax/_config.lock` is what makes cwd usable
+	// with `/scope`, `/ship`, and the `stax plans *` CLI subcommands. A
 	// user-scope install that left cwd un-scaffolded produced skills with
 	// nowhere to anchor plans — every subsequent command tripped the
-	// `not an x-x project` check. Writing the scaffold under both scopes
-	// keeps cwd a real x-x project either way.
+	// `not a stax project` check. Writing the scaffold under both scopes
+	// keeps cwd a real stax project either way.
 	//
 	// Failures here are non-fatal — they downgrade to a warning because
 	// the skill install (the primary purpose) already succeeded.
@@ -178,7 +178,7 @@ func runInit(args []string) {
 	// not local state. Nudge the user to commit them so the team shares
 	// the same plan history. Phrased as a tip rather than auto-editing
 	// .gitignore so we never touch git config behind the user's back.
-	fmt.Printf("\nTip: commit %s/ to git so your team shares plan history.\n", plansDir)
+	fmt.Printf("\nTip: commit %s/ to git so your team shares plan history.\n", staxDir)
 
 	// Anonymous-usage ping. Fires at the end of the happy path so a
 	// fatal error earlier in runInit (which exits via exitErr) doesn't
@@ -248,7 +248,7 @@ func validateInitFlags(flags *flag.FlagSet, prefixWidth, maxPlanLines *int, agen
 	return firstErr
 }
 
-// initFlags bundles the raw CLI flag values for `x-x init`. Each field is
+// initFlags bundles the raw CLI flag values for `stax init`. Each field is
 // "unset"-encoded with its zero value (empty string, nil slice, 0 int) so
 // resolveInitConfig can distinguish "user passed a flag" from "user left
 // it for the prompt to fill in".
@@ -281,7 +281,7 @@ type initConfig struct {
 //     groups (Shift+Tab) so the user can revise prior selections before
 //     final submission.
 //  3. Otherwise → run line prompts for the unset values. Keeps
-//     `printf "..." | x-x init` working in headless / piped contexts
+//     `printf "..." | stax init` working in headless / piped contexts
 //     (CI, AGENTS.md test cases).
 //
 // `useTUI` is a parameter (rather than computed internally) so tests can
@@ -522,7 +522,7 @@ func stdinIsTTY(f *os.File) bool {
 	return isatty.IsTerminal(f.Fd())
 }
 
-// writePlansScaffold creates the project-local .x-plans/ directory and seeds
+// writePlansScaffold creates the project-local .stax/ directory and seeds
 // the two files that the plan tooling expects to find on disk:
 //
 //	_data_systems.yaml — empty placeholder; populated by the user as systems are added
@@ -535,13 +535,13 @@ func stdinIsTTY(f *os.File) bool {
 // cfg, which carries either the user's wizard / flag choices or the
 // project defaults.
 func writePlansScaffold(cwd string, cfg initConfig) error {
-	dir := filepath.Join(cwd, plansDir)
+	dir := filepath.Join(cwd, staxDir)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create %s: %w", dir, err)
 	}
 	// Empty placeholder — the plan tooling populates this as the project
 	// grows. Writing nil content creates a zero-byte file.
-	if err := writeIfAbsent(filepath.Join(dir, plansSystemsFile), nil); err != nil {
+	if err := writeIfAbsent(filepath.Join(dir, staxSystemsFile), nil); err != nil {
 		return err
 	}
 	// Inline anonymous struct: the lock file is JSON-formatted, but the only
@@ -562,7 +562,7 @@ func writePlansScaffold(cwd string, cfg initConfig) error {
 	// Append a trailing newline so the file matches standard text-file
 	// conventions (every line ends with \n).
 	body = append(body, '\n')
-	return writeIfAbsent(filepath.Join(dir, plansConfigLockFile), body)
+	return writeIfAbsent(filepath.Join(dir, staxLockFile), body)
 }
 
 // writeIfAbsent is the "create only if missing" primitive. Stat first;
@@ -670,7 +670,7 @@ func parseReviewPer(s string) (string, error) {
 //
 // Note: ReadString blocks until a newline, so an interactive caller who
 // closes stdin without typing will hang. CI callers should pipe their
-// choice (`echo 2 | x-x init`).
+// choice (`echo 2 | stax init`).
 func promptScope(in io.Reader) (initScope, error) {
 	fmt.Println("Where should agent skills be installed?")
 	fmt.Println("  1) This project only")
@@ -811,7 +811,7 @@ func promptPrefixWidth(in io.Reader) (int, error) {
 
 // promptMaxPlanLines reads one line from `in` and parses it as the plan
 // line-count cap. Same default-on-empty semantics as promptPrefixWidth.
-// The cap is what `x-x plans lint` enforces — tight values keep AI agents
+// The cap is what `stax plans lint` enforces — tight values keep AI agents
 // from sprawling, looser values let well-scoped plans breathe.
 func promptMaxPlanLines(in io.Reader) (int, error) {
 	fmt.Println("Maximum lines per plan")
@@ -1011,33 +1011,33 @@ func exitErr(err error) {
 // notProjectBanner is the user-facing diagnostic shared by every project
 // marker check. Deliberately does NOT name any of the on-disk files we check for:
 // users only need to know the directory isn't initialized and that
-// `x-x init` is the fix. Keeping the message uniform across every
+// `stax init` is the fix. Keeping the message uniform across every
 // command means the failure mode is instantly recognizable.
-const notProjectBanner = "error: not an x-x project — run `x-x init` to initialize the current directory first."
+const notProjectBanner = "error: not a stax project — run `stax init` to initialize the current directory first."
 
-// projectAlreadyInitBanner is the diagnostic `x-x init` prints when the
-// current directory already passes checkProject. Naming plansDir is OK
+// projectAlreadyInitBanner is the diagnostic `stax init` prints when the
+// current directory already passes checkProject. Naming staxDir is OK
 // here (unlike notProjectBanner) because the user is being told what to
 // delete to retry — a path is the actionable answer, not a leak.
-const projectAlreadyInitBanner = "error: x-x project already initialized in this directory.\n\nTip: delete `" + plansDir + "/_config.lock` and run `x-x skills remove --project` to re-init from scratch."
+const projectAlreadyInitBanner = "error: stax project already initialized in this directory.\n\nTip: delete `" + staxDir + "/_config.lock` and run `stax skills remove --project` to re-init from scratch."
 
 // checkProject reports whether the current working directory is an
-// initialized x-x project. The contract is a single on-disk marker:
+// initialized stax project. The contract is a single on-disk marker:
 //
-//	plansDir/plansConfigLockFile (the plan-tooling lock pin)
+//	staxDir/staxLockFile (the plan-tooling lock pin)
 //
-// Missing → not an initialized project. Other files under plansDir
+// Missing → not an initialized project. Other files under staxDir
 // (the systems registry, plan files) are not required by the check.
 // Keying solely on the lock file is what makes the documented "delete
 // the lock file to re-init" flow work: the user can opt back into a
 // fresh init without losing plans or the systems registry. The function
-// deliberately returns a generic `not an x-x project` error rather than
+// deliberately returns a generic `not a stax project` error rather than
 // naming the missing file so the diagnostic stays uniform with the
 // banner requireProject prints. Separated from requireProject so unit
 // tests can exercise the check without exiting the process.
 func checkProject() error {
-	if _, err := os.Stat(filepath.Join(plansDir, plansConfigLockFile)); err != nil {
-		return fmt.Errorf("not an x-x project")
+	if _, err := os.Stat(filepath.Join(staxDir, staxLockFile)); err != nil {
+		return fmt.Errorf("not a stax project")
 	}
 	return nil
 }

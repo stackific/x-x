@@ -2,7 +2,7 @@
 # Copyright 2026 Stackific Inc.
 """Verify the bundled Claude PostToolUse + Stop hooks actually fire.
 
-`x-x init --agents=claude` deep-merges hook records into the installed
+`stax init --agents=claude` deep-merges hook records into the installed
 settings.json (`<workspace>/.claude/settings.json` at project scope or
 `$HOME/.claude/settings.json` at user scope under the sandboxed HOME the
 `workspace` fixture sets up). The JSON deep-merge plumbing is covered by
@@ -10,12 +10,12 @@ Go unit tests (init_test.go::TestInstallAgentConfig_*). This test goes
 one layer deeper:
 
   1. patches the installed settings.json so the hook command is a
-     sentinel `touch <marker>` instead of `x-x plans lint`;
+     sentinel `touch <marker>` instead of `stax plans lint`;
   2. drives a one-shot Claude session that performs a `Write` (the
      matcher the PostToolUse hook is gated on) and then ends its turn;
   3. asserts BOTH the PostToolUse marker AND the Stop marker exist on
      disk after the session — proving Claude actually picked the hook
-     records up from the path `x-x init` wrote to and executed them at
+     records up from the path `stax init` wrote to and executed them at
      the expected events.
 
 A failure here after a registry / config refactor means the install
@@ -36,7 +36,7 @@ from skills_evals.claude_driver import drive_skill
 
 
 def _installed_settings(workspace: Path) -> Path:
-  """Resolve the settings.json `x-x init` actually wrote, regardless of scope."""
+  """Resolve the settings.json `stax init` actually wrote, regardless of scope."""
   project_path = workspace / ".claude" / "settings.json"
   if project_path.is_file():
     return project_path
@@ -44,7 +44,7 @@ def _installed_settings(workspace: Path) -> Path:
   if user_path.is_file():
     return user_path
   raise FileNotFoundError(
-    f"no settings.json at {project_path} or {user_path} after `x-x init`"
+    f"no settings.json at {project_path} or {user_path} after `stax init`"
   )
 
 
@@ -60,7 +60,7 @@ def test_claude_hooks_fire(workspace: Path, tmp_path: Path) -> None:
   #              "Stop":        [{"matcher": "",    "hooks": [{"command": "..."}]}]}}
   # Replace every leaf `command` under each event with a `touch <marker>`
   # sentinel so we can witness the hook firing without depending on
-  # `x-x plans lint`'s exit status.
+  # `stax plans lint`'s exit status.
   post_marker = tmp_path / "post-tool-use.fired"
   stop_marker = tmp_path / "stop.fired"
   for entry in cfg["hooks"]["PostToolUse"]:

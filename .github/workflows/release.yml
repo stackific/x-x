@@ -14,7 +14,7 @@ permissions:
 
 env:
   CGO_ENABLED: "0"
-  BINARY: x-x
+  BINARY: stax
 
 jobs:
   release:

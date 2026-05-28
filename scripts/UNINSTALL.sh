@@ -2,22 +2,22 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Stackific Inc.
 #
-# UNINSTALL.sh — Remove an x-x installation on macOS or Linux.
+# UNINSTALL.sh — Remove a stax installation on macOS or Linux.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/stackific/x-x/main/scripts/UNINSTALL.sh | sh
-#   curl -fsSL https://raw.githubusercontent.com/stackific/x-x/main/scripts/UNINSTALL.sh | INSTALL_DIR=/usr/local/bin sh
+#   curl -fsSL https://raw.githubusercontent.com/stackific/stax/main/scripts/UNINSTALL.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/stackific/stax/main/scripts/UNINSTALL.sh | INSTALL_DIR=/usr/local/bin sh
 #
 # Environment overrides:
-#   INSTALL_DIR  Directory the binary was installed into (default: $HOME/.x-x).
+#   INSTALL_DIR  Directory the binary was installed into (default: $HOME/.stax).
 #                Must match whatever was passed to INSTALL.sh; otherwise the
 #                binary is left in place.
 
 set -eu
 
-BINARY="x-x"
-INSTALL_DIR="${INSTALL_DIR:-$HOME/.x-x}"
-CONFIG_DIR="${HOME}/.x-x"
+BINARY="stax"
+INSTALL_DIR="${INSTALL_DIR:-$HOME/.stax}"
+CONFIG_DIR="${HOME}/.stax"
 
 info() { printf '==> %s\n' "$*"; }
 warn() { printf 'warn: %s\n' "$*" >&2; }
@@ -36,7 +36,7 @@ esac
 bin_path="${INSTALL_DIR}/${BINARY}"
 if [ -x "$bin_path" ]; then
   info "Removing bundled user-scope skills"
-  "$bin_path" skills remove --user || warn "x-x skills remove --user failed; continuing"
+  "$bin_path" skills remove --user || warn "stax skills remove --user failed; continuing"
 else
   warn "${bin_path} not found; skipping user-scope skill cleanup"
 fi
@@ -49,7 +49,7 @@ else
   warn "${bin_path} not found; skipping"
 fi
 
-# 3. Remove ~/.x-x/ (.config.json + agents/ cache + the binary if installed
+# 3. Remove ~/.stax/ (.config.json + agents/ cache + the binary if installed
 # there). Guard against INSTALL_DIR being set to something silly like / or $HOME.
 if [ -d "$CONFIG_DIR" ]; then
   case "$CONFIG_DIR" in
@@ -64,7 +64,7 @@ else
 fi
 
 # 4. Strip the marker block from the user's shell rc file. INSTALL.sh writes
-# two consecutive lines: the `# x-x installer: PATH` marker followed by the
+# two consecutive lines: the `# stax installer: PATH` marker followed by the
 # PATH/fish_add_path line. Remove both, plus a trailing blank line if it ended
 # up isolated, to keep the rc file tidy.
 rc_file_for_shell() {
@@ -78,11 +78,11 @@ rc_file_for_shell() {
 
 strip_path_block() {
   rc="$1"
-  marker="# x-x installer: PATH"
+  marker="# stax installer: PATH"
   [ -f "$rc" ] || { warn "$rc not found; skipping PATH cleanup"; return 0; }
-  grep -qF "$marker" "$rc" || { info "no x-x PATH entry in $rc"; return 0; }
+  grep -qF "$marker" "$rc" || { info "no stax PATH entry in $rc"; return 0; }
 
-  tmp="${rc}.x-x-uninstall.$$"
+  tmp="${rc}.stax-uninstall.$$"
   # Drop the marker line + the line immediately after it (the export / fish_add_path).
   awk -v m="$marker" '
     skip { skip=0; next }
@@ -93,7 +93,7 @@ strip_path_block() {
   # Overwrite in place (preserves the rc file's existing mode/owner).
   cat "$tmp" > "$rc"
   rm -f "$tmp"
-  info "Removed x-x PATH entry from $rc"
+  info "Removed stax PATH entry from $rc"
 }
 
 strip_path_block "$(rc_file_for_shell)"

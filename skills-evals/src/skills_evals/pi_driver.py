@@ -16,17 +16,17 @@ which differ from OpenCode in two ways that matter for the eval loop:
    "spawn one process per `yes` reply".
 
 2. **Slash commands resolve in print mode.** Pi parses `/skill:<name>` from
-   the message body before dispatching to the model — `/skill:x-plan <task>`
-   loads the SKILL.md whose frontmatter `name:` matches `x-plan` and appends
+   the message body before dispatching to the model — `/skill:scope <task>`
+   loads the SKILL.md whose frontmatter `name:` matches `scope` and appends
    the task as `User: <task>` per docs/skills.md in the pi-mono repo. Pi
    discovers skills from `.agents/skills/`, `.pi/skills/`, `~/.agents/skills/`,
-   and `~/.pi/agent/skills/` (cwd up through ancestors). The bundled x-x
-   install lands SKILL.md files under `.agents/skills/x-plan/SKILL.md` (when
-   `x-x init --agents codex` runs, since codex's `.agents/skills` row in
+   and `~/.pi/agent/skills/` (cwd up through ancestors). The bundled stax
+   install lands SKILL.md files under `.agents/skills/scope/SKILL.md` (when
+   `stax init --agents codex` runs, since codex's `.agents/skills` row in
    constants.go is the path pi also reads from). User-scope installs land
    them at `~/.agents/skills/`, which pi also discovers.
 
-   This sidesteps the `/x-plan ...`-as-literal-text problem that OpenCode's
+   This sidesteps the `/scope ...`-as-literal-text problem that OpenCode's
    inline-template workaround was built for (opencode's `run --command`
    evolved to a similar shape; pi's `/skill:<name>` is the equivalent).
 

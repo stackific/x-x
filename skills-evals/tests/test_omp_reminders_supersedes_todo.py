@@ -5,9 +5,9 @@
 Mirror of test_claude_reminders_supersedes_todo.py against the omp driver.
 
 Sequence:
-  1. /skill:x-plan a todo list app.
-  2. /skill:x-plan a reminders app that SUPERSEDES the todo plan.
-  3. /skill:x-x — executes the queue; per agents/skills/x-x/SKILL.md step
+  1. /skill:scope a todo list app.
+  2. /skill:scope a reminders app that SUPERSEDES the todo plan.
+  3. /skill:stax — executes the queue; per agents/skills/ship/SKILL.md step
      3.4, when the executor finishes the successor plan it flips the
      predecessor's `status: valid` → `status: superseded` and appends
      the successor slug to the predecessor's `superseded_by:` array.
@@ -52,11 +52,11 @@ def test_omp_reminders_supersedes_todo(
   # --- Plan 1: todo list ---
   todo_run = drive_skill(
     workspace,
-    f"/skill:x-plan {TODO_TASK}",
-    transcript_path=transcripts / "x-plan-todo.jsonl",
+    f"/skill:scope {TODO_TASK}",
+    transcript_path=transcripts / "scope-todo.jsonl",
   )
   assert todo_run.exit_code == 0, (
-    f"omp exited {todo_run.exit_code} during /skill:x-plan todo; "
+    f"omp exited {todo_run.exit_code} during /skill:scope todo; "
     f"timed_out={todo_run.timed_out}; stderr:\n{todo_run.stderr_tail}"
   )
   assert todo_run.completed
@@ -65,11 +65,11 @@ def test_omp_reminders_supersedes_todo(
   # --- Plan 2: reminders (supersedes todo) ---
   reminders_run = drive_skill(
     workspace,
-    f"/skill:x-plan {REMINDERS_TASK}",
-    transcript_path=transcripts / "x-plan-reminders.jsonl",
+    f"/skill:scope {REMINDERS_TASK}",
+    transcript_path=transcripts / "scope-reminders.jsonl",
   )
   assert reminders_run.exit_code == 0, (
-    f"omp exited {reminders_run.exit_code} during /skill:x-plan reminders; "
+    f"omp exited {reminders_run.exit_code} during /skill:scope reminders; "
     f"timed_out={reminders_run.timed_out}; stderr:\n{reminders_run.stderr_tail}"
   )
   assert reminders_run.completed
@@ -78,15 +78,15 @@ def test_omp_reminders_supersedes_todo(
   # --- Execute ---
   exec_run = drive_skill(
     workspace,
-    "/skill:x-x",
-    transcript_path=transcripts / "x-x.jsonl",
+    "/skill:stax",
+    transcript_path=transcripts / "stax.jsonl",
   )
   assert exec_run.exit_code == 0, (
-    f"omp exited {exec_run.exit_code} during /skill:x-x; "
+    f"omp exited {exec_run.exit_code} during /skill:stax; "
     f"timed_out={exec_run.timed_out}; stderr:\n{exec_run.stderr_tail}"
   )
   assert exec_run.completed
-  # No turn-cap on /skill:x-x — see test_omp_todo.py for the rationale.
+  # No turn-cap on /skill:stax — see test_omp_todo.py for the rationale.
 
   # --- Plan mechanics ---
   plans = load_all_plans(workspace)
@@ -97,7 +97,7 @@ def test_omp_reminders_supersedes_todo(
   todo_plan, reminders_plan = plans  # numeric prefix asc
 
   assert todo_plan.frontmatter.get("status") == "superseded", (
-    f"todo plan should be status=superseded after /skill:x-x ran the "
+    f"todo plan should be status=superseded after /skill:stax ran the "
     f"successor, got {todo_plan.frontmatter.get('status')!r}"
   )
   superseded_by = todo_plan.frontmatter.get("superseded_by") or []

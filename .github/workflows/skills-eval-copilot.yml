@@ -4,7 +4,7 @@ name: skills eval / github copilot cli
 # skills-eval-claude.yml but targets GitHub Copilot CLI via BYOK to
 # DeepSeek's Anthropic-compatible endpoint. The loop:
 #
-#   1. Install GitHub Copilot CLI (npm @github/copilot); install x-x to PATH.
+#   1. Install GitHub Copilot CLI (npm @github/copilot); install stax to PATH.
 #   2. Sync the uv-managed skills-evals project.
 #   3. Run `uv run pytest`. The tests:
 #        a. Spawn `copilot -p "<prompt>" -s --allow-all-tools --no-ask-user`
@@ -66,12 +66,12 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # `go install .` lands a release-flavored x-x in $(go env GOPATH)/bin.
+      # `go install .` lands a release-flavored stax in $(go env GOPATH)/bin.
       # The setup-go action puts that directory on PATH.
-      - name: install x-x to PATH
+      - name: install stax to PATH
         run: |
           go install .
-          x-x --version
+          stax --version
 
       # GitHub Copilot CLI requires Node 22+.
       - uses: actions/setup-node@v6

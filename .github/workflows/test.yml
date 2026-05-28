@@ -1,7 +1,7 @@
 name: Test
 
 # Runs the comprehensive test suite (Go unit tests + end-to-end shell tests)
-# inside an official Linux container so every PR proves x-x works as installed.
+# inside an official Linux container so every PR proves stax works as installed.
 #
 # AGENTS.md hard rule: any change to a *.go CLI source file MUST land with
 # accompanying tests, and those tests MUST be exercised by this workflow.
@@ -18,7 +18,7 @@ permissions:
 jobs:
   test:
     # The job runs inside a real Linux container — the official Go image —
-    # so the workflow literally "launches a linux container, installs x-x,
+    # so the workflow literally "launches a linux container, installs stax,
     # runs all commands, and tests every single feature end to end". The
     # outer runner is only there to schedule the container.
     runs-on: ubuntu-latest

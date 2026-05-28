@@ -32,11 +32,11 @@ jobs:
     timeout-minutes: 60
 
     env:
-      # Identical to skills-eval-copilot.yml EXCEPT for X_X_INSTALL_SCOPE.
+      # Identical to skills-eval-copilot.yml EXCEPT for STAX_INSTALL_SCOPE.
       # The pytest fixture (skills-evals/tests/conftest.py) reads this
-      # and passes it to `x-x init --scope <value>`, so the same test
+      # and passes it to `stax init --scope <value>`, so the same test
       # suite drives both project-scope and user-scope installs.
-      X_X_INSTALL_SCOPE: user
+      STAX_INSTALL_SCOPE: user
 
       # Copilot CLI BYOK routing for DeepSeek's Anthropic-compatible endpoint.
       # Provider type MUST be `anthropic` (not `openai`) — DeepSeek requires
@@ -58,10 +58,10 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: install x-x to PATH
+      - name: install stax to PATH
         run: |
           go install .
-          x-x --version
+          stax --version
 
       # GitHub Copilot CLI requires Node 22+.
       - uses: actions/setup-node@v6

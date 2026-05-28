@@ -13,7 +13,7 @@ import (
 	"strconv"
 )
 
-// runSkills dispatches `x-x skills <subcommand>`. Kept minimal — the only
+// runSkills dispatches `stax skills <subcommand>`. Kept minimal — the only
 // subcommand today is `remove`, but the file layout (separate runSkills /
 // runSkillsRemove / helpers) leaves room for `list`, `info`, etc. without
 // restructuring.
@@ -23,8 +23,8 @@ import (
 // fall through silently.
 func runSkills(args []string) {
 	if len(args) == 0 {
-		// `x-x skills` with no subcommand is an error, not the same as
-		// the bare-`x-x` banner — we want a typo to be loud, not friendly.
+		// `stax skills` with no subcommand is an error, not the same as
+		// the bare-`stax` banner — we want a typo to be loud, not friendly.
 		printSkillsUsage(os.Stderr)
 		os.Exit(2)
 	}
@@ -40,7 +40,7 @@ func runSkills(args []string) {
 	}
 }
 
-// printSkillsUsage writes the `x-x skills` help text to the given writer.
+// printSkillsUsage writes the `stax skills` help text to the given writer.
 // Taking an io.Writer (rather than always writing to os.Stderr) lets future
 // callers redirect to stdout for `--help`-style invocations without code
 // duplication. Today every caller passes os.Stderr.
@@ -48,23 +48,23 @@ func printSkillsUsage(w io.Writer) {
 	// Discards on Fprintln are deliberate: writes go to os.Stderr in practice
 	// (where Write failures are unrecoverable anyway) and errcheck under our
 	// lint config flags io.Writer-typed sinks if returns are ignored implicitly.
-	_, _ = fmt.Fprintln(w, "Usage: x-x skills <subcommand>")
-	_, _ = fmt.Fprintln(w, "  remove --user      Uninstall bundled x-x skills from $HOME")
-	_, _ = fmt.Fprintln(w, "  remove --project   Uninstall bundled x-x skills from the current directory")
+	_, _ = fmt.Fprintln(w, "Usage: stax skills <subcommand>")
+	_, _ = fmt.Fprintln(w, "  remove --user      Uninstall bundled stax skills from $HOME")
+	_, _ = fmt.Fprintln(w, "  remove --project   Uninstall bundled stax skills from the current directory")
 }
 
-// runSkillsRemove uninstalls every bundled-skill directory `x-x init` could
-// have written at one scope and subtracts the hook records `x-x init`
+// runSkillsRemove uninstalls every bundled-skill directory `stax init` could
+// have written at one scope and subtracts the hook records `stax init`
 // merged into per-agent JSON config files. Skill directories use the
 // ownedSkills allowlist (strict name match); hook subtraction uses
 // deep-equality against the currently bundled config files under
-// ~/.x-x/agents/<agent>/ — no markers, no install-time snapshots, no
+// ~/.stax/agents/<agent>/ — no markers, no install-time snapshots, no
 // symlink-target inspection.
 //
 // What is NOT removed, on purpose:
 //   - Any folder whose name is not in ownedSkills (user-authored skills
 //     sitting alongside ours).
-//   - The .x-plans/ scaffold at project scope. It is user content from the
+//   - The .stax/ scaffold at project scope. It is user content from the
 //     moment init writes it (think of `git init`'s .gitignore — once written,
 //     it's yours).
 //   - Parent directories (.claude/, .codex/). Only the skills/ subdirectory
@@ -82,13 +82,13 @@ func runSkillsRemove(args []string) {
 	userScope := flags.Bool("user", false, "remove skills installed at user scope ($HOME)")
 	projectScope := flags.Bool("project", false, "remove skills installed at project scope (current directory)")
 	flags.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: x-x skills remove (--user | --project)")
+		fmt.Fprintln(os.Stderr, "Usage: stax skills remove (--user | --project)")
 	}
 	_ = flags.Parse(args)
 
 	// Mirror init.go's two-choice model: exactly one scope, never both.
 	// We require an explicit flag rather than defaulting to a scope so a
-	// careless `x-x skills remove` can't surprise the user by wiping the
+	// careless `stax skills remove` can't surprise the user by wiping the
 	// wrong set of files.
 	switch {
 	case *userScope && *projectScope:
@@ -101,7 +101,7 @@ func runSkillsRemove(args []string) {
 		os.Exit(2)
 	}
 
-	// Project scope is meaningful only inside an x-x project — check
+	// Project scope is meaningful only inside a stax project — check
 	// before any work. User scope is global, so it never needs the check.
 	if *projectScope {
 		requireProject()
@@ -111,7 +111,7 @@ func runSkillsRemove(args []string) {
 	if err != nil {
 		exitErr(err)
 	}
-	fmt.Printf("Removing bundled x-x skills from %s scope (%s)\n", label, scopeRoot)
+	fmt.Printf("Removing bundled stax skills from %s scope (%s)\n", label, scopeRoot)
 
 	// Build the allowlist set once. ownedSkills is small (one entry per
 	// bundled skill) so the cost is negligible; the map gives the per-entry
@@ -193,7 +193,7 @@ func runSkillsRemove(args []string) {
 //
 // Returns (removed, skipped) so the caller can aggregate counts across all
 // agent targets. Skips silently when the directory is absent — the agent
-// simply has no x-x install at this scope, which is not an error.
+// simply has no stax install at this scope, which is not an error.
 func removeOurSkillsIn(skillsDir, agentName string, owned map[string]bool) (removed, skipped int) {
 	entries, err := os.ReadDir(skillsDir)
 	if err != nil {
@@ -224,7 +224,7 @@ func removeOurSkillsIn(skillsDir, agentName string, owned map[string]bool) (remo
 		fmt.Printf("    removed %s\n", e.Name())
 		removed++
 	}
-	// If the skills directory is now empty (e.g. only contained x-x dirs),
+	// If the skills directory is now empty (e.g. only contained stax dirs),
 	// remove it too. Leave parent (.claude / .codex) alone — those host
 	// user config files we never want to touch.
 	_ = removeIfEmpty(skillsDir)
@@ -247,7 +247,7 @@ func removeScopeRoot(userScope bool) (root, label string, err error) {
 	}
 	// Project scope = current working directory. Same as init.go's
 	// project-scope choice; the user is expected to run this from the
-	// project where they originally did `x-x init`.
+	// project where they originally did `stax init`.
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", "", err
@@ -256,7 +256,7 @@ func removeScopeRoot(userScope bool) (root, label string, err error) {
 }
 
 // removeIfEmpty deletes dir only when it has zero entries. Used by
-// removeOurSkillsIn to tidy up empty parents after their last x-x-owned
+// removeOurSkillsIn to tidy up empty parents after their last stax-owned
 // child is removed. Errors are returned but currently ignored by the caller
 // — failure here is purely cosmetic (an empty dir left behind).
 func removeIfEmpty(dir string) error {

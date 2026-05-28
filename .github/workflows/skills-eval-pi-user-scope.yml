@@ -1,10 +1,10 @@
 name: skills eval / pi (user scope)
 
-# Identical to skills-eval-pi.yml EXCEPT for X_X_INSTALL_SCOPE.
+# Identical to skills-eval-pi.yml EXCEPT for STAX_INSTALL_SCOPE.
 # This workflow installs skills at user scope (~/.agents/skills/) rather
 # than project scope (<workspace>/.agents/skills/) so we exercise that
-# branch of `x-x init`. The pytest fixture (skills-evals/tests/conftest.py)
-# reads X_X_INSTALL_SCOPE and passes it to `x-x init --scope <value>`; pi
+# branch of `stax init`. The pytest fixture (skills-evals/tests/conftest.py)
+# reads STAX_INSTALL_SCOPE and passes it to `stax init --scope <value>`; pi
 # discovers skills from `~/.agents/skills/` (one of its documented
 # user-scope skill locations alongside `~/.pi/agent/skills/`).
 
@@ -20,8 +20,8 @@ jobs:
     timeout-minutes: 60
 
     env:
-      X_X_AGENT_KEY: pi
-      X_X_INSTALL_SCOPE: user
+      STAX_AGENT_KEY: pi
+      STAX_INSTALL_SCOPE: user
 
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 
@@ -35,10 +35,10 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: install x-x to PATH
+      - name: install stax to PATH
         run: |
           go install .
-          x-x --version
+          stax --version
 
       - uses: actions/setup-node@v6
         with:
