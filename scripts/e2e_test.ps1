@@ -64,29 +64,38 @@ Set-Variable -Option Constant -Name SKILL_MANIFEST_FILE -Value 'SKILL.md'
 
 Set-Variable -Option Constant -Name OWNED_SKILLS -Value @($SKILL_X_PLAN_DIR, $SKILL_X_X_DIR)
 
-# agentTargets in constants.go — index 0 = Claude Code, 1 = Codex CLI,
-# 2 = OpenCode, 3 = GitHub Copilot CLI, 4 = Pi, 5 = Cline, 6 = omp
-# (oh-my-pi). Codex, Copilot, Pi, and omp all resolve skills from
-# `.agents\skills` at both scopes (cross-agent open spec, install is
-# idempotent so the four rows co-exist on disk without conflict). Cline
-# does NOT use the cross-agent path — per docs.cline.bot/customization/
-# overview it reads from `.cline\skills` (project) and `~\.cline\skills`
-# (user) only. Claude and OpenCode stay on their own paths because
-# their lookup logic doesn't include `.agents\skills`. OpenCode and omp
-# ship no per-agent config today (configRel is ""), so there are no
-# OPENCODE_CONFIG_REL / OMP_CONFIG_REL mirrors. The
-# agentTarget.userSkillsRel field exists for future agents whose
-# project- vs user-scope paths diverge; none of the current rows need
-# it.
-Set-Variable -Option Constant -Name CLAUDE_SKILLS_REL   -Value '.claude\skills'
-Set-Variable -Option Constant -Name CLAUDE_CONFIG_REL   -Value '.claude'
-Set-Variable -Option Constant -Name CODEX_SKILLS_REL    -Value '.agents\skills'
-Set-Variable -Option Constant -Name CODEX_CONFIG_REL    -Value '.codex'
-Set-Variable -Option Constant -Name OPENCODE_SKILLS_REL -Value '.opencode\commands'
-Set-Variable -Option Constant -Name COPILOT_SKILLS_REL  -Value '.agents\skills'
-Set-Variable -Option Constant -Name PI_SKILLS_REL       -Value '.agents\skills'
-Set-Variable -Option Constant -Name CLINE_SKILLS_REL    -Value '.cline\skills'
-Set-Variable -Option Constant -Name OMP_SKILLS_REL      -Value '.agents\skills'
+# Mirrors of agentTargets[*].skillsRel / userSkillsRel / configRel in
+# constants.go. The Go registry is sorted alphabetically by display name
+# (case-insensitive) and looked up by `key` in the Go drift check, so
+# these constants are matched by NAME, not by index. Codex, Copilot, Pi,
+# omp, and Antigravity all resolve skills from `.agents\skills` at
+# workspace scope (cross-agent open spec, install is idempotent so the
+# rows co-exist on disk without conflict). Cline does NOT use the
+# cross-agent path — per docs.cline.bot/customization/overview it reads
+# from `.cline\skills` (project) and `~\.cline\skills` (user) only.
+# Claude and OpenCode stay on their own paths because their lookup
+# logic doesn't include `.agents\skills`. OpenCode, Copilot, Pi, omp,
+# and Antigravity ship no per-agent config today (configRel is ""), so
+# there are no *_CONFIG_REL mirrors for them. Antigravity is the lone
+# row that diverges across scopes: workspace `.agents\skills`, global
+# `~\.gemini\antigravity\skills` (per antigravity.google/docs/skills) —
+# represented in Go via agentTarget.userSkillsRel.
+Set-Variable -Option Constant -Name ANTIGRAVITY_SKILLS_REL      -Value '.agents\skills'
+Set-Variable -Option Constant -Name ANTIGRAVITY_USER_SKILLS_REL -Value '.gemini\antigravity\skills'
+Set-Variable -Option Constant -Name CLAUDE_SKILLS_REL           -Value '.claude\skills'
+Set-Variable -Option Constant -Name CLAUDE_CONFIG_REL           -Value '.claude'
+Set-Variable -Option Constant -Name CLINE_SKILLS_REL            -Value '.cline\skills'
+Set-Variable -Option Constant -Name CODEX_SKILLS_REL            -Value '.agents\skills'
+Set-Variable -Option Constant -Name CODEX_CONFIG_REL            -Value '.codex'
+Set-Variable -Option Constant -Name CONTINUE_SKILLS_REL         -Value '.continue\skills'
+Set-Variable -Option Constant -Name CURSOR_SKILLS_REL           -Value '.agents\skills'
+Set-Variable -Option Constant -Name CURSOR_USER_SKILLS_REL      -Value '.cursor\skills'
+Set-Variable -Option Constant -Name COPILOT_SKILLS_REL          -Value '.agents\skills'
+Set-Variable -Option Constant -Name KILO_SKILLS_REL             -Value '.kilocode\skills'
+Set-Variable -Option Constant -Name OMP_SKILLS_REL              -Value '.agents\skills'
+Set-Variable -Option Constant -Name OPENCODE_SKILLS_REL         -Value '.opencode\commands'
+Set-Variable -Option Constant -Name PI_SKILLS_REL               -Value '.agents\skills'
+Set-Variable -Option Constant -Name ZED_SKILLS_REL              -Value '.agents\skills'
 
 # Bundled config filenames (not constants in Go; pinned here for assertions).
 Set-Variable -Option Constant -Name CLAUDE_SETTINGS_FILE -Value 'settings.json'
@@ -119,6 +128,13 @@ $Script:SandboxHome  = Join-Path $Sandbox 'home'
 $Script:ProjectsRoot = Join-Path $Sandbox 'projects'
 New-Item -ItemType Directory -Force -Path $SandboxHome  | Out-Null
 New-Item -ItemType Directory -Force -Path $ProjectsRoot | Out-Null
+
+# Suppress anonymous-usage telemetry for the entire e2e run — same
+# rationale as the bash harness. DO_NOT_TRACK is industry-standard;
+# DISABLE_TELEMETRY is the project-specific belt-and-braces escape
+# hatch.
+$env:DO_NOT_TRACK     = '1'
+$env:DISABLE_TELEMETRY = '1'
 
 # Cleanup must tolerate read-only files (e.g. Go module cache the test might
 # have populated). attrib -r is best-effort; Remove-Item -Force always runs.
@@ -377,6 +393,10 @@ function Reset-UserHome {
   # Windows uses USERPROFILE, but some Go paths also consult HOME. Set both.
   $env:HOME        = $SandboxHome
   $env:USERPROFILE = $SandboxHome
+  # Bash counterpart's reset_user_home wipes `~/.gemini/antigravity/`
+  # (parent of ANTIGRAVITY_USER_SKILLS_REL) between cases; this script
+  # rebuilds SandboxHome from scratch above, so any stale antigravity
+  # global skills tree under it is already gone.
 }
 
 function New-FreshProject {
@@ -499,19 +519,12 @@ Write-Host ''
 
 # ---------- bare invocation ----------
 
-Start-Case 'bare x-x prints the notice block'
-Invoke-XX
-Assert-Eq      'exit 0'           $RunRC 0
-Assert-Contains 'version line'    $RunOut 'x-x by Stackific'
-Assert-Contains 'version stamp'   $RunOut $E2E_VERSION
-Assert-Contains 'product tagline' $RunOut 'evidence-based'
-Assert-Contains 'copyright line'  $RunOut 'Copyright 2026 Stackific Inc.'
-Assert-Contains 'SPDX line'       $RunOut 'Apache-2.0'
-
-Start-Case 'bare x-x materializes the bundled agents tree on first run'
+Start-Case 'x-x post-install seeds agents silently'
 Reset-UserHome
-Invoke-XX
-Assert-Eq      'exit 0' $RunRC 0
+Invoke-XX post-install
+Assert-Eq       'exit 0'    $RunRC 0
+Assert-Eq       'no stdout' $RunOut ''
+Assert-Eq       'no stderr' $RunErr ''
 $agentsDir = Join-Path $env:USERPROFILE $XX_AGENTS_DIR
 Assert-IsDir   'agents tree present' $agentsDir
 Assert-IsDir   'skills subdir'       (Join-Path $env:USERPROFILE $XX_AGENTS_SKILLS_DIR)
@@ -522,24 +535,44 @@ Assert-IsFile  'x-x SKILL.md'    (Join-Path $env:USERPROFILE (Join-Path $XX_AGEN
 Assert-IsFile  'x-plan SKILL.md' (Join-Path $env:USERPROFILE (Join-Path $XX_AGENTS_SKILLS_DIR (Join-Path $SKILL_X_PLAN_DIR $SKILL_MANIFEST_FILE)))
 Assert-NotExists 'embed README skipped from disk' (Join-Path $env:USERPROFILE (Join-Path $XX_AGENTS_DIR 'README.md'))
 
-Start-Case 'bare x-x is idempotent (second run does not re-bootstrap)'
+# Bare `x-x` on Windows would attempt to open the OS-default browser via
+# `rundll32 url.dll,FileProtocolHandler https://google.com`. CI runners
+# don't want browser windows spawning mid-test, so every Windows e2e
+# case that previously exercised bare x-x now uses --no-browser, which
+# branches to the same seed-and-exit path as `post-install`.
+
+Start-Case 'x-x --no-browser seeds agents silently'
+Reset-UserHome
+Invoke-XX --no-browser
+Assert-Eq      'exit 0'    $RunRC 0
+Assert-Eq      'no stdout' $RunOut ''
+Assert-Eq      'no stderr' $RunErr ''
+Assert-IsDir   'agents tree present' (Join-Path $env:USERPROFILE $XX_AGENTS_DIR)
+
+Start-Case 'x-x --no-browser is idempotent (second run does not re-bootstrap)'
 $sentinel = Join-Path $env:USERPROFILE (Join-Path $XX_AGENTS_SKILLS_DIR (Join-Path $SKILL_X_X_DIR $SKILL_MANIFEST_FILE))
 $firstMtime = (Get-Item -LiteralPath $sentinel).LastWriteTimeUtc
 Start-Sleep -Seconds 1
-Invoke-XX
+Invoke-XX --no-browser
 $secondMtime = (Get-Item -LiteralPath $sentinel).LastWriteTimeUtc
 Assert-Eq 'mtime unchanged across runs' $firstMtime $secondMtime
 
 Start-Case 'x-x --version prints the notice'
 Invoke-XX --version
-Assert-Eq       'exit 0'        $RunRC 0
-Assert-Contains 'version line'  $RunOut 'x-x by Stackific'
-Assert-Contains 'version stamp' $RunOut $E2E_VERSION
+Assert-Eq       'exit 0'          $RunRC 0
+Assert-Contains 'version line'    $RunOut 'x-x by Stackific'
+Assert-Contains 'version stamp'   $RunOut $E2E_VERSION
+Assert-Contains 'product tagline' $RunOut 'evidence-based'
+Assert-Contains 'copyright line'  $RunOut 'Copyright 2026 Stackific Inc.'
+Assert-Contains 'SPDX line'       $RunOut 'Apache-2.0'
 
 Start-Case 'x-x -h prints the usage block'
 Invoke-XX -h
 Assert-Eq       'exit 0'                       $RunRC 0
 Assert-Contains 'usage header'                 $RunOut 'Usage:'
+Assert-Contains 'browser url listed'           $RunOut 'https://google.com'
+Assert-Contains 'no-browser listed'            $RunOut '--no-browser'
+Assert-Contains 'post-install listed'          $RunOut 'x-x post-install'
 Assert-Contains 'init listed'                  $RunOut 'x-x init'
 Assert-Contains 'skills remove --user listed'  $RunOut 'x-x skills remove --user'
 Assert-Contains 'skills remove --project listed' $RunOut 'x-x skills remove --project'
@@ -2532,6 +2565,180 @@ try {
     (Join-Path $projOmp2 (Join-Path $OMP_SKILLS_REL $SKILL_X_X_DIR))
 } finally { Pop-Location }
 
+Start-Case 'init --agents=antigravity project-scope install (shared .agents\skills)'
+Reset-UserHome
+$projAg1 = New-FreshProject
+Push-Location $projAg1
+try {
+  Invoke-XX init --scope project --agents=antigravity `
+                    --prefix-width 4 --max-plan-lines 30 --review-per task
+  Assert-Eq    'exit 0' $RunRC 0
+  # Antigravity's workspace skill path defaults to `.agents\skills`, the
+  # cross-agent open spec path Codex, Copilot, Pi, and omp also use
+  # (antigravity.google/docs/skills). Other agents' exclusive paths and
+  # config files must stay absent under a single-row install.
+  Assert-IsDir 'antigravity project skills present' `
+    (Join-Path $projAg1 (Join-Path $ANTIGRAVITY_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'claude path NOT present' `
+    (Join-Path $projAg1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'cline path NOT present' `
+    (Join-Path $projAg1 (Join-Path $CLINE_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'opencode path NOT present' `
+    (Join-Path $projAg1 (Join-Path $OPENCODE_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'codex config NOT present' `
+    (Join-Path $projAg1 $CODEX_CONFIG_REL)
+  Assert-NotExists 'claude config NOT present' `
+    (Join-Path $projAg1 $CLAUDE_CONFIG_REL)
+} finally { Pop-Location }
+
+Start-Case 'init --agents=antigravity --scope=user lands at ~\.gemini\antigravity\skills'
+Reset-UserHome
+$projAg2 = New-FreshProject
+Push-Location $projAg2
+try {
+  Invoke-XX init --scope user --agents=antigravity `
+                    --prefix-width 4 --max-plan-lines 30 --review-per task
+  Assert-Eq    'exit 0' $RunRC 0
+  # User scope: Antigravity reads `~\.gemini\antigravity\skills` (NOT
+  # the cross-agent `~\.agents\skills` fallback). This proves the
+  # userSkillsRel override is wired up — installing to the wrong path
+  # would land files antigravity never reads.
+  Assert-IsDir 'antigravity user-scope skills landed' `
+    (Join-Path $env:USERPROFILE (Join-Path $ANTIGRAVITY_USER_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'cross-agent ~\.agents\skills NOT touched' `
+    (Join-Path $env:USERPROFILE (Join-Path $CODEX_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'no install under project cwd' `
+    (Join-Path $projAg2 (Join-Path $ANTIGRAVITY_USER_SKILLS_REL $SKILL_X_X_DIR))
+} finally { Pop-Location }
+
+Start-Case 'init --agents=continue project-scope install (.continue\skills)'
+Reset-UserHome
+$projCont1 = New-FreshProject
+Push-Location $projCont1
+try {
+  Invoke-XX init --scope project --agents=continue `
+                    --prefix-width 4 --max-plan-lines 30 --review-per task
+  Assert-Eq    'exit 0' $RunRC 0
+  Assert-IsDir 'continue project skills present' `
+    (Join-Path $projCont1 (Join-Path $CONTINUE_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'claude path NOT present' `
+    (Join-Path $projCont1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'codex path NOT present' `
+    (Join-Path $projCont1 (Join-Path $CODEX_SKILLS_REL $SKILL_X_X_DIR))
+} finally { Pop-Location }
+
+Start-Case 'init --agents=continue --scope=user lands at ~\.continue\skills'
+Reset-UserHome
+$projCont2 = New-FreshProject
+Push-Location $projCont2
+try {
+  Invoke-XX init --scope user --agents=continue `
+                    --prefix-width 4 --max-plan-lines 30 --review-per task
+  Assert-Eq    'exit 0' $RunRC 0
+  Assert-IsDir 'continue user-scope skills landed' `
+    (Join-Path $env:USERPROFILE (Join-Path $CONTINUE_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'no install under project cwd' `
+    (Join-Path $projCont2 (Join-Path $CONTINUE_SKILLS_REL $SKILL_X_X_DIR))
+} finally { Pop-Location }
+
+Start-Case 'init --agents=cursor project-scope install (shared .agents\skills)'
+Reset-UserHome
+$projCur1 = New-FreshProject
+Push-Location $projCur1
+try {
+  Invoke-XX init --scope project --agents=cursor `
+                    --prefix-width 4 --max-plan-lines 30 --review-per task
+  Assert-Eq    'exit 0' $RunRC 0
+  Assert-IsDir 'cursor project skills present' `
+    (Join-Path $projCur1 (Join-Path $CURSOR_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'claude path NOT present' `
+    (Join-Path $projCur1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'cline path NOT present' `
+    (Join-Path $projCur1 (Join-Path $CLINE_SKILLS_REL $SKILL_X_X_DIR))
+} finally { Pop-Location }
+
+Start-Case 'init --agents=cursor --scope=user lands at ~\.cursor\skills'
+Reset-UserHome
+$projCur2 = New-FreshProject
+Push-Location $projCur2
+try {
+  Invoke-XX init --scope user --agents=cursor `
+                    --prefix-width 4 --max-plan-lines 30 --review-per task
+  Assert-Eq    'exit 0' $RunRC 0
+  # Cursor diverges at user scope (userSkillsRel override) — same
+  # shape as Antigravity. Skills land at `~\.cursor\skills`; the
+  # cross-agent `~\.agents\skills` must stay clean to prove the
+  # override drove the install.
+  Assert-IsDir 'cursor user-scope skills landed' `
+    (Join-Path $env:USERPROFILE (Join-Path $CURSOR_USER_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'cross-agent ~\.agents\skills NOT touched' `
+    (Join-Path $env:USERPROFILE (Join-Path $CODEX_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'no install under project cwd' `
+    (Join-Path $projCur2 (Join-Path $CURSOR_USER_SKILLS_REL $SKILL_X_X_DIR))
+} finally { Pop-Location }
+
+Start-Case 'init --agents=kilo project-scope install (.kilocode\skills)'
+Reset-UserHome
+$projKilo1 = New-FreshProject
+Push-Location $projKilo1
+try {
+  Invoke-XX init --scope project --agents=kilo `
+                    --prefix-width 4 --max-plan-lines 30 --review-per task
+  Assert-Eq    'exit 0' $RunRC 0
+  Assert-IsDir 'kilo project skills present' `
+    (Join-Path $projKilo1 (Join-Path $KILO_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'claude path NOT present' `
+    (Join-Path $projKilo1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'codex path NOT present' `
+    (Join-Path $projKilo1 (Join-Path $CODEX_SKILLS_REL $SKILL_X_X_DIR))
+} finally { Pop-Location }
+
+Start-Case 'init --agents=kilo --scope=user lands at ~\.kilocode\skills'
+Reset-UserHome
+$projKilo2 = New-FreshProject
+Push-Location $projKilo2
+try {
+  Invoke-XX init --scope user --agents=kilo `
+                    --prefix-width 4 --max-plan-lines 30 --review-per task
+  Assert-Eq    'exit 0' $RunRC 0
+  Assert-IsDir 'kilo user-scope skills landed' `
+    (Join-Path $env:USERPROFILE (Join-Path $KILO_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'no install under project cwd' `
+    (Join-Path $projKilo2 (Join-Path $KILO_SKILLS_REL $SKILL_X_X_DIR))
+} finally { Pop-Location }
+
+Start-Case 'init --agents=zed project-scope install (shared .agents\skills)'
+Reset-UserHome
+$projZed1 = New-FreshProject
+Push-Location $projZed1
+try {
+  Invoke-XX init --scope project --agents=zed `
+                    --prefix-width 4 --max-plan-lines 30 --review-per task
+  Assert-Eq    'exit 0' $RunRC 0
+  Assert-IsDir 'zed project skills present' `
+    (Join-Path $projZed1 (Join-Path $ZED_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'claude path NOT present' `
+    (Join-Path $projZed1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'cline path NOT present' `
+    (Join-Path $projZed1 (Join-Path $CLINE_SKILLS_REL $SKILL_X_X_DIR))
+} finally { Pop-Location }
+
+Start-Case 'init --agents=zed --scope=user lands at ~\.agents\skills'
+Reset-UserHome
+$projZed2 = New-FreshProject
+Push-Location $projZed2
+try {
+  Invoke-XX init --scope user --agents=zed `
+                    --prefix-width 4 --max-plan-lines 30 --review-per task
+  Assert-Eq    'exit 0' $RunRC 0
+  # Zed honors the cross-agent path at BOTH scopes — same as omp/
+  # Codex/Copilot/Pi at user scope.
+  Assert-IsDir 'zed user-scope skills landed' `
+    (Join-Path $env:USERPROFILE (Join-Path $ZED_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'no install under project cwd' `
+    (Join-Path $projZed2 (Join-Path $ZED_SKILLS_REL $SKILL_X_X_DIR))
+} finally { Pop-Location }
+
 Start-Case 'init --prefix-width=6 seeds the lock with 6'
 Reset-UserHome
 $projF3 = New-FreshProject
@@ -3052,14 +3259,14 @@ Assert-Contains 'diagnostic' $RunErr 'no slug-able characters'
 
 # ---------- Windows-specific: idempotent re-bootstrap of ~/.x-x/agents ----------
 
-Start-Case 'bare x-x repopulates ~/.x-x/agents/ when manually deleted'
+Start-Case 'x-x --no-browser repopulates ~/.x-x/agents/ when manually deleted'
 Reset-UserHome
-Invoke-XX
+Invoke-XX --no-browser
 Assert-Eq    'first run exit 0' $RunRC 0
 Assert-IsDir 'agents dir present' (Join-Path $env:USERPROFILE $XX_AGENTS_DIR)
 Remove-Item -Recurse -Force -LiteralPath (Join-Path $env:USERPROFILE $XX_AGENTS_DIR)
 Assert-NotExists 'agents dir manually deleted' (Join-Path $env:USERPROFILE $XX_AGENTS_DIR)
-Invoke-XX
+Invoke-XX --no-browser
 Assert-Eq    'second run exit 0' $RunRC 0
 Assert-IsDir 'agents dir restored' (Join-Path $env:USERPROFILE $XX_AGENTS_DIR)
 foreach ($skill in $OWNED_SKILLS) {
@@ -3193,14 +3400,26 @@ if ($wroteLong) {
   Write-Skip 'long-path file creation failed; LongPathsEnabled likely off (registry)'
 }
 
-# ---------- Windows-specific: --version flag is parsed but no different from bare ----------
+# ---------- Windows-specific: --version and bare x-x have DIFFERENT contracts ----------
+#
+# Until the browser-default landed, bare `x-x` and `x-x --version` shared
+# runDefault and produced identical notice output. They've since split:
+# --version still prints the installer-parseable notice, while bare x-x
+# opens defaultBrowserURL (or, with --no-browser, exits silently). Pin
+# the new divergence so a future refactor that re-unifies them is caught.
 
-Start-Case 'x-x --version output matches bare x-x'
+Start-Case 'x-x --version output differs from x-x --no-browser'
 Reset-UserHome
-Invoke-XX
-$bareOut = $RunOut
+Invoke-XX --no-browser
+$silentOut = $RunOut
 Invoke-XX --version
-Assert-Eq 'output parity' $RunOut $bareOut
+Assert-Contains '--version still prints notice'   $RunOut 'x-x by Stackific'
+Assert-Eq       '--no-browser stdout is empty'    $silentOut ''
+if ($RunOut -eq $silentOut) {
+  Write-Fail 'contracts diverge' '--version and --no-browser produced identical output; the split has regressed'
+} else {
+  Write-Pass 'contracts diverge'
+}
 
 # ==========================================================================
 # Additional lint, list, skills-remove, and Windows-specific cases

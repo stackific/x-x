@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 // runSkills dispatches `x-x skills <subcommand>`. Kept minimal — the only
@@ -163,6 +164,22 @@ func runSkillsRemove(args []string) {
 
 	fmt.Printf("\nRemoved %d skill(s), unmerged %d config file(s), skipped %d failed.\n",
 		removed, unmerged, skipped)
+
+	// Anonymous-usage ping. Fires at the end of the happy path; the
+	// exitErr/os.Exit paths above intentionally skip it for the same
+	// reason runInit does (a fatal-error path that lost the event is
+	// an acceptable trade for not wrapping every os.Exit call site).
+	scopeLabel := "project"
+	if *userScope {
+		scopeLabel = "user"
+	}
+	track("skills_remove", telemetryEvent{
+		"scope":               scopeLabel,
+		"agent_count":         strconv.Itoa(len(agentTargets)),
+		"skill_count_removed": strconv.Itoa(removed),
+		"hook_count_unmerged": strconv.Itoa(unmerged),
+	})
+	flushTelemetry()
 }
 
 // removeOurSkillsIn walks one agent's skills directory and removes every

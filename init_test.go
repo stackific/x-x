@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -248,7 +249,8 @@ func TestPromptAgents_BlankLineDefaultsToAll(t *testing.T) {
 
 // TestPromptAgents_SinglePick exercises the simplest non-default input:
 // one number, one selected agent. Asserts against agentTargets[0].key
-// so the test tracks any future renaming of the Claude row.
+// (whatever row currently sorts first alphabetically) — the test
+// tracks the registry ordering rather than any particular agent.
 func TestPromptAgents_SinglePick(t *testing.T) {
 	got, err := promptAgents(strings.NewReader("1\n"))
 	if err != nil {
@@ -274,9 +276,12 @@ func TestPromptAgents_MultiPick_PreservesRegistryOrder(t *testing.T) {
 
 // TestPromptAgents_OutOfRange rejects numbers outside `1..len(agentTargets)`.
 // Silent fall-through would surprise the user with an unexpected agent
-// selection; the function must error and let runInit bail.
+// selection; the function must error and let runInit bail. Derives the
+// out-of-range pick from the registry size so adding a row never makes
+// the test silently start passing a "real" pick instead.
 func TestPromptAgents_OutOfRange(t *testing.T) {
-	if _, err := promptAgents(strings.NewReader("9\n")); err == nil {
+	beyond := strconv.Itoa(len(agentTargets) + 1)
+	if _, err := promptAgents(strings.NewReader(beyond + "\n")); err == nil {
 		t.Fatal("expected error for out-of-range pick")
 	}
 }
@@ -1424,10 +1429,11 @@ func TestRunInit_AgentsFilter_OnlyInstallsSelected(t *testing.T) {
 
 	// Source the install destinations from the registry, not hard-coded
 	// path literals — same single-source-of-truth rule the rest of the
-	// codebase follows. agentTargets[0] is Claude, [1] is Codex.
-	claudeSkills := agentTargets[0].skillsRel
-	codexSkills := agentTargets[1].skillsRel
-	codexConfig := agentTargets[1].configRel
+	// codebase follows. Looked up by key because the registry is sorted
+	// alphabetically and the integer offsets are not load-bearing.
+	claudeSkills := agentByKey("claude").skillsRel
+	codexSkills := agentByKey("codex").skillsRel
+	codexConfig := agentByKey("codex").configRel
 	for _, name := range ownedSkills {
 		p := filepath.Join(projectDir, claudeSkills, name)
 		if _, err := os.Stat(p); err != nil {

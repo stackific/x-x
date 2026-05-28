@@ -123,9 +123,26 @@ func maybeNotifyUpdate() {
 	// the global tree — project-level skills under .claude/, .agents/,
 	// .codex/ are owned by `x-x init` and never touched here. Failure is
 	// logged but never fatal; the update check is opportunistic.
-	if err := writeBundledAgents(true); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: refresh global skills: %v\n", err)
+	refreshErr := writeBundledAgents(true)
+	if refreshErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: refresh global skills: %v\n", refreshErr)
 	}
+	// Anonymous-usage ping for the embed refresh. Reported success/fail
+	// as a boolean rather than enumerating per-file counts — the embed
+	// is rewritten atomically (succeeds whole or fails whole), so
+	// success_count = 1 / fail_count = 1 captures the entire outcome.
+	updateApply := telemetryEvent{
+		"from_version": c.Version,
+		"to_version":   Version,
+	}
+	if refreshErr != nil {
+		updateApply["success_count"] = "0"
+		updateApply["fail_count"] = "1"
+	} else {
+		updateApply["success_count"] = "1"
+		updateApply["fail_count"] = "0"
+	}
+	track("update_apply", updateApply)
 
 	latest, fetchErr := fetchLatestVersion()
 
@@ -137,6 +154,24 @@ func maybeNotifyUpdate() {
 	// Save failures here are non-fatal — worst case is we re-probe the
 	// next invocation. Logging or surfacing the error would be noise.
 	_ = saveUpdateConfig(path, c)
+
+	// Anonymous-usage ping for the GitHub round-trip. Fires for every
+	// completed check regardless of fetch outcome so the backend sees
+	// the actual check cadence (not just the upgrade-prompt frequency).
+	updateCheck := telemetryEvent{
+		"from_version": c.Version,
+		"to_version":   latest,
+	}
+	if fetchErr != nil || latest == "" || latest == c.Version {
+		updateCheck["has_update"] = "0"
+	} else {
+		updateCheck["has_update"] = "1"
+	}
+	track("update_check", updateCheck)
+	// Flush both update_apply and update_check before we possibly
+	// return without a nudge — subcommand dispatch follows in main()
+	// and may exit via os.Exit before any deferred flush would run.
+	flushTelemetry()
 
 	// Three "no nudge" conditions in one branch:
 	//   1. fetchErr != nil — network/API problem; we already updated

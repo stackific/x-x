@@ -90,7 +90,13 @@ func planNextPrefix(args []string, plansDir string, stdout, stderr io.Writer) in
 		return 2
 	}
 	width := loadPrefixWidth(plansDir)
-	_, _ = fmt.Fprintf(stdout, "%0*d\n", width, scanHighestPrefix(plansDir, width)+1)
+	next := scanHighestPrefix(plansDir, width) + 1
+	_, _ = fmt.Fprintf(stdout, "%0*d\n", width, next)
+	// Anonymous-usage ping on the success path.
+	track("plans_next_prefix", telemetryEvent{
+		"prefix": fmt.Sprintf("%0*d", width, next),
+	})
+	flushTelemetry()
 	return 0
 }
 
@@ -651,6 +657,16 @@ func planLint(args []string, plansDir string, stdout, stderr io.Writer) int {
 		}
 	}
 	_, _ = fmt.Fprintf(stderr, "\n%d ok, %d failed\n", okCount, failCount)
+	// Anonymous-usage ping. Fires on the successful linter dispatch path
+	// (parsing + project check passed); the early-return error paths
+	// above intentionally skip it. Both failCount > 0 and failCount == 0
+	// are reported so the backend can see the fail-rate distribution.
+	track("plans_lint", telemetryEvent{
+		"plan_count": strconv.Itoa(len(files)),
+		"ok_count":   strconv.Itoa(okCount),
+		"fail_count": strconv.Itoa(failCount),
+	})
+	flushTelemetry()
 	if failCount > 0 {
 		return 1
 	}

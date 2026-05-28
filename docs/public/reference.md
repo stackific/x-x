@@ -4,13 +4,15 @@
 x-x [subcommand] [flags]
 ```
 
-Running `x-x` with no arguments prints the about banner and command list. Use one of the subcommands below to do work.
+Running `x-x` with no arguments opens <https://google.com> in the OS-default browser (no-op on a headless box — see `x-x` below). Use one of the subcommands below to do work.
 
 ## Commands
 
 | Command                       | Description                                                          |
 | ----------------------------- | -------------------------------------------------------------------- |
-| `x-x`                         | Print version, copyright, and command list.                          |
+| `x-x`                         | Open <https://google.com> in the OS-default browser. Skipped automatically when no desktop session is detected (Linux without `DISPLAY` / `WAYLAND_DISPLAY`); in that case a diagnostic is written to stderr. |
+| `x-x --no-browser`            | Same as bare `x-x` but skip the browser launch. Exits silently after seeding `~/.x-x/agents/` on first run. Use this in CI or any scripted invocation that should not pop a window. |
+| `x-x post-install`            | Installer hook subcommand. Triggers the first-run write of `~/.x-x/agents/` and exits silently. `INSTALL.sh` / `INSTALL.ps1` use this; end users normally do not. Takes no arguments. |
 | `x-x init [--agents ...] [--scope ...] [--prefix-width N] [--max-plan-lines N] [--review-per task\|plan]` | Install bundled agent skills + seed the project's `.x-plans/` scaffold. |
 | `x-x skills remove --user`     | Uninstall bundled x-x skillss from your user scope (`$HOME`).         |
 | `x-x skills remove --project`  | Uninstall bundled x-x skillss from the current directory.             |
@@ -18,48 +20,98 @@ Running `x-x` with no arguments prints the about banner and command list. Use on
 | `x-x plans list`               | List plans in `./.x-plans` with slug, status, and declared systems.   |
 | `x-x plans lint`               | Validate every plan file in `./.x-plans` against the project schema.  |
 | `x-x plans slugify "<title>"`  | Print the kebab-case slug for a plan title.                          |
-| `x-x --version`               | Print the version and exit.                                          |
+| `x-x --version`               | Print the version notice and exit. This is what `INSTALL.sh` / `INSTALL.ps1` parse to seed `~/.x-x/.config.json`. |
 
 ### `x-x init`
 
-Installs every bundled skill into the locations each agent looks for, then seeds the project's `.x-plans/` scaffold. Five questions run in order; when stdin is a terminal with arrow-key select / multiselect and Shift+Tab back-navigation, so you can revise an earlier answer before submitting the final group. When stdin is piped or redirected, the same questions fall back to line-by-line prompts (which the CI test harness exercises).
+Installs every bundled skill into the locations each agent looks for, then seeds the project's `.x-plans/` scaffold.
 
-1. **Which agents?** Multi-select over every registered agent (Claude Code, Codex CLI, OpenCode, GitHub Copilot CLI, Pi, Cline today). Blank line / no toggle accepts the default (all agents).
-2. **Which scope?** Decides where the bundled SKILLS land. Either way, `.x-plans/` is seeded in the current working directory — that's how the project marker check (`./.x-plans/_config.lock`) recognizes the directory as an x-x project.
-   - **This project only** — skills under the current working directory (`.claude/skills/`, `.agents/skills/` shared by Codex, Copilot, and Pi, `.opencode/commands/`, `.cline/skills/`).
-   - **All my projects (user scope)** — skills under `$HOME` (`~/.claude/skills/`, `~/.agents/skills/` for Codex, Copilot CLI, and Pi, `~/.opencode/commands/`, `~/.cline/skills/`).
-3. **Prefix width for plan files** — zero-padded width for plan filenames (e.g. width `4` → `0001-foo.md`). Default: `4`.
-4. **Maximum lines per plan** — cap enforced by `x-x plans lint`. Keeps AI agents on a short leash: forces them to split sprawling work into smaller, reviewable plans. Default: `30`.
-5. **Pause for review after every…** — `task` reviews each EARS criterion as the planner finishes it (tight loop, more interruptions); `plan` reviews only at plan boundaries (looser loop, larger diffs). Default: `task`.
+When stdin is a terminal, prompts use arrow-key select / multiselect with Shift+Tab back-navigation. When stdin is piped or redirected, the same questions fall back to line-by-line prompts.
 
-Every prompt has a non-interactive flag twin — pass any subset to skip the matching prompt, or pass all five to drive `init` end-to-end without reading stdin at all (CI / scripted installs):
+#### Prompts
 
-- `--agents claude,codex,opencode,copilot,pi,cline` — comma-separated agent keys (repeatable). Skips the agent picker. Recognized keys: `claude` (Claude Code), `codex` (Codex CLI), `opencode` (OpenCode), `copilot` (GitHub Copilot CLI), `pi` (Pi from pi.dev), `cline` (Cline). OpenCode resolves slash commands from `.opencode/{command,commands}/**/*.md` (project) and `~/.config/opencode/commands/` (user), keyed off the file's frontmatter `name:`; `x-x init` writes the bundled SKILL.md tree to `.opencode/commands/<skill>/SKILL.md` / `~/.opencode/commands/<skill>/SKILL.md` so each skill registers as both a TUI slash command and an `opencode run --command <skill>` headless invocation (sst/opencode PR #2348). Pi resolves `/skill:<name>` against SKILL.md files under `.agents/skills/` (project, walking up from cwd) and `~/.agents/skills/` (one of two documented global locations alongside `~/.pi/agent/skills/`), keyed off the frontmatter `name:` — the same `.agents/skills/` tree Codex and Copilot already read, so a single install reaches every agents-standard tool on the machine. Cline reads skills from `.cline/skills/` (project) and `~/.cline/skills/` (user) per its [2026 config docs](https://docs.cline.bot/customization/overview); the bundled `<skill>/SKILL.md` tree shape lands there unchanged.
-- `--scope project|user` — skips the scope prompt.
-- `--prefix-width N` — positive integer; seeds `prefix_width` in `_config.lock`.
-- `--max-plan-lines N` — positive integer; seeds `max_plan_lines` in `_config.lock`.
-- `--review-per task|plan` — seeds `review_per` in `_config.lock`.
+1. **Which agents?** Multi-select over every registered agent. List is sorted alphabetically by display name. Blank line accepts the default (all agents).
+2. **Which scope?** Project (`<cwd>/...`) or user (`$HOME/...`). `.x-plans/` is always seeded in cwd regardless of scope — that's the project marker.
+3. **Prefix width for plan files** — zero-padded width for plan filenames (width `4` → `0001-foo.md`). Default: `4`.
+4. **Maximum lines per plan** — cap enforced by `x-x plans lint`. Keeps AI agents on a short leash. Default: `30`.
+5. **Pause for review after every…** — `task` (tight loop, more interruptions) or `plan` (looser loop, larger diffs). Default: `task`.
 
-Values 3–5 land in `.x-plans/_config.lock` and become the lock-file pins for the project — re-running `x-x init` later does NOT refresh them (Cargo.lock / package-lock.json semantics). Never manually edit `.x-plans/_config.lock`.
+Values 3–5 land in `.x-plans/_config.lock` and become the lock-file pins. Re-running `x-x init` later does NOT refresh them (Cargo.lock / package-lock.json semantics). Never manually edit `.x-plans/_config.lock`.
 
-Codex CLI reads from `.agents/skills` at every level (cwd, repo root, and `$HOME`), per the cross-agent SKILL.md open standard. GitHub Copilot CLI also reads `.agents/skills` at both project and user scope — `~/.agents/skills/` is on Copilot CLI's [official user-scope list](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills) alongside `~/.copilot/skills/`, and we land in the cross-agent path so the bundled `SKILL.md` content (which documents only `.claude/skills` and `.agents/skills`) discovers shared docs correctly. Pi loads skills from `.agents/skills/` at every project level (cwd through ancestor directories) and from `~/.agents/skills/` at user scope, per [pi-mono's skill docs](https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/docs/skills.md) — one of two documented user-scope roots alongside `~/.pi/agent/skills/`. Cline does NOT use the cross-agent path — per its [2026 config docs](https://docs.cline.bot/customization/overview) it reads skills from `.cline/skills/` at project scope and `~/.cline/skills/` at user scope, so `x-x init --agents cline` lands there. On Windows, `~` resolves to `%USERPROFILE%`, so `~/.claude/skills/` is `%USERPROFILE%\.claude\skills\`, `~/.agents/skills/` is `%USERPROFILE%\.agents\skills\`, `~/.cline/skills/` is `%USERPROFILE%\.cline\skills\`, and so on. Inside WSL2, paths resolve against the WSL home (`/home/<user>/...`) — install x-x with `INSTALL.sh` from inside WSL to land in the WSL filesystem.
+#### Flags (non-interactive twins)
 
-On macOS and Linux at user scope, skill directories are installed as symlinks into `~/.x-x/agents/skills/`, so refreshes to the bundled tree propagate to every project at once. On Windows (and at project scope everywhere), skills are copied. Re-running `x-x init` always overwrites the bundled skill directories with the current release — they are repo-shipped content, not user state.
+Every prompt has a flag — pass any subset to skip the matching prompt, or pass all five to drive `init` end-to-end without reading stdin (CI / scripted installs).
 
-Agent-specific config files (e.g. `~/.claude/settings.json`) are seeded only when absent — existing files are left alone.
+| Flag | Value | Notes |
+| --- | --- | --- |
+| `--agents` | Comma-separated keys (repeatable) | See "Agents" below for the full key list. |
+| `--scope` | `project` \| `user` | |
+| `--prefix-width` | positive integer | |
+| `--max-plan-lines` | positive integer | |
+| `--review-per` | `task` \| `plan` | |
+
+#### Agents
+
+| Key | Display name | Workspace path | User-scope path |
+| --- | --- | --- | --- |
+| `antigravity` | Antigravity | `.agents/skills/` | `~/.gemini/antigravity/skills/` |
+| `claude` | Claude Code | `.claude/skills/` | `~/.claude/skills/` |
+| `cline` | Cline | `.cline/skills/` | `~/.cline/skills/` |
+| `codex` | Codex CLI | `.agents/skills/` | `~/.agents/skills/` |
+| `continue` | Continue | `.continue/skills/` | `~/.continue/skills/` |
+| `copilot` | GitHub Copilot CLI | `.agents/skills/` | `~/.agents/skills/` |
+| `cursor` | Cursor | `.agents/skills/` | `~/.cursor/skills/` |
+| `kilo` | Kilo Code | `.kilocode/skills/` | `~/.kilocode/skills/` |
+| `omp` | Oh My Pi | `.agents/skills/` | `~/.agents/skills/` |
+| `opencode` | OpenCode | `.opencode/commands/` | `~/.config/opencode/commands/` |
+| `pi` | Pi | `.agents/skills/` | `~/.agents/skills/` |
+| `zed` | Zed | `.agents/skills/` | `~/.agents/skills/` |
+
+Paths follow each agent's own docs ([Cline](https://docs.cline.bot/customization/overview), [Continue](https://docs.continue.dev/customize/overview), [Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills), [Cursor](https://docs.cursor.com/agent), [Antigravity](https://antigravity.google/docs/skills), [Pi](https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/docs/skills.md), [Oh My Pi](https://github.com/can1357/oh-my-pi/blob/main/docs/skills.md), [Zed](https://zed.dev/docs/ai/agent-panel)).
+
+Key path conventions:
+
+- `.agents/skills/` is the cross-agent open spec. Codex, Copilot, Oh My Pi, Pi, Zed read it natively at both scopes.
+- Antigravity and Cursor honor `.agents/skills/` at workspace scope but diverge at user scope (Antigravity → `~/.gemini/antigravity/skills/`, Cursor → `~/.cursor/skills/`).
+- Cline, Continue, Kilo, Claude, and OpenCode use their own per-agent paths.
+
+#### Install behavior
+
+- **macOS / Linux at user scope** — skills are symlinks into `~/.x-x/agents/skills/`, so refreshes to the bundled tree propagate to every project at once.
+- **Windows (and project scope everywhere)** — skills are copied. Re-running `x-x init` overwrites the bundled skill directories with the current release.
+- **Agent-specific config files** (e.g. `~/.claude/settings.json`) are seeded only when absent. Existing files are left alone.
+- **Windows / WSL2** — `~` resolves to `%USERPROFILE%`, so `~/.claude/skills/` becomes `%USERPROFILE%\.claude\skills\`. Inside WSL2, paths resolve against the WSL home (`/home/<user>/...`) — install x-x with `INSTALL.sh` from inside WSL to land in the WSL filesystem.
 
 ### `x-x skills remove --user`
 
-Walks `~/.claude/skills/`, `~/.agents/skills/`, `~/.opencode/commands/`, `~/.cline/skills/`, and removes every entry whose name matches the bundled-skill allowlist (`x-plan`, `x-x` today). The name is the only criterion — symlink targets are not consulted, which means an entry named the same as a bundled skill *will* be removed even if you authored it yourself. Rename any local skill that collides with a bundled one before running this command.
+Walks every user-scope skills root and removes every entry whose name matches the bundled-skill allowlist (`x-plan`, `x-x` today). Roots walked:
 
-In addition to deleting bundled skill directories, `skill remove` un-merges the hook records `x-x init` previously deep-merged into each agent's JSON config (`~/.claude/settings.json`, `~/.codex/hooks.json`). Subtraction is per-record and uses deep-equality against the currently bundled file under `~/.x-x/agents/<agent>/`: a record that byte-equals one of ours is dropped; a user-tweaked variant (different command, different matcher) is preserved. The file, its top-level non-hook keys, user-added event keys, and any user-authored sibling entries under the same event key all stay.
+```
+~/.claude/skills/
+~/.cline/skills/
+~/.continue/skills/
+~/.cursor/skills/
+~/.kilocode/skills/
+~/.opencode/commands/
+~/.gemini/antigravity/skills/
+~/.agents/skills/
+```
+
+The name is the only criterion — symlink targets are not consulted, which means an entry named the same as a bundled skill *will* be removed even if you authored it yourself. Rename any local skill that collides with a bundled one before running this command.
+
+In addition to deleting bundled skill directories, `skill remove` un-merges hook records `x-x init` previously deep-merged into each agent's JSON config (`~/.claude/settings.json`, `~/.codex/hooks.json`):
+
+- Subtraction is per-record and uses deep-equality against the currently bundled file under `~/.x-x/agents/<agent>/`.
+- A record that byte-equals one of ours is dropped.
+- A user-tweaked variant (different command, different matcher) is preserved.
+- The file, its top-level non-hook keys, user-added event keys, and any user-authored sibling entries under the same event key all stay.
 
 The following are never touched:
 
 - Folders whose name is not on the bundled-skill allowlist (your own skills sitting alongside ours).
 - Anything in the agent config files outside of their `"hooks"` subtree — top-level keys like `"fastMode"` and any user-authored content. Empty arrays or event-key maps left behind by the un-merge are kept as-is; we subtract records, not containers.
 - The `.x-plans/` scaffold in cwd. Once `init` writes it (at any scope), it's yours.
-- Parent directories (`.claude/`, `.codex/`, `.cline/`). Only the `skills/` subdirectory under each may be removed, and only when it is empty after cleanup.
+- Parent directories (`.claude/`, `.codex/`, `.cline/`, `.continue/`, `.cursor/`, `.kilocode/`, `.gemini/antigravity/`). Only the `skills/` (or `commands/`) subdirectory under each may be removed, and only when it is empty after cleanup.
 
 ### `x-x skills remove --project`
 
@@ -124,7 +176,27 @@ Files matching the filename pattern but missing frontmatter, `status:`, or `syst
 
 ### `x-x plans lint`
 
-Validates every `*.md` plan file in `./.x-plans` against the contract: filename pattern (`<prefix>-<slug>.md`), file length (≤ `max_plan_lines` from `_config.lock`, default 30), YAML frontmatter format, mandatory `title:` (first key) and `created:` (last key, ISO 8601 UTC timestamp `YYYY-MM-DDTHH:MM:SSZ`), allowed `status:` values, every id in `systems:` is a known `id:` in `.x-plans/_data_systems.yaml`, every slug in `supersedes:` / `superseded_by:` / `extends:` / `extended_by:` resolves to a sibling plan and is not the plan itself, the `supersedes` ↔ `superseded_by` and `extends` ↔ `extended_by` back links are symmetric across plans, filename slug ↔ `slugify(title)` equality, required body sections (`## Goal`, `## Approach`, `## Tasks`), and the set of EARS subject names (each resolved to its registry id) equals the declared `systems:` id set exactly.
+Validates every `*.md` plan file in `./.x-plans` against the contract.
+
+**Filename + length checks:**
+
+- Filename matches the pattern `<prefix>-<slug>.md`.
+- File length ≤ `max_plan_lines` from `_config.lock` (default 30).
+- Filename slug equals `slugify(title)`.
+
+**Frontmatter checks:**
+
+- YAML frontmatter is present and valid.
+- Mandatory `title:` (first key) and `created:` (last key, ISO 8601 UTC timestamp `YYYY-MM-DDTHH:MM:SSZ`).
+- `status:` is one of the allowed values.
+- Every id in `systems:` is a known `id:` in `.x-plans/_data_systems.yaml`.
+- Every slug in `supersedes:` / `superseded_by:` / `extends:` / `extended_by:` resolves to a sibling plan and is not the plan itself.
+- `supersedes` ↔ `superseded_by` and `extends` ↔ `extended_by` back-links are symmetric across plans.
+
+**Body checks:**
+
+- Required sections present: `## Goal`, `## Approach`, `## Tasks`.
+- The set of EARS subject names (each resolved to its registry id) equals the declared `systems:` id set exactly.
 
 ```bash
 x-x plans lint
@@ -145,8 +217,10 @@ Takes exactly one positional argument; quote titles that contain spaces or shell
 ## Examples
 
 ```bash
-x-x                              # banner + command list
-x-x --version                    # prints e.g. v0.1.0
+x-x                              # opens https://google.com (or stderr diagnostic if headless)
+x-x --no-browser                 # same, but skip the browser launch (silent)
+x-x post-install                 # installer hook: seed ~/.x-x/agents/ silently
+x-x --version                    # prints e.g. v0.1.0 (installer-parseable notice)
 
 x-x init                              # huh wizard (TTY) or line prompts (piped); five questions
 x-x init --agents claude --scope user # skip pickers; the three plan-tooling prompts still ask
@@ -169,3 +243,18 @@ x-x plans slugify "My new plan"        # prints e.g. my-new-plan
 | `0`  | Success.                                                         |
 | `1`  | Runtime error (file I/O, missing source, etc.).                  |
 | `2`  | Bad invocation: unknown subcommand, missing/incompatible flag, or project-scope command run outside an x-x project (no `.x-plans/`). |
+
+## Telemetry
+
+`x-x` fires anonymous usage pings at `https://stackific.com/x-x/t` so the project can see which subcommands are exercised and which agents users install.
+
+Each ping carries: event name, CLI version, OS, arch, CI flag, and a per-process random session id. It does **not** carry file contents, paths, project identifiers, or any persistent machine id. See `docs/internal/telemetry.md` for the full schema and privacy guarantees.
+
+Opt out by setting **either** of these env vars to any non-empty value:
+
+| Env var | Source |
+| --- | --- |
+| `DO_NOT_TRACK` | [consoledonottrack.com](https://consoledonottrack.com/) — industry-standard. |
+| `DISABLE_TELEMETRY` | Project-specific escape hatch. |
+
+Example: `DO_NOT_TRACK=1 x-x init ...` (or export it from your shell rc to disable for every invocation).

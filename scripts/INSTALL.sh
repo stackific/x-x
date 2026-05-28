@@ -165,13 +165,15 @@ ensure_on_path() {
   return 1
 }
 
-# Seed the bundled agents/ library from the binary's embed. A bare `x-x`
-# invocation triggers the lazy first-run write to ~/.x-x/agents/; we send
-# its output to /dev/null since the user doesn't need to see the version
-# banner twice. The 24h update check (also bound to bare invocations)
-# handles refreshes from then on.
+# Seed the bundled agents/ library from the binary's embed. `post-install`
+# is the dedicated installer subcommand: it triggers the lazy first-run
+# write to ~/.x-x/agents/ and exits silently, NEVER opening a browser. We
+# must not use bare `x-x` here — that branch opens https://google.com in
+# the user's default browser, which would pop a window mid-install. The
+# 24h update check (still bound to every invocation) handles refreshes
+# from then on.
 info "Seeding ~/.x-x/agents/ from binary"
-"${INSTALL_DIR}/${BINARY}" >/dev/null
+"${INSTALL_DIR}/${BINARY}" post-install >/dev/null
 
 if ensure_on_path; then
   info "Installed. Run: ${BINARY} --help"

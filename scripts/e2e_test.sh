@@ -43,35 +43,44 @@ readonly SKILL_MANIFEST_FILE="SKILL.md"           # skillManifestFile
 # ownedSkills, flattened to a space-separated list for `for` iteration.
 readonly OWNED_SKILLS="${SKILL_X_PLAN_DIR} ${SKILL_X_X_DIR}"
 
-# agentTargets in constants.go — index 0 = Claude Code, 1 = Codex CLI,
-# 2 = OpenCode, 3 = GitHub Copilot CLI, 4 = Pi, 5 = Cline, 6 = omp
-# (oh-my-pi). Codex, Copilot, Pi, and omp all resolve skills from
-# `.agents/skills` at both scopes (cross-agent open spec, install is
-# idempotent so the four rows co-exist on disk without conflict). Cline
-# does NOT use the cross-agent path — per docs.cline.bot/customization/
-# overview it reads from `.cline/skills/` (project) and
-# `~/.cline/skills/` (user) only. OpenCode and Claude stay on their own
-# paths because their lookup logic doesn't include `.agents/skills` —
-# OpenCode reads `.opencode/{command,commands}/` only, Claude reads
-# `.claude/skills/` only. The agentTarget.userSkillsRel field exists
-# for future agents whose project- vs user-scope paths diverge; none of
-# the current rows need it.
-readonly CLAUDE_SKILLS_REL=".claude/skills"            # agentTargets[0].skillsRel
-readonly CLAUDE_CONFIG_REL=".claude"                   # agentTargets[0].configRel
-readonly CODEX_SKILLS_REL=".agents/skills"             # agentTargets[1].skillsRel
-readonly CODEX_CONFIG_REL=".codex"                     # agentTargets[1].configRel
-readonly OPENCODE_SKILLS_REL=".opencode/commands"      # agentTargets[2].skillsRel
-# OpenCode currently ships no per-agent config (configSrc / configRel are
-# empty), so no OPENCODE_CONFIG_REL mirror is needed.
-readonly COPILOT_SKILLS_REL=".agents/skills"           # agentTargets[3].skillsRel
-readonly PI_SKILLS_REL=".agents/skills"                # agentTargets[4].skillsRel
-readonly CLINE_SKILLS_REL=".cline/skills"              # agentTargets[5].skillsRel
-readonly OMP_SKILLS_REL=".agents/skills"               # agentTargets[6].skillsRel
-# omp ships no per-agent config (settings live at ~/.omp/config.yml,
-# outside the x-x install scope), so no OMP_CONFIG_REL mirror is needed.
+# Mirrors of agentTargets[*].skillsRel / userSkillsRel / configRel in
+# constants.go. The registry is sorted alphabetically by display name
+# (case-insensitive) and looked up by `key` in the Go drift check
+# (TestE2EShellConstantsMatchGo), so these readonly entries are matched
+# by NAME, not by index. Codex, Copilot, Pi, omp, and Antigravity all
+# resolve skills from `.agents/skills` at workspace scope (cross-agent
+# open spec, install is idempotent so the rows co-exist on disk without
+# conflict). Cline does NOT use the cross-agent path — per
+# docs.cline.bot/customization/overview it reads from `.cline/skills/`
+# (project) and `~/.cline/skills/` (user) only. OpenCode and Claude
+# stay on their own paths because their lookup logic doesn't include
+# `.agents/skills` — OpenCode reads `.opencode/{command,commands}/` only,
+# Claude reads `.claude/skills/` only. Antigravity is the lone row that
+# diverges across scopes: workspace `.agents/skills`, global
+# `~/.gemini/antigravity/skills` (per antigravity.google/docs/skills) —
+# represented in Go via agentTarget.userSkillsRel.
+readonly ANTIGRAVITY_SKILLS_REL=".agents/skills"
+readonly ANTIGRAVITY_USER_SKILLS_REL=".gemini/antigravity/skills"
+readonly CLAUDE_SKILLS_REL=".claude/skills"
+readonly CLAUDE_CONFIG_REL=".claude"
+readonly CLINE_SKILLS_REL=".cline/skills"
+readonly CODEX_SKILLS_REL=".agents/skills"
+readonly CODEX_CONFIG_REL=".codex"
+readonly CONTINUE_SKILLS_REL=".continue/skills"
+readonly CURSOR_SKILLS_REL=".agents/skills"
+readonly CURSOR_USER_SKILLS_REL=".cursor/skills"
+readonly COPILOT_SKILLS_REL=".agents/skills"
+readonly KILO_SKILLS_REL=".kilocode/skills"
+readonly OMP_SKILLS_REL=".agents/skills"
+readonly OPENCODE_SKILLS_REL=".opencode/commands"
+readonly PI_SKILLS_REL=".agents/skills"
+readonly ZED_SKILLS_REL=".agents/skills"
+# OpenCode / Copilot / Continue / Cursor / Kilo / Pi / omp /
+# Antigravity / Zed each ship no per-agent config (configSrc /
+# configRel are empty), so no *_CONFIG_REL mirrors are needed for them.
 # Parent of CODEX_SKILLS_REL — used by isolation cases that seed sibling
 # files alongside the Codex skills dir. Derived (not a Go constant) to
-# avoid drift if agentTargets[1].skillsRel ever moves.
+# avoid drift if the skillsRel ever moves.
 readonly CODEX_SKILLS_PARENT="${CODEX_SKILLS_REL%/*}"
 # Parent of OPENCODE_SKILLS_REL — used by reset_user_home to wipe the
 # whole .opencode/ tree between cases. Derived for the same drift reason.
@@ -79,6 +88,16 @@ readonly OPENCODE_SKILLS_PARENT="${OPENCODE_SKILLS_REL%/*}"
 # Parent of CLINE_SKILLS_REL — wiped between cases. Cline owns its own
 # `.cline/` dir at both project and user scope.
 readonly CLINE_SKILLS_PARENT="${CLINE_SKILLS_REL%/*}"
+# Parent of ANTIGRAVITY_USER_SKILLS_REL — `~/.gemini/antigravity/`.
+# Wiped between cases that touch Antigravity at user scope so no stale
+# global skill tree leaks across cases.
+readonly ANTIGRAVITY_USER_SKILLS_PARENT="${ANTIGRAVITY_USER_SKILLS_REL%/*}"
+# Parents for the rest of the per-agent roots. Each is wiped between
+# cases via reset_user_home so a previous case's install never bleeds
+# into the next.
+readonly CONTINUE_SKILLS_PARENT="${CONTINUE_SKILLS_REL%/*}"
+readonly CURSOR_USER_SKILLS_PARENT="${CURSOR_USER_SKILLS_REL%/*}"
+readonly KILO_SKILLS_PARENT="${KILO_SKILLS_REL%/*}"
 
 # Bundle-provided config filenames (agents/<configSrc>/* in the embed). Not
 # named in constants.go (the embed tree is the source) but pinned here
@@ -119,6 +138,15 @@ mkdir -p "$SANDBOX_HOME"
 
 PROJECTS_ROOT="$SANDBOX/projects"
 mkdir -p "$PROJECTS_ROOT"
+
+# Suppress anonymous-usage telemetry for the entire e2e run. The CI
+# runner sets CI=true, which the telemetry layer would normally tag
+# events with — but we don't want test traffic mixed into the
+# production telemetry stream. DO_NOT_TRACK is the industry-standard
+# env that every reasonable telemetry layer honors; DISABLE_TELEMETRY
+# is the project-specific belt-and-braces escape hatch.
+export DO_NOT_TRACK=1
+export DISABLE_TELEMETRY=1
 
 # ---------- pretty + assertion helpers ----------
 
@@ -194,6 +222,10 @@ reset_user_home() {
          "$HOME/${CODEX_SKILLS_PARENT}" \
          "$HOME/${OPENCODE_SKILLS_PARENT}" \
          "$HOME/${CLINE_SKILLS_PARENT}" \
+         "$HOME/${ANTIGRAVITY_USER_SKILLS_PARENT}" \
+         "$HOME/${CONTINUE_SKILLS_PARENT}" \
+         "$HOME/${CURSOR_USER_SKILLS_PARENT}" \
+         "$HOME/${KILO_SKILLS_PARENT}" \
          "$HOME/${XX_HOME_DIR}"
 }
 
@@ -350,36 +382,82 @@ assert_exists "binary built" "$BUILD_BIN"
 export HOME="$SANDBOX_HOME"
 export USERPROFILE="$HOME"   # noop on POSIX, matters on Windows.
 
-# ---------- bare invocation ----------
+# ---------- post-install (installer hook: silent seed) ----------
+#
+# INSTALL.sh's last step invokes `x-x post-install` to materialize
+# ~/.x-x/agents/ from the binary's embed. The contract: silent on
+# stdout/stderr, exit 0, and the lazy-bootstrap of the agents tree
+# happens before exit. Bare `x-x` is reserved for the browser-open
+# behavior and would pop a window mid-install — `post-install` is the
+# replacement entry point.
 
-case_start "x-x (bare) prints notice and bootstraps agents"
+case_start "x-x post-install seeds agents silently"
 reset_user_home
-run_capture ""
+run_capture "" post-install
 assert_eq "exit 0" "$RUN_RC" "0"
-assert_contains "version line" "$RUN_OUT" "x-x by Stackific, ${E2E_VERSION}"
-assert_contains "copyright"    "$RUN_OUT" "Copyright 2026 Stackific Inc."
-assert_contains "spdx"         "$RUN_OUT" "SPDX-License-Identifier: Apache-2.0"
-# Installer parses the version with `awk 'NR==1 { print $NF }'`. Pin that
-# contract so future edits to printNotice don't silently break installs.
-first_line_last_token="$(printf '%s' "$RUN_OUT" | awk 'NR==1 { print $NF; exit }')"
-assert_eq "first-line last token is version" "$first_line_last_token" "${E2E_VERSION}"
+assert_eq "no stdout" "$RUN_OUT" ""
+assert_eq "no stderr" "$RUN_ERR" ""
 assert_is_dir "lazy-bootstrap agents dir" "$HOME/${XX_AGENTS_DIR}"
 assert_is_dir "lazy-bootstrap skill ${SKILL_X_X_DIR}" \
   "$HOME/${XX_AGENTS_SKILLS_DIR}/${SKILL_X_X_DIR}"
 
-# ---------- --version (alias of bare invocation) ----------
+# ---------- --no-browser (user-facing opt-out, identical effect) ----------
+
+case_start "x-x --no-browser seeds agents silently"
+reset_user_home
+run_capture "" --no-browser
+assert_eq "exit 0" "$RUN_RC" "0"
+assert_eq "no stdout" "$RUN_OUT" ""
+assert_eq "no stderr" "$RUN_ERR" ""
+assert_is_dir "lazy-bootstrap agents dir" "$HOME/${XX_AGENTS_DIR}"
+
+# ---------- bare invocation on a headless box ----------
 #
-# `x-x` and `x-x --version` share runDefault: same notice output, same
-# lazy bootstrap of ~/.x-x/agents/ on first run, same 24h update check.
-# Keeping the assertion symmetric with the bare case pins that both
-# entry points stay aligned even after future refactors.
+# CI runs without a graphical session. With DISPLAY and WAYLAND_DISPLAY
+# both empty, hasDesktop() returns false and bare x-x prints the
+# diagnostic instead of attempting the browser. Explicitly unset both
+# env vars so this case is deterministic regardless of how the runner
+# happens to be configured.
+
+# hasDesktopFor in browser.go returns true unconditionally on darwin
+# and windows (the OS-level `open` / `rundll32` launcher works in any
+# session there), so the "no desktop → skip launch" branch is only
+# reachable on Linux. Skip the assertion on other platforms; CI
+# (ubuntu-latest) still exercises it on every PR.
+if [ "$(uname -s)" = "Linux" ]; then
+  case_start "x-x (bare, headless) prints no-desktop diagnostic"
+  reset_user_home
+  saved_display="${DISPLAY-}"
+  saved_wayland="${WAYLAND_DISPLAY-}"
+  unset DISPLAY WAYLAND_DISPLAY
+  run_capture ""
+  [ -n "$saved_display" ] && export DISPLAY="$saved_display"
+  [ -n "$saved_wayland" ] && export WAYLAND_DISPLAY="$saved_wayland"
+  assert_eq "exit 0" "$RUN_RC" "0"
+  assert_eq "no stdout" "$RUN_OUT" ""
+  assert_contains "no-desktop diagnostic" "$RUN_ERR" "no desktop environment detected"
+  assert_contains "hint at --no-browser"  "$RUN_ERR" "--no-browser"
+  assert_is_dir "lazy-bootstrap agents dir" "$HOME/${XX_AGENTS_DIR}"
+fi
+
+# ---------- --version (still prints notice for installer parsing) ----------
+#
+# INSTALL.sh's version-detection awk parses `x-x --version` line 1 to
+# seed ~/.x-x/.config.json. Bare `x-x` no longer prints the notice
+# (it opens a browser), so this is now the canonical version-printing
+# entry point. The first-line-last-token assertion pins the awk
+# contract.
 
 case_start "x-x --version prints notice and bootstraps agents"
 reset_user_home
 run_capture "" --version
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_contains "version line" "$RUN_OUT" "x-x by Stackific, ${E2E_VERSION}"
+assert_contains "copyright"    "$RUN_OUT" "Copyright 2026 Stackific Inc."
+assert_contains "spdx"         "$RUN_OUT" "SPDX-License-Identifier: Apache-2.0"
 assert_not_contains "no usage block" "$RUN_OUT" "Usage:"
+first_line_last_token="$(printf '%s' "$RUN_OUT" | awk 'NR==1 { print $NF; exit }')"
+assert_eq "first-line last token is version" "$first_line_last_token" "${E2E_VERSION}"
 assert_is_dir "lazy-bootstrap agents dir" "$HOME/${XX_AGENTS_DIR}"
 assert_is_dir "lazy-bootstrap skill ${SKILL_X_X_DIR}" \
   "$HOME/${XX_AGENTS_SKILLS_DIR}/${SKILL_X_X_DIR}"
@@ -392,6 +470,9 @@ run_capture "" -h
 assert_eq "exit 0" "$RUN_RC" "0"
 combined="${RUN_OUT}${RUN_ERR}"
 assert_contains "usage header"        "$combined" "Usage:"
+assert_contains "browser url listed"  "$combined" "https://google.com"
+assert_contains "no-browser listed"   "$combined" "--no-browser"
+assert_contains "post-install listed" "$combined" "x-x post-install"
 assert_contains "init listed"         "$combined" "x-x init"
 assert_not_contains "no bootstrap"    "$combined" "x-x bootstrap"
 assert_contains "skill remove user"   "$combined" "x-x skills remove --user"
@@ -555,7 +636,10 @@ assert_contains "interactive lock honors custom review_per" \
 case_start "x-x init interactive (invalid agent choice)"
 reset_user_home
 cd "$(fresh_project)"
-run_capture "9
+# Pick "99" — comfortably beyond any realistic agentTargets size, so
+# the input is guaranteed out-of-range without having to track the
+# exact count as new agents are added.
+run_capture "99
 " init
 [ "$RUN_RC" != "0" ] && ok "non-zero exit on invalid agent choice" || fail "non-zero exit on invalid agent choice"
 assert_contains "diagnostic on stderr" "$RUN_ERR" "invalid agent choice"
@@ -742,6 +826,150 @@ assert_is_dir "omp user-scope skills landed" \
   "${SANDBOX_HOME}/${OMP_SKILLS_REL}/${SKILL_X_X_DIR}"
 assert_absent "no install under project cwd" \
   "$PROJ_OMP_USER/${OMP_SKILLS_REL}"
+
+case_start "x-x init --agents=antigravity installs at the shared .agents/skills/ path"
+reset_user_home
+PROJ_AG="$(fresh_project)"
+cd "$PROJ_AG"
+run_capture "" init --agents=antigravity --scope=project
+assert_eq "exit 0" "$RUN_RC" "0"
+# Antigravity's workspace skill path defaults to `.agents/skills`, the
+# cross-agent open spec path Codex, Copilot, Pi, and omp also use (per
+# antigravity.google/docs/skills). Other agents' exclusive paths and
+# their config files must stay absent under a single-row install.
+assert_is_dir "antigravity project skills installed" \
+  "$PROJ_AG/${ANTIGRAVITY_SKILLS_REL}/${SKILL_X_X_DIR}"
+assert_absent "claude path NOT installed"   "$PROJ_AG/${CLAUDE_SKILLS_REL}"
+assert_absent "cline path NOT installed"    "$PROJ_AG/${CLINE_SKILLS_REL}"
+assert_absent "opencode path NOT installed" "$PROJ_AG/${OPENCODE_SKILLS_REL}"
+assert_absent "codex config NOT installed"  "$PROJ_AG/${CODEX_CONFIG_REL}"
+assert_absent "claude config NOT installed" "$PROJ_AG/${CLAUDE_CONFIG_REL}"
+
+case_start "x-x init --agents=antigravity --scope=user lands at ~/.gemini/antigravity/skills"
+PROJ_AG_USER="$(fresh_project)"
+cd "$PROJ_AG_USER"
+reset_user_home
+run_capture "" init --agents=antigravity --scope=user
+assert_eq "exit 0" "$RUN_RC" "0"
+# Antigravity diverges from the cross-agent fallback at user scope: it
+# reads `~/.gemini/antigravity/skills/` (NOT `~/.agents/skills/`) per
+# antigravity.google/docs/skills. Skills land under SANDBOX_HOME at
+# that path; the cross-agent `~/.agents/skills` must stay clean to
+# prove the userSkillsRel override drove the install; project cwd is
+# left alone.
+assert_is_dir "antigravity user-scope skills landed" \
+  "${SANDBOX_HOME}/${ANTIGRAVITY_USER_SKILLS_REL}/${SKILL_X_X_DIR}"
+assert_absent "cross-agent ~/.agents/skills NOT touched" \
+  "${SANDBOX_HOME}/${CODEX_SKILLS_REL}"
+assert_absent "no install under project cwd" \
+  "$PROJ_AG_USER/${ANTIGRAVITY_USER_SKILLS_REL}"
+
+case_start "x-x init --agents=continue installs at .continue/skills"
+reset_user_home
+PROJ_CONT="$(fresh_project)"
+cd "$PROJ_CONT"
+run_capture "" init --agents=continue --scope=project
+assert_eq "exit 0" "$RUN_RC" "0"
+# Continue scans `.continue/skills/` at project scope (per
+# continue.dev customization docs). The cross-agent `.agents/skills`
+# is NOT a Continue lookup, so installing there would land files
+# Continue never reads.
+assert_is_dir "continue project skills installed" \
+  "$PROJ_CONT/${CONTINUE_SKILLS_REL}/${SKILL_X_X_DIR}"
+assert_absent "claude path NOT installed"   "$PROJ_CONT/${CLAUDE_SKILLS_REL}"
+assert_absent "codex path NOT installed"    "$PROJ_CONT/${CODEX_SKILLS_REL}"
+assert_absent "cline path NOT installed"    "$PROJ_CONT/${CLINE_SKILLS_REL}"
+
+case_start "x-x init --agents=continue --scope=user lands at ~/.continue/skills"
+PROJ_CONT_USER="$(fresh_project)"
+cd "$PROJ_CONT_USER"
+reset_user_home
+run_capture "" init --agents=continue --scope=user
+assert_eq "exit 0" "$RUN_RC" "0"
+assert_is_dir "continue user-scope skills landed" \
+  "${SANDBOX_HOME}/${CONTINUE_SKILLS_REL}/${SKILL_X_X_DIR}"
+assert_absent "no install under project cwd" \
+  "$PROJ_CONT_USER/${CONTINUE_SKILLS_REL}"
+
+case_start "x-x init --agents=cursor installs at the shared .agents/skills/ path"
+reset_user_home
+PROJ_CUR="$(fresh_project)"
+cd "$PROJ_CUR"
+run_capture "" init --agents=cursor --scope=project
+assert_eq "exit 0" "$RUN_RC" "0"
+# Cursor at workspace scope uses the cross-agent `.agents/skills`
+# path — same as Codex/Copilot/Pi/omp/Antigravity. Cursor's own
+# `~/.cursor/skills` is the user-scope-only path.
+assert_is_dir "cursor project skills installed" \
+  "$PROJ_CUR/${CURSOR_SKILLS_REL}/${SKILL_X_X_DIR}"
+assert_absent "claude path NOT installed" "$PROJ_CUR/${CLAUDE_SKILLS_REL}"
+assert_absent "cline path NOT installed"  "$PROJ_CUR/${CLINE_SKILLS_REL}"
+
+case_start "x-x init --agents=cursor --scope=user lands at ~/.cursor/skills"
+PROJ_CUR_USER="$(fresh_project)"
+cd "$PROJ_CUR_USER"
+reset_user_home
+run_capture "" init --agents=cursor --scope=user
+assert_eq "exit 0" "$RUN_RC" "0"
+# Cursor diverges at user scope: it reads `~/.cursor/skills/`, NOT
+# the cross-agent `~/.agents/skills` fallback. Same shape as
+# Antigravity — the userSkillsRel override drives the install
+# destination, and the cross-agent path must stay clean as proof.
+assert_is_dir "cursor user-scope skills landed" \
+  "${SANDBOX_HOME}/${CURSOR_USER_SKILLS_REL}/${SKILL_X_X_DIR}"
+assert_absent "cross-agent ~/.agents/skills NOT touched" \
+  "${SANDBOX_HOME}/${CODEX_SKILLS_REL}"
+assert_absent "no install under project cwd" \
+  "$PROJ_CUR_USER/${CURSOR_USER_SKILLS_REL}"
+
+case_start "x-x init --agents=kilo installs at .kilocode/skills"
+reset_user_home
+PROJ_KILO="$(fresh_project)"
+cd "$PROJ_KILO"
+run_capture "" init --agents=kilo --scope=project
+assert_eq "exit 0" "$RUN_RC" "0"
+# Kilo Code (kilocode.ai) reads from `.kilocode/skills/` exclusively.
+# Cross-agent `.agents/skills` is NOT a documented Kilo lookup.
+assert_is_dir "kilo project skills installed" \
+  "$PROJ_KILO/${KILO_SKILLS_REL}/${SKILL_X_X_DIR}"
+assert_absent "claude path NOT installed" "$PROJ_KILO/${CLAUDE_SKILLS_REL}"
+assert_absent "codex path NOT installed"  "$PROJ_KILO/${CODEX_SKILLS_REL}"
+
+case_start "x-x init --agents=kilo --scope=user lands at ~/.kilocode/skills"
+PROJ_KILO_USER="$(fresh_project)"
+cd "$PROJ_KILO_USER"
+reset_user_home
+run_capture "" init --agents=kilo --scope=user
+assert_eq "exit 0" "$RUN_RC" "0"
+assert_is_dir "kilo user-scope skills landed" \
+  "${SANDBOX_HOME}/${KILO_SKILLS_REL}/${SKILL_X_X_DIR}"
+assert_absent "no install under project cwd" \
+  "$PROJ_KILO_USER/${KILO_SKILLS_REL}"
+
+case_start "x-x init --agents=zed installs at the shared .agents/skills/ path"
+reset_user_home
+PROJ_ZED="$(fresh_project)"
+cd "$PROJ_ZED"
+run_capture "" init --agents=zed --scope=project
+assert_eq "exit 0" "$RUN_RC" "0"
+# Zed honors the cross-agent `.agents/skills` path at BOTH scopes
+# (zed.dev "agent panel skills" docs) — install collapses with the
+# other cross-agent rows.
+assert_is_dir "zed project skills installed" \
+  "$PROJ_ZED/${ZED_SKILLS_REL}/${SKILL_X_X_DIR}"
+assert_absent "claude path NOT installed" "$PROJ_ZED/${CLAUDE_SKILLS_REL}"
+assert_absent "cline path NOT installed"  "$PROJ_ZED/${CLINE_SKILLS_REL}"
+
+case_start "x-x init --agents=zed --scope=user lands at ~/.agents/skills"
+PROJ_ZED_USER="$(fresh_project)"
+cd "$PROJ_ZED_USER"
+reset_user_home
+run_capture "" init --agents=zed --scope=user
+assert_eq "exit 0" "$RUN_RC" "0"
+assert_is_dir "zed user-scope skills landed" \
+  "${SANDBOX_HOME}/${ZED_SKILLS_REL}/${SKILL_X_X_DIR}"
+assert_absent "no install under project cwd" \
+  "$PROJ_ZED_USER/${ZED_SKILLS_REL}"
 
 case_start "x-x init --agents=invalid rejects unknown agent"
 reset_user_home
@@ -1241,13 +1469,13 @@ assert_contains "tweaked command kept" "$TWEAKED_BODY" 'x-x plans lint --verbose
 
 case_start "lazy first-run write leaves foreign content under \$HOME/${XX_AGENTS_DIR} alone"
 reset_user_home
-run_capture "" >/dev/null
+run_capture "" --no-browser
 assert_is_dir "agents dir exists" "$HOME/${XX_AGENTS_DIR}"
 echo "USER" > "$HOME/${XX_AGENTS_DIR}/USER-NOTE.md"
 mkdir -p "$HOME/${XX_AGENTS_DIR}/my-private-skill"
 echo "USER" > "$HOME/${XX_AGENTS_DIR}/my-private-skill/SKILL.md"
-# Bare invocation with no .config.json → no update check → no refresh.
-run_capture ""
+# --no-browser with no .config.json → no update check → no refresh.
+run_capture "" --no-browser
 assert_is_file "user file survives without 24h refresh" \
   "$HOME/${XX_AGENTS_DIR}/USER-NOTE.md"
 assert_is_file "user skill survives without 24h refresh" \
@@ -1259,7 +1487,7 @@ case_start "24h update check rewrites bundled agents tree"
 reset_user_home
 PROJ_REF="$(fresh_project)"
 # 1) Lazy first-run write seeds the agents tree.
-run_capture "" >/dev/null
+run_capture "" --no-browser
 assert_is_dir "agents tree seeded" "$HOME/${XX_AGENTS_DIR}"
 # 2) Install project skills so we can verify the refresh DOESN'T touch them.
 cd "$PROJ_REF"
@@ -1271,8 +1499,8 @@ echo "STALE" > "$HOME/${XX_AGENTS_DIR}/STALE.md"
 #    binary's stamped version is recorded so no upgrade nudge fires.
 echo "{\"version\":\"${E2E_VERSION}\",\"last_checked\":0}" \
   > "$HOME/${XX_HOME_DIR}/${XX_CONFIG_FILE}"
-# 5) Bare invocation fires the update check → writeBundledAgents(true).
-run_capture ""
+# 5) --no-browser fires the update check → writeBundledAgents(true).
+run_capture "" --no-browser
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_absent "stale file wiped by 24h refresh" "$HOME/${XX_AGENTS_DIR}/STALE.md"
 assert_is_dir "bundled skill present after refresh" \
@@ -1282,8 +1510,8 @@ assert_is_file "project-local file untouched by global refresh" \
   "$PROJ_REF/${CLAUDE_SKILLS_REL}/${SKILL_X_X_DIR}/PROJECT-LOCAL"
 # 7) last_checked got bumped → a second back-to-back run does NOT refresh.
 echo "POST" > "$HOME/${XX_AGENTS_DIR}/POST.md"
-run_capture ""
-assert_is_file "post-check sentinel survives next bare run" \
+run_capture "" --no-browser
+assert_is_file "post-check sentinel survives next --no-browser run" \
   "$HOME/${XX_AGENTS_DIR}/POST.md"
 
 # ---------- isolation: init --scope user keeps foreign $HOME content ----------
@@ -1363,9 +1591,10 @@ assert_is_symlink "user-scope bundled still symlinked" "$HOME/${CLAUDE_SKILLS_RE
 
 case_start "skill remove --user is a silent no-op when nothing is installed"
 reset_user_home
-# Trigger the lazy first-run write of ~/${XX_HOME_DIR}/agents/ via bare
-# x-x, then wipe the install dirs so skill remove has nothing to do.
-run_capture "" >/dev/null
+# Trigger the lazy first-run write of ~/${XX_HOME_DIR}/agents/ via
+# --no-browser (bare x-x would pop a window on a desktop session), then
+# wipe the install dirs so skill remove has nothing to do.
+run_capture "" --no-browser
 rm -rf "$HOME/${CLAUDE_CONFIG_REL}" "$HOME/${CODEX_SKILLS_PARENT}" "$HOME/${CODEX_CONFIG_REL}" "$HOME/${OPENCODE_SKILLS_PARENT}"
 run_capture "" skills remove --user
 assert_eq "exit 0 on empty state" "$RUN_RC" "0"
@@ -1390,9 +1619,9 @@ assert_contains "summary line" "$RUN_OUT" "Removed 0"
 
 # ---------- idempotency: re-running has zero net effect ----------
 
-case_start "bare x-x is idempotent (no re-bootstrap)"
+case_start "x-x --no-browser is idempotent (no re-bootstrap)"
 reset_user_home
-run_capture ""
+run_capture "" --no-browser
 sentinel_path="$HOME/${XX_AGENTS_SKILLS_DIR}/${SKILL_X_X_DIR}/SKILL.md"
 # stat is non-portable: BSD/macOS uses `-f %m`, GNU/Linux uses `-c %Y`. The
 # prior `stat -f %m … || stat -c %Y …` form looked clever but broke on Linux
@@ -1409,7 +1638,7 @@ read_mtime() {
 }
 first_mtime="$(read_mtime "$sentinel_path")"
 sleep 1
-run_capture ""
+run_capture "" --no-browser
 second_mtime="$(read_mtime "$sentinel_path")"
 assert_eq "mtime unchanged across runs" "$first_mtime" "$second_mtime"
 
@@ -1467,9 +1696,9 @@ assert_is_dir "init materialized agents" "$HOME/${XX_AGENTS_SKILLS_DIR}/${SKILL_
 
 # ---------- stream discipline: stdout vs stderr ----------
 
-case_start "bare invocation writes only to stdout"
+case_start "x-x --no-browser writes nothing to stderr"
 reset_user_home
-run_capture ""
+run_capture "" --no-browser
 [ -z "$RUN_ERR" ] && ok "stderr empty" || fail "stderr empty" "got: $RUN_ERR"
 
 case_start "init --scope project writes progress to stdout, not stderr"
@@ -1523,11 +1752,11 @@ cd "$PROJ_SD8"
 run_capture "" init --scope=project --agents=claude,codex
 sentinel_doc="$PROJ_SD8/${CLAUDE_SKILLS_REL}/${SKILL_X_X_DIR}/${SKILL_MANIFEST_FILE}"
 printf '\n<!-- e2e sentinel: PROJECT-EDITED -->\n' >> "$sentinel_doc"
-# Backdate .config.json so the next bare invocation fires the 24h refresh.
+# Backdate .config.json so the next x-x invocation fires the 24h refresh.
 echo "{\"version\":\"${E2E_VERSION}\",\"last_checked\":0}" \
   > "$HOME/${XX_HOME_DIR}/${XX_CONFIG_FILE}"
-run_capture ""
-assert_eq "bare exit 0" "$RUN_RC" "0"
+run_capture "" --no-browser
+assert_eq "--no-browser exit 0" "$RUN_RC" "0"
 # Project copy must still contain the sentinel.
 project_body="$(cat "$sentinel_doc")"
 assert_contains "project sentinel survives refresh" "$project_body" "PROJECT-EDITED"

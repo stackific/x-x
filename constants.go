@@ -122,16 +122,66 @@ func (t *agentTarget) skillsRelFor(scope initScope) string {
 	return t.skillsRel
 }
 
+// agentByKey returns the agentTargets row with the given `key`, or nil
+// when no row matches. Callers that index into the registry by name
+// (drift tests, ownedFiles, the few unit tests that reach for the Claude
+// or Codex row directly) MUST use this helper instead of agentTargets[N]
+// — the registry is sorted alphabetically by display name for the picker,
+// so the integer offsets are not load-bearing and would silently drift
+// if a future row is inserted in the middle.
+func agentByKey(key string) *agentTarget {
+	for i := range agentTargets {
+		if agentTargets[i].key == key {
+			return &agentTargets[i]
+		}
+	}
+	return nil
+}
+
 // agentTargets is the registry consulted by `x-x init` and `x-x skills
-// remove`. Add a new agent by appending a row; do NOT add per-agent
-// special cases in the install/remove code. To add an agent that ships
-// skills only (no per-agent config), leave configSrc and configRel empty.
+// remove`. Rows are ordered alphabetically by display name (case-
+// insensitive) so the interactive picker reads as an ordered list at
+// every scope. Add a new agent by inserting a row at its alphabetical
+// position; do NOT add per-agent special cases in the install/remove
+// code. To add an agent that ships skills only (no per-agent config),
+// leave configSrc and configRel empty.
 //
-// `key` is the value users type in `--agents <key>[,<key>...]` and in
-// the interactive multi-select picker — keep it short, lowercase, and
+// `key` is the value users type in `--agents <key>[,<key>...]` and the
+// stable identifier the picker emits — keep it short, lowercase, and
 // unique across the registry.
 var agentTargets = []agentTarget{
+	// Antigravity (antigravity.google) defaults to `.agents/skills/<name>/
+	// SKILL.md` at workspace scope and `~/.gemini/antigravity/skills/<name>/
+	// SKILL.md` at global scope, per antigravity.google/docs/skills (Nov 2026
+	// docs surveyed via the official codelab + the in-product docs). The two
+	// scope paths diverge — `~/.agents/skills` is the cross-agent fallback
+	// Gemini-CLI honors but Antigravity explicitly does NOT, per Dazbo's
+	// 2026 "confused about where to put your agent skills" rundown — so the
+	// user-scope path needs a `userSkillsRel` override. The bundled tree
+	// shape (`<name>/SKILL.md`) matches Antigravity's documented Skill
+	// format (folder with a SKILL.md and optional `scripts/`, `examples/`,
+	// `resources/` siblings), so no embed restructure is needed. Workspace-
+	// scope `.agents/skills` co-locates with Codex/Copilot/Pi/omp; a
+	// `--agents codex,antigravity` install collapses to one shared
+	// `.agents/skills/` write at project scope. Skills-only for now —
+	// Antigravity's hook surfaces aren't pinned to a public reference page
+	// the way Claude's `settings.json` is, so configSrc/configRel stay
+	// empty pending docs.
+	{"antigravity", "Antigravity", ".agents/skills", ".gemini/antigravity/skills", "", ""},
 	{"claude", "Claude Code", ".claude/skills", "", "claude", ".claude"},
+	// Cline (cline.bot) reads skills from `.cline/skills/` at project scope
+	// and `~/.cline/skills/` at user scope, per the official 2026 config
+	// docs at docs.cline.bot/customization/overview. The cross-agent
+	// `.agents/skills` path codex and copilot share is NOT a documented
+	// cline lookup, so installing there would land files cline never
+	// discovers. The bundled skill tree shape (`<name>/SKILL.md`) matches
+	// cline's documented skill format — a Skill is a directory with a
+	// SKILL.md inside — so no embed restructure is needed; the install
+	// loop walks `agents/skills/<name>/` and lands each subtree under
+	// `<root>/.cline/skills/<name>/` unchanged.
+	// Skills-only for now — no settings.json / hooks file bundled for
+	// cline; configSrc and configRel stay empty.
+	{"cline", "Cline", ".cline/skills", "", "", ""},
 	// Codex CLI scans .agents/skills/ at every level (cwd → repo root → $HOME),
 	// per the cross-agent SKILL.md open standard. The legacy ~/.codex/skills
 	// is also recognized at user scope but not at project scope, so .agents
@@ -139,18 +189,28 @@ var agentTargets = []agentTarget{
 	// config.toml, etc.) still lives under .codex/ — see Codex docs:
 	// https://developers.openai.com/codex/hooks for the lookup order.
 	{"codex", "Codex CLI", ".agents/skills", "", "codex", ".codex"},
-	// OpenCode resolves slash commands from `.opencode/{command,commands}/**/*.md`
-	// at project scope and `~/.config/opencode/commands/` at user scope.
-	// The lookup keys off the file's frontmatter `name:` (the path-derived
-	// fallback is used only when frontmatter omits `name:`), so an x-x
-	// install at `.opencode/commands/x-plan/SKILL.md` with `name: x-plan`
-	// registers a command callable as both `/x-plan` in the TUI and
-	// `opencode run --command x-plan ...` from the CLI (sst/opencode
-	// PR #2348). The bundled tree shape (`<command>/SKILL.md` rather than
-	// flat `<command>.md`) matches Claude/Codex for parity across agents.
-	// No per-agent config is bundled for OpenCode yet (auth + provider
-	// routing live outside the install scope, in `~/.local/share/opencode/`).
-	{"opencode", "OpenCode", ".opencode/commands", "", "", ""},
+	// Continue (continue.dev) reads skills from `.continue/skills/` at
+	// project scope and `~/.continue/skills/` at user scope, per the
+	// continue.dev customization docs (the IDE extension scans both
+	// roots on session start). Symmetric across scopes — no
+	// userSkillsRel override needed. Continue does NOT honor the
+	// cross-agent `.agents/skills` path, so installing there would
+	// land files Continue never discovers; the install must use
+	// `.continue/skills` exclusively. Skills-only — Continue's
+	// settings live at `~/.continue/config.yaml` and are user-owned
+	// end-to-end, outside the x-x install scope.
+	{"continue", "Continue", ".continue/skills", "", "", ""},
+	// Cursor reads skills from `.agents/skills/` at workspace scope
+	// (the cross-agent open spec path, shared with Codex/Copilot/Pi/
+	// omp/Antigravity) and from `~/.cursor/skills/` at global scope —
+	// Cursor does NOT honor the cross-agent `~/.agents/skills`
+	// fallback at user scope, same divergence shape as Antigravity.
+	// Needs a `userSkillsRel` override for that reason. The install
+	// is skills-only; Cursor's settings (`~/.cursor/settings.json`,
+	// MCP config, the cursor-agent hosted backend auth via
+	// CURSOR_API_KEY) are all user-owned end-to-end and outside the
+	// x-x install scope.
+	{"cursor", "Cursor", ".agents/skills", ".cursor/skills", "", ""},
 	// GitHub Copilot CLI reads skills from `.agents/skills/`, `.claude/skills/`,
 	// or `.github/skills/` at project scope, and `~/.copilot/skills/` or
 	// `~/.agents/skills/` at user scope (per Copilot CLI's May 2026 docs at
@@ -169,35 +229,16 @@ var agentTargets = []agentTarget{
 	// that's a follow-up once the manual eval workflow tells us which
 	// Copilot CLI lifecycle hooks make sense to register.
 	{"copilot", "GitHub Copilot CLI", ".agents/skills", "", "", ""},
-	// Pi (pi.dev — @earendil-works/pi-coding-agent) reads skills from
-	// `.agents/skills/` walking up from cwd at project scope and from
-	// `~/.agents/skills/` at user scope (one of two documented user-scope
-	// locations alongside `~/.pi/agent/skills/`, per pi-mono's
-	// packages/coding-agent/docs/skills.md). We use the cross-agent
-	// `.agents/skills` path at both scopes — same as Codex and Copilot —
-	// so a single install reaches every "agents-standard" tool on the
-	// machine. Pi's CLI command parser resolves `/skill:<name>` in print
-	// mode by reading SKILL.md frontmatter `name:`, so the bundled
-	// `x-plan` and `x-x` skills register as `/skill:x-plan` and
-	// `/skill:x-x` in both interactive (`pi`) and headless (`pi -p`)
-	// invocations without any per-agent config file. configSrc/configRel
-	// stay empty — no pi-specific config bundled today; pi looks for
-	// `~/.pi/agent/AGENTS.md` and `~/.pi/agent/settings.json` if a user
-	// adds them, which is outside the scope of x-x's install.
-	{"pi", "Pi", ".agents/skills", "", "", ""},
-	// Cline (cline.bot) reads skills from `.cline/skills/` at project scope
-	// and `~/.cline/skills/` at user scope, per the official 2026 config
-	// docs at docs.cline.bot/customization/overview. The cross-agent
-	// `.agents/skills` path codex and copilot share is NOT a documented
-	// cline lookup, so installing there would land files cline never
-	// discovers. The bundled skill tree shape (`<name>/SKILL.md`) matches
-	// cline's documented skill format — a Skill is a directory with a
-	// SKILL.md inside — so no embed restructure is needed; the install
-	// loop walks `agents/skills/<name>/` and lands each subtree under
-	// `<root>/.cline/skills/<name>/` unchanged.
-	// Skills-only for now — no settings.json / hooks file bundled for
-	// cline; configSrc and configRel stay empty.
-	{"cline", "Cline", ".cline/skills", "", "", ""},
+	// Kilo Code (kilocode.ai) reads skills from `.kilocode/skills/` at
+	// project scope and `~/.kilocode/skills/` at user scope, per
+	// kilocode.ai's customization docs and the published `.kilocode/`
+	// config tree convention. The cross-agent `.agents/skills` path is
+	// NOT a documented Kilo lookup, so installing there would land
+	// files Kilo never discovers. Symmetric across scopes — no
+	// userSkillsRel override needed. Skills-only; Kilo's settings live
+	// in `~/.kilocode/` end-to-end and are user-owned outside the x-x
+	// install scope.
+	{"kilo", "Kilo Code", ".kilocode/skills", "", "", ""},
 	// omp (oh-my-pi, omp.sh / can1357/oh-my-pi) is a TS coding agent
 	// that registers a documented `agents` skill provider at priority
 	// 70 — see oh-my-pi/docs/skills.md "priority 70 group (in
@@ -230,7 +271,49 @@ var agentTargets = []agentTarget{
 	// (interactive Settings → Memory tab) and its model registry at
 	// `~/.omp/agent/models.yml`. Both are user-owned end-to-end and
 	// outside the x-x install scope.
-	{"omp", "omp (oh-my-pi)", ".agents/skills", "", "", ""},
+	{"omp", "Oh My Pi", ".agents/skills", "", "", ""},
+	// OpenCode resolves slash commands from `.opencode/{command,commands}/**/*.md`
+	// at project scope and `~/.config/opencode/commands/` at user scope.
+	// The lookup keys off the file's frontmatter `name:` (the path-derived
+	// fallback is used only when frontmatter omits `name:`), so an x-x
+	// install at `.opencode/commands/x-plan/SKILL.md` with `name: x-plan`
+	// registers a command callable as both `/x-plan` in the TUI and
+	// `opencode run --command x-plan ...` from the CLI (sst/opencode
+	// PR #2348). The bundled tree shape (`<command>/SKILL.md` rather than
+	// flat `<command>.md`) matches Claude/Codex for parity across agents.
+	// No per-agent config is bundled for OpenCode yet (auth + provider
+	// routing live outside the install scope, in `~/.local/share/opencode/`).
+	{"opencode", "OpenCode", ".opencode/commands", "", "", ""},
+	// Pi (pi.dev — @earendil-works/pi-coding-agent) reads skills from
+	// `.agents/skills/` walking up from cwd at project scope and from
+	// `~/.agents/skills/` at user scope (one of two documented user-scope
+	// locations alongside `~/.pi/agent/skills/`, per pi-mono's
+	// packages/coding-agent/docs/skills.md). We use the cross-agent
+	// `.agents/skills` path at both scopes — same as Codex and Copilot —
+	// so a single install reaches every "agents-standard" tool on the
+	// machine. Pi's CLI command parser resolves `/skill:<name>` in print
+	// mode by reading SKILL.md frontmatter `name:`, so the bundled
+	// `x-plan` and `x-x` skills register as `/skill:x-plan` and
+	// `/skill:x-x` in both interactive (`pi`) and headless (`pi -p`)
+	// invocations without any per-agent config file. configSrc/configRel
+	// stay empty — no pi-specific config bundled today; pi looks for
+	// `~/.pi/agent/AGENTS.md` and `~/.pi/agent/settings.json` if a user
+	// adds them, which is outside the scope of x-x's install.
+	{"pi", "Pi", ".agents/skills", "", "", ""},
+	// Zed (zed.dev) reads skills from `.agents/skills/` at workspace
+	// scope and from `~/.agents/skills/` at global scope — Zed
+	// explicitly honors the cross-agent open spec at BOTH scopes per
+	// zed.dev's "agent panel skills" docs, making it the symmetric
+	// case (no userSkillsRel override). Install collapses with
+	// Codex/Copilot/Pi/omp/Cursor-workspace/Antigravity-workspace at
+	// project scope, and with Codex/Copilot/Pi/omp at user scope —
+	// a single `--agents codex,zed` install writes one shared
+	// `.agents/skills/` directory at each scope. Skills-only; Zed's
+	// settings live at `~/.config/zed/settings.json` (Linux/macOS
+	// XDG), `%APPDATA%\Zed\settings.json` (Windows), or
+	// `$FLATPAK_XDG_CONFIG_HOME/zed/settings.json` (Flatpak), all
+	// user-owned end-to-end and outside the x-x install scope.
+	{"zed", "Zed", ".agents/skills", "", "", ""},
 }
 
 // skillsSubdir is the directory inside ~/.x-x/agents/ that holds the
@@ -356,7 +439,7 @@ var ownedFiles = []string{
 	plansDir + "/" + plansConfigLockFile,
 	// Per-agent config files copied from agents/<agent>/ by installAgentConfig.
 	// Empty-target-only writes: an existing file is preserved.
-	agentTargets[0].configRel + "/settings.json",
+	agentByKey("claude").configRel + "/settings.json",
 }
 
 // Update-check settings — read by maybeNotifyUpdate / fetchLatestVersion.

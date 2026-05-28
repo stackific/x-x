@@ -44,23 +44,28 @@ func TestE2EShellConstantsMatchGo(t *testing.T) {
 		"SKILL_X_X_DIR":       skillXXDir,
 		"SKILL_MANIFEST_FILE": skillManifestFile,
 
-		"CLAUDE_SKILLS_REL":   agentTargets[0].skillsRel,
-		"CLAUDE_CONFIG_REL":   agentTargets[0].configRel,
-		"CODEX_SKILLS_REL":    agentTargets[1].skillsRel,
-		"CODEX_CONFIG_REL":    agentTargets[1].configRel,
-		"OPENCODE_SKILLS_REL": agentTargets[2].skillsRel,
-		// OpenCode has no per-agent config bundled — agentTargets[2].configRel
-		// is "" and is intentionally not mirrored on the shell side.
-		"COPILOT_SKILLS_REL": agentTargets[3].skillsRel,
-		// Copilot bundles no per-agent config (configRel is ""); no mirror needed.
-		"PI_SKILLS_REL": agentTargets[4].skillsRel,
-		// Pi bundles no per-agent config (configRel is ""); no mirror needed.
-		"CLINE_SKILLS_REL": agentTargets[5].skillsRel,
+		"ANTIGRAVITY_SKILLS_REL":      agentByKey("antigravity").skillsRel,
+		"ANTIGRAVITY_USER_SKILLS_REL": agentByKey("antigravity").userSkillsRel,
+		// Antigravity is skills-only — configSrc/configRel are "" because the
+		// hook surface isn't pinned to a public reference page yet.
+		"CLAUDE_SKILLS_REL": agentByKey("claude").skillsRel,
+		"CLAUDE_CONFIG_REL": agentByKey("claude").configRel,
+		"CLINE_SKILLS_REL":  agentByKey("cline").skillsRel,
 		// Cline bundles no per-agent config (configRel is ""); no mirror needed.
-		"OMP_SKILLS_REL": agentTargets[6].skillsRel,
-		// omp is skills-only — agentTargets[6].configRel is "" because omp's
-		// own settings live at ~/.omp/config.yml, outside the x-x install
-		// scope.
+		"CODEX_SKILLS_REL":       agentByKey("codex").skillsRel,
+		"CODEX_CONFIG_REL":       agentByKey("codex").configRel,
+		"CONTINUE_SKILLS_REL":    agentByKey("continue").skillsRel,
+		"CURSOR_SKILLS_REL":      agentByKey("cursor").skillsRel,
+		"CURSOR_USER_SKILLS_REL": agentByKey("cursor").userSkillsRel,
+		"COPILOT_SKILLS_REL":     agentByKey("copilot").skillsRel,
+		"KILO_SKILLS_REL":        agentByKey("kilo").skillsRel,
+		"OMP_SKILLS_REL":         agentByKey("omp").skillsRel,
+		"OPENCODE_SKILLS_REL":    agentByKey("opencode").skillsRel,
+		"PI_SKILLS_REL":          agentByKey("pi").skillsRel,
+		"ZED_SKILLS_REL":         agentByKey("zed").skillsRel,
+		// Copilot / Continue / Cursor / Kilo / OpenCode / Pi / omp / Zed
+		// each bundle no per-agent config (configRel is ""), so no
+		// *_CONFIG_REL mirror is needed for them.
 	}
 
 	for name, expected := range want {
