@@ -4,28 +4,46 @@
 package main
 
 import (
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"sync"
 	"testing"
 )
 
+// telemetryHit captures the salient bits of one POST: the parsed JSON
+// body and the request method + Content-Type so tests can assert on
+// both the wire format AND the payload.
+type telemetryHit struct {
+	method      string
+	contentType string
+	body        map[string]string
+}
+
 // telemetryProbe is a one-shot httptest.Server that records every
-// request's query params. Each test gets a fresh probe so request
-// ordering across tests can never leak.
+// request. Each test gets a fresh probe so request ordering across
+// tests can never leak.
 type telemetryProbe struct {
 	server *httptest.Server
 	mu     sync.Mutex
-	hits   []url.Values
+	hits   []telemetryHit
 }
 
 func newTelemetryProbe(t *testing.T) *telemetryProbe {
 	t.Helper()
 	p := &telemetryProbe{}
 	p.server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = r.Body.Close()
+		var body map[string]string
+		_ = json.Unmarshal(raw, &body)
 		p.mu.Lock()
-		p.hits = append(p.hits, r.URL.Query())
+		p.hits = append(p.hits, telemetryHit{
+			method:      r.Method,
+			contentType: r.Header.Get("Content-Type"),
+			body:        body,
+		})
 		p.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -59,19 +77,25 @@ func TestTelemetry_TrackFiresAndIncludesStandardParams(t *testing.T) {
 		t.Fatalf("expected 1 ping, got %d", len(probe.hits))
 	}
 	got := probe.hits[0]
+	if got.method != http.MethodPost {
+		t.Errorf("method = %q, want POST", got.method)
+	}
+	if got.contentType != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", got.contentType)
+	}
 	for _, want := range []struct{ key, val string }{
 		{"event", "init"},
 		{"scope", "project"},
 		{"agents", "claude,codex"},
 		{"v", Version},
 	} {
-		if got.Get(want.key) != want.val {
-			t.Errorf("param %q = %q, want %q", want.key, got.Get(want.key), want.val)
+		if got.body[want.key] != want.val {
+			t.Errorf("body[%q] = %q, want %q", want.key, got.body[want.key], want.val)
 		}
 	}
 	for _, mustExist := range []string{"os", "arch", "session_id"} {
-		if got.Get(mustExist) == "" {
-			t.Errorf("standard param %q missing", mustExist)
+		if got.body[mustExist] == "" {
+			t.Errorf("standard param %q missing from body", mustExist)
 		}
 	}
 }
@@ -128,21 +152,21 @@ func TestTelemetry_ReservedKeysNotOverwritten(t *testing.T) {
 	if len(probe.hits) != 1 {
 		t.Fatalf("expected 1 hit, got %d", len(probe.hits))
 	}
-	got := probe.hits[0]
-	if got.Get("event") != "init" {
-		t.Errorf("event spoofed: %q", got.Get("event"))
+	got := probe.hits[0].body
+	if got["event"] != "init" {
+		t.Errorf("event spoofed: %q", got["event"])
 	}
-	if got.Get("v") != Version {
-		t.Errorf("v spoofed: %q", got.Get("v"))
+	if got["v"] != Version {
+		t.Errorf("v spoofed: %q", got["v"])
 	}
-	if got.Get("os") == "??" {
+	if got["os"] == "??" {
 		t.Errorf("os spoofed")
 	}
-	if got.Get("session_id") == "spoofed" {
+	if got["session_id"] == "spoofed" {
 		t.Errorf("session_id spoofed")
 	}
-	if got.Get("scope") != "project" {
-		t.Errorf("legitimate event-specific key dropped: scope=%q", got.Get("scope"))
+	if got["scope"] != "project" {
+		t.Errorf("legitimate event-specific key dropped: scope=%q", got["scope"])
 	}
 }
 
@@ -167,7 +191,7 @@ func TestTelemetry_CIDetection(t *testing.T) {
 	if len(probe.hits) != 1 {
 		t.Fatalf("expected 1 hit, got %d", len(probe.hits))
 	}
-	if probe.hits[0].Get("ci") != "1" {
-		t.Errorf("ci flag missing under GITHUB_ACTIONS=true: %q", probe.hits[0].Get("ci"))
+	if probe.hits[0].body["ci"] != "1" {
+		t.Errorf("ci flag missing under GITHUB_ACTIONS=true: %q", probe.hits[0].body["ci"])
 	}
 }

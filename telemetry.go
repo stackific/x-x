@@ -4,11 +4,14 @@
 package main
 
 // telemetry is the anonymous-usage-ping subsystem. The CLI fires named
-// events at https://stackific.com/x-x/t over HTTP GET so the backend
-// can be a single static endpoint with no body parsing — query-string
-// only. Every event carries a small bag of standard params (CLI
+// events at https://stackific.com/x-x/t over HTTP POST with a flat
+// JSON body (Content-Type: application/json). POST keeps the payload
+// out of intermediary access logs (CDN, proxies) that routinely log
+// full URLs, and lets the wire format grow without URL-encoding
+// gymnastics. Every event carries a standard floor of params (CLI
 // version, OS, arch, CI flag, per-process session id) plus any
-// event-specific params the caller supplies.
+// event-specific params the caller supplies; every value is a string
+// so the receiver never has to second-guess type coercion.
 //
 // Privacy posture: opt-out, honored by two env vars — DO_NOT_TRACK
 // (industry-standard, consoledonottrack.com) and DISABLE_TELEMETRY
@@ -23,11 +26,12 @@ package main
 // expectations live in docs/internal/telemetry.md.
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
-	"net/url"
 	"os"
 	"runtime"
 	"sync"
@@ -100,22 +104,34 @@ func track(event string, params telemetryEvent) {
 	if !telemetryEnabled() {
 		return
 	}
-	q := url.Values{}
-	q.Set("event", event)
-	q.Set("v", Version)
-	q.Set("os", runtime.GOOS)
-	q.Set("arch", runtime.GOARCH)
-	q.Set("session_id", telemetrySessionID)
+	// Build the payload as a flat map[string]string so the JSON envelope
+	// matches the producer's value type exactly — no nested objects, no
+	// numeric coercion, no nullables for the backend to second-guess.
+	// Standard floor first, then event-specific params merged on top
+	// with the standard keys protected from caller overwrite.
+	payload := map[string]string{
+		"event":      event,
+		"v":          Version,
+		"os":         runtime.GOOS,
+		"arch":       runtime.GOARCH,
+		"session_id": telemetrySessionID,
+	}
 	if telemetryIsCI() {
-		q.Set("ci", "1")
+		payload["ci"] = "1"
 	}
 	for k, v := range params {
-		// Don't let event-specific params clobber the standard ones —
-		// the standard set is the floor every event must carry.
 		if _, reserved := reservedTelemetryKeys[k]; reserved {
 			continue
 		}
-		q.Set(k, v)
+		payload[k] = v
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		// Marshal of a map[string]string can only fail on UTF-8
+		// validity, which user-supplied param values could in
+		// principle trip. Drop the event silently — telemetry must
+		// never disrupt a real command.
+		return
 	}
 
 	endpoint := telemetryEndpoint()
@@ -127,10 +143,11 @@ func track(event string, params telemetryEvent) {
 		// a slow body read leak past flushTelemetry's deadline.
 		ctx, cancel := context.WithTimeout(context.Background(), telemetryHTTPTimeout)
 		defer cancel()
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"?"+q.Encode(), nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 		if err != nil {
 			return
 		}
+		req.Header.Set("Content-Type", "application/json")
 		resp, err := telemetryClient.Do(req)
 		if err != nil {
 			return
