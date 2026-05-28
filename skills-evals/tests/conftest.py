@@ -36,11 +36,12 @@ CLAUDE_ENV_DEFAULTS = {
 }
 
 # Which `x-x init --scope` value to use when bootstrapping each test's
-# workspace. Default `project` installs skills into <workspace>/.claude/skills/
-# so each test gets a hermetic skill tree. Set X_X_INSTALL_SCOPE=user (e.g.
-# from manual-claude-judge-user-scope.yml) to install skills into
-# ~/.claude/skills/ once on the runner and reuse across every test in the
-# session — exercises the user-scope path of `x-x init`.
+# workspace. Default `project` installs skills into <workspace>/.claude/skills/.
+# Set X_X_INSTALL_SCOPE=user (e.g. from manual-claude-judge-user-scope.yml)
+# to install skills into ~/.claude/skills/ — exercises the user-scope path
+# of `x-x init`. Either way, each test gets a virgin sandboxed $HOME (see
+# the `workspace` fixture), so user-scope test N never inherits ~/.claude/
+# state written by test N-1; every `x-x init` starts from an empty $HOME.
 VALID_SCOPES = ("project", "user")
 
 
@@ -104,7 +105,7 @@ def _load_dotenv_and_route_claude() -> None:
 
 
 @pytest.fixture
-def workspace(tmp_path: Path) -> Path:
+def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
   """A throwaway directory with `x-x init` already run inside it.
 
   The init scope is read from X_X_INSTALL_SCOPE (default "project") so
@@ -113,6 +114,17 @@ def workspace(tmp_path: Path) -> Path:
   and `x-x init --scope user` (skills land under ~/.claude/skills/).
   Both workflows in .github/workflows/manual-claude-*judge.yml share
   these tests; only the env value differs.
+
+  $HOME (and $USERPROFILE on Windows) is redirected to a per-test
+  sandboxed directory before `x-x init` runs, so every test sees a
+  virgin user-scope state. Without this, user-scope test N would
+  inherit ~/.x-x/agents/, ~/.claude/skills/, and ~/.agents/skills/
+  populated by test N-1, and the asymmetry between project-scope
+  (fresh per test from tmp_path) and user-scope (carries state) would
+  let a latent dependency on pre-install state pass undetected. The
+  compiled x-x and claude binaries live outside $HOME (typically under
+  $(go env GOPATH)/bin and the node tool cache), so the sandbox does
+  not affect binary resolution.
   """
   if shutil.which("x-x") is None:
     pytest.skip("`x-x` not on PATH — install it with `go install .` from repo root")
@@ -126,6 +138,14 @@ def workspace(tmp_path: Path) -> Path:
       pytrace=False,
     )
   log("conftest", f"x-x init scope: {scope} (from X_X_INSTALL_SCOPE)")
+
+  sandboxed_home = tmp_path / "home"
+  sandboxed_home.mkdir()
+  monkeypatch.setenv("HOME", str(sandboxed_home))
+  # Windows resolves $HOME via USERPROFILE; set both so the sandbox
+  # survives whichever variable the Go binary reads.
+  monkeypatch.setenv("USERPROFILE", str(sandboxed_home))
+  log("conftest", f"sandboxed $HOME: {sandboxed_home}")
 
   ws = tmp_path / "eval-workspace"
   ws.mkdir()
