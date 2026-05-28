@@ -86,11 +86,15 @@ if (($env:Path -split ';') -notcontains $installDir) {
   $env:Path = "$installDir;$env:Path"
 }
 
-# Seed ~/.stax/agents/ from the binary's embed via a bare invocation. Same
-# trick the release installer uses; refreshes are handled by the hourly
-# update check from then on.
+# Seed ~/.stax/agents/ from the binary's embed via the dedicated
+# post-install hook. Bare `stax` now launches the loopback web UI AND
+# requires `<cwd>/.stax/_config.lock` to be present (it's a per-project
+# tool from the user's point of view), so it would fail with
+# "not a stax project" when invoked from the installer's working
+# directory. `post-install` is the installer-only entry point that
+# just materialises ~/.stax/agents/ and exits.
 Info "Seeding ~/.stax/agents/ from binary"
-& $dest | Out-Null
+& $dest post-install | Out-Null
 if ($LASTEXITCODE -ne 0) { Die "stax first-run seed failed" }
 
 Info "Installed. Run: $binary --help"
