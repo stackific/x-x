@@ -356,33 +356,17 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
   if agent_key == "cline":
     # Cline's headless mode reads provider routing from on-disk auth
     # state (~/.cline/data/settings/, under the per-test sandboxed $HOME
-    # set above). `cline auth --provider deepseek --apikey <key>
-    # --modelid deepseek-v4-pro` persists the routing once; subsequent
-    # `cline --yolo --json ...` invocations in this same test see it.
-    # Done here rather than in the session fixture because the sandbox
-    # gets a fresh $HOME per test — a session-scope seed would land in
-    # the wrong directory and the per-test sandboxes would start blank.
-    api_key = os.environ["DEEPSEEK_API_KEY"]
-    auth_cmd = [
-      "cline", "auth",
-      "--provider", "deepseek",
-      "--apikey", api_key,
-      "--modelid", "deepseek-v4-pro",
-    ]
-    log("conftest", f"run: cline auth --provider deepseek --apikey *** --modelid deepseek-v4-pro")
-    result = subprocess.run(auth_cmd, cwd=ws, capture_output=True, text=True)
-    if result.stdout.strip():
-      for line in result.stdout.rstrip().splitlines():
-        log("conftest", f"  stdout: {line}")
-    if result.stderr.strip():
-      for line in result.stderr.rstrip().splitlines():
-        log("conftest", f"  stderr: {line}")
-    log("conftest", f"  exit={result.returncode}")
-    if result.returncode != 0:
-      pytest.fail(
-        f"cline auth seed failed: exit={result.returncode}",
-        pytrace=False,
-      )
+    # set above). Seeded here rather than in the session fixture
+    # because the sandbox gets a fresh $HOME per test — a session-scope
+    # seed would land in the wrong directory and the per-test sandboxes
+    # would start blank. The same helper is called inline from the
+    # smoke test, which bypasses this fixture.
+    from skills_evals.cline_driver import seed_cline_auth
+    log("conftest", "seeding cline auth for workspace fixture")
+    try:
+      seed_cline_auth()
+    except RuntimeError as e:
+      pytest.fail(f"cline auth seed failed: {e}", pytrace=False)
 
   log("conftest", f"workspace ready: {sorted(p.name for p in ws.iterdir())}")
   if scope == "user":

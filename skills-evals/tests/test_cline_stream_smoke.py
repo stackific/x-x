@@ -20,15 +20,27 @@ from pathlib import Path
 
 import pytest
 
-from skills_evals.cline_driver import drive_prompt
+from skills_evals.cline_driver import drive_prompt, seed_cline_auth
 
 
-def test_cline_smoke(tmp_path: Path) -> None:
+def test_cline_smoke(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
   if shutil.which("cline") is None:
     pytest.skip("`cline` not on PATH")
 
   workspace = tmp_path / "bare"
   workspace.mkdir()
+
+  # Sandbox $HOME and seed cline auth here too — the smoke test
+  # intentionally bypasses the `workspace` fixture (which would also
+  # run `x-x init`, polluting the bare workspace), so the auth seeding
+  # the fixture does for scenario tests has to be repeated inline.
+  # Without this, cline falls back to its built-in cline.bot account +
+  # qwen3.7-max and the very first call fails with "Unauthorized".
+  sandboxed_home = tmp_path / "home"
+  sandboxed_home.mkdir()
+  monkeypatch.setenv("HOME", str(sandboxed_home))
+  monkeypatch.setenv("USERPROFILE", str(sandboxed_home))
+  seed_cline_auth()
 
   run = drive_prompt(
     workspace,

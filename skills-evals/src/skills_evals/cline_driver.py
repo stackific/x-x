@@ -117,24 +117,87 @@ class SkillRun:
         f.write(json.dumps(event) + "\n")
 
 
+SKILL_REL = Path(".claude") / "skills"
+
+
+def _resolve_skill_path(workspace: Path, skill: str) -> Path:
+  """Return the SKILL.md path under either project or user scope.
+
+  `x-x init --scope project --agents claude` writes
+  `<workspace>/.claude/skills/<skill>/SKILL.md`. `x-x init --scope user
+  --agents claude` writes the same tree under `$HOME/.claude/skills/`.
+  Both scopes are valid; we probe project first (workflow default) then
+  fall back to $HOME so the user-scope workflow (X_X_INSTALL_SCOPE=user)
+  resolves the same templates.
+  """
+  candidates = [
+    workspace / SKILL_REL / skill / "SKILL.md",
+    Path.home() / SKILL_REL / skill / "SKILL.md",
+  ]
+  for path in candidates:
+    if path.is_file():
+      return path
+  raise FileNotFoundError(
+    f"SKILL template not found at any of: {[str(p) for p in candidates]} "
+    f"— did `x-x init --agents claude` run (in the workspace fixture) "
+    f"before drive_skill was called?"
+  )
+
+
 def compose_skill_prompt(workspace: Path, skill: str, arguments: str) -> str:
-  """Inline `<workspace>/.claude/skills/<skill>/SKILL.md` + user task + CI directive.
+  """Inline the SKILL.md body + user task + CI directive into one prompt.
 
   Matches the opencode driver's pre-`--command` strategy: cline has no
   native slash-resolver in headless mode, so the SKILL.md body is read
   off disk and prepended to the user task. `x-x init --agents claude`
-  is what placed the SKILL.md at this exact path (the transitional
-  init value for cline).
+  (the transitional init value for cline) is what placed the SKILL.md
+  files; the helper above probes both project- and user-scope install
+  locations so a single driver implementation serves both workflows.
   """
-  skill_path = workspace / ".claude" / "skills" / skill / "SKILL.md"
-  if not skill_path.is_file():
-    raise FileNotFoundError(
-      f"SKILL template not found at {skill_path} — did `x-x init` run "
-      f"with --agents claude before drive_skill was called?"
-    )
+  skill_path = _resolve_skill_path(workspace, skill)
   body = skill_path.read_text(encoding="utf-8")
   task_block = f"\n\nUser task: {arguments}" if arguments else ""
   return f"SKILL TEMPLATE:\n\n{body}{task_block}{CI_DIRECTIVE}"
+
+
+def seed_cline_auth(api_key: str | None = None) -> None:
+  """Seed `cline auth` for the current $HOME so cline routes via DeepSeek.
+
+  Used by both the workspace fixture (per-test, before the scenario
+  drive_skill calls) and the smoke test (which uses a bare/ workspace
+  outside the fixture). Without this seed, `cline --yolo --json` falls
+  back to cline.bot's default account + qwen3.7-max model — which the
+  CI runner is not authenticated for, surfacing as "Unauthorized" on
+  the first call.
+
+  `api_key` defaults to `DEEPSEEK_API_KEY` from env. Raises if neither
+  the parameter nor the env var is populated.
+  """
+  api_key = api_key or os.environ.get("DEEPSEEK_API_KEY")
+  if not api_key:
+    raise RuntimeError(
+      "DEEPSEEK_API_KEY not set; cannot seed cline auth"
+    )
+  log("driver", "seeding cline auth (provider=deepseek model=deepseek-v4-pro)")
+  result = subprocess.run(
+    [
+      "cline", "auth",
+      "--provider", "deepseek",
+      "--apikey", api_key,
+      "--modelid", "deepseek-v4-pro",
+    ],
+    capture_output=True, text=True,
+  )
+  if result.stdout.strip():
+    for line in result.stdout.rstrip().splitlines():
+      log("driver", f"cline auth stdout: {line}")
+  if result.stderr.strip():
+    for line in result.stderr.rstrip().splitlines():
+      log("driver", f"cline auth stderr: {line}")
+  if result.returncode != 0:
+    raise RuntimeError(
+      f"cline auth failed: exit={result.returncode}"
+    )
 
 
 def drive_skill(
