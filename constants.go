@@ -527,7 +527,17 @@ const (
 // registration (server.go) and the e2e probes (scripts/e2e_test.sh)
 // can both reference one source of truth — renaming an endpoint is
 // then a one-line edit here plus the mirror in the shell harness.
+//
+// `scope` in the user-facing API is the same artifact the CLI calls a
+// `plan` — `.stax/<prefix>-<slug>.md`. The naming split is deliberate:
+// the bundled skill that authors these files is `/scope`, so the web
+// UI surfaces them under the same name. Backend code keeps the
+// historical `plan` term because the CLI subcommands (`stax plans
+// next-prefix`, etc.) and the on-disk filename conventions are
+// stable; only the HTTP API and frontend page routes use `scope`.
 const (
 	apiHelloPath   = "/api/hello"
 	apiSystemsPath = "/api/systems"
+	apiScopesPath  = "/api/scopes"
+	apiScopePath   = "/api/scope"
 )

@@ -24,6 +24,7 @@ package main
 // signal-handling shell that is only meaningful in the real CLI.
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"encoding/json"
@@ -38,10 +39,18 @@ import (
 	"os/signal"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
+	"github.com/yuin/goldmark/parser"
+	"github.com/yuin/goldmark/text"
+	"github.com/yuin/goldmark/util"
 )
 
 // embeddedFrontend is the static build output of the Vite SPA that
@@ -95,6 +104,119 @@ type systemsResponse struct {
 	Systems []systemEntry `json:"systems"`
 }
 
+// planDetail is one matching plan in the /api/systems?id=<slug> response:
+// just the frontmatter fields the UI needs to render the row (title,
+// status badge, created date for relative-time formatting). The plan
+// body is intentionally not included — /api/scope?id=<slug> serves the
+// full markdown body for any plan a user actually opens.
+type planDetail struct {
+	Slug    string `json:"slug"`
+	Title   string `json:"title"`
+	Status  string `json:"status"`
+	Created string `json:"created"`
+}
+
+// systemDetailResponse is the body of /api/systems?id=<slug> on a hit:
+// the system's id and display name plus every plan whose frontmatter
+// `systems:` array contains the id, sorted by filename slug (which is
+// chronological because the prefix is zero-padded sequential).
+type systemDetailResponse struct {
+	ID    string       `json:"id"`
+	Name  string       `json:"name"`
+	Plans []planDetail `json:"plans"`
+}
+
+// apiErrorResponse is the body emitted for non-2xx JSON responses. Kept
+// minimal so a UI can pattern-match the `error` field directly.
+type apiErrorResponse struct {
+	Error string `json:"error"`
+}
+
+// scopeListItem is one row in the /api/scopes response. Carries the
+// fields the /scopes list view needs to render each card: slug
+// (deep-link target for /scope?id=...), title, status (rendered as a
+// chip), created (ISO 8601 UTC string the UI formats client-side), and
+// the kebab-case ids of every system the plan declares (each rendered
+// as a link to /system?id=...). The full markdown body is intentionally
+// NOT surfaced — that's the /api/scope?id=<slug> detail endpoint's
+// responsibility, and embedding it in every list row would inflate the
+// payload before the user opens any one plan.
+type scopeListItem struct {
+	Slug    string   `json:"slug"`
+	Title   string   `json:"title"`
+	Status  string   `json:"status"`
+	Created string   `json:"created"`
+	Systems []string `json:"systems"`
+}
+
+// scopesListResponse wraps the array in an object so the response can
+// grow (pagination, schema metadata) without becoming a breaking change
+// to clients that already deserialize the body as a JSON object. Same
+// shape rationale as systemsResponse.
+type scopesListResponse struct {
+	Scopes []scopeListItem `json:"scopes"`
+}
+
+// scopeDetail is the /api/scope?id=<slug> body: every frontmatter field
+// the detail view needs plus the markdown body pre-rendered to HTML
+// server-side (so the browser doesn't need its own markdown library).
+// systems carries the kebab-case ids exactly as parsed from
+// frontmatter, so the UI can compose /system?id=<id> links without
+// having to re-parse anything.
+type scopeDetail struct {
+	Slug    string   `json:"slug"`
+	Title   string   `json:"title"`
+	Status  string   `json:"status"`
+	Created string   `json:"created"`
+	Systems []string `json:"systems"`
+	HTML    string   `json:"html"`
+}
+
+// forceH6Headings is a goldmark AST transformer that pins every
+// rendered markdown heading to <h6>. Plans contain `## Goal`,
+// `## Approach`, `## Tasks` section headers and the surrounding page
+// chrome (chip, breadcrumb, page title) already supplies the visual
+// hierarchy — rendering plan headings as raw <h2> would dominate the
+// detail page. Pinning to <h6> keeps the heading anchor (auto-id) and
+// semantic outline behavior intact while letting CSS style them as
+// quiet subheads.
+//
+// The transformer runs as an AST pass rather than a custom renderer
+// override because mutating `*ast.Heading.Level` keeps every other
+// goldmark feature (auto-ids, GFM extensions, escape behavior) on the
+// default path — no need to reimplement HTML output.
+type forceH6Headings struct{}
+
+// Transform satisfies parser.ASTTransformer. Walk every node; when one
+// is a heading, rewrite its level to 6.
+func (forceH6Headings) Transform(doc *ast.Document, _ text.Reader, _ parser.Context) {
+	_ = ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		if h, ok := n.(*ast.Heading); ok {
+			h.Level = 6
+		}
+		return ast.WalkContinue, nil
+	})
+}
+
+// markdownRenderer is the shared goldmark instance used to render plan
+// bodies into HTML. Built once at package scope because the renderer is
+// safe for concurrent use and constructing one per request would burn
+// cycles for no benefit. GFM is enabled so plan tasks render as
+// checkbox-styled list items; raw HTML in the markdown is escaped (no
+// WithUnsafe) because plan files come from a user-editable tree. The
+// forceH6Headings transformer pins every heading level to <h6> so plan
+// section headers don't overwhelm the surrounding page chrome.
+var markdownRenderer = goldmark.New(
+	goldmark.WithExtensions(extension.GFM),
+	goldmark.WithParserOptions(
+		parser.WithAutoHeadingID(),
+		parser.WithASTTransformers(util.Prioritized(forceH6Headings{}, 999)),
+	),
+)
+
 // newServerMux builds the ServeMux that runServer (and the unit tests)
 // register handlers against. Extracted from runServer so handler
 // behavior can be exercised with httptest.NewServer / NewRecorder
@@ -110,6 +232,8 @@ func newServerMux() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc(apiHelloPath, handleAPIHello)
 	mux.HandleFunc(apiSystemsPath, handleAPISystems)
+	mux.HandleFunc(apiScopesPath, handleAPIScopes)
+	mux.HandleFunc(apiScopePath, handleAPIScope)
 	mux.HandleFunc("/", handleFrontend)
 	return mux
 }
@@ -184,18 +308,210 @@ func handleAPIHello(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-// handleAPISystems reads .stax/_data_systems.yaml from the current
-// working directory and returns the parsed registry as JSON. cwd is
-// the de-facto project root for the running stax process — set via
-// --cwd before the server starts (in runDefault) or inherited from the
-// shell. A missing file (or a cwd that simply isn't a stax project)
-// produces a 200 with an empty array: from a UI's point of view, "no
-// systems yet" is a valid state worth rendering an empty panel for,
-// not an error to surface.
-func handleAPISystems(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, systemsResponse{
-		Systems: readSystemsForAPI(filepath.Join(staxDir, staxSystemsFile)),
+// handleAPISystems serves /api/systems in two modes:
+//
+//   - list mode (no `id` query): returns the parsed registry as JSON.
+//     A missing registry file or a cwd that is not a stax project
+//     produces a 200 with an empty array — "no systems yet" is a
+//     normal state for the UI to render an empty panel against, not an
+//     error to surface as a non-2xx.
+//   - detail mode (`?id=<slug>`): returns the named system plus every
+//     plan whose frontmatter `systems:` array contains the id, with
+//     each plan's markdown body pre-rendered to HTML. An unknown id
+//     produces a 404 with a JSON error so the UI can show a not-found
+//     state instead of an empty list (which would be indistinguishable
+//     from "system exists but has no plans yet").
+//
+// Both modes read from cwd, which is the de-facto project root for the
+// running stax process (set via --cwd in runDefault or inherited from
+// the shell).
+func handleAPISystems(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		writeJSON(w, http.StatusOK, systemsResponse{
+			Systems: readSystemsForAPI(filepath.Join(staxDir, staxSystemsFile)),
+		})
+		return
+	}
+	detail, ok := readSystemDetail(staxDir, id)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, apiErrorResponse{Error: "system not found"})
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
+}
+
+// readSystemDetail is the testable body of handleAPISystems' detail
+// branch. Takes the project's stax directory and a system id; returns
+// the populated response plus a found bool. A false found means the id
+// is not declared in .stax/_data_systems.yaml — handleAPISystems
+// translates that into a 404. plans is empty (not nil) when the id is
+// known but no plan declares it, so the JSON encodes an explicit `[]`.
+//
+// Plan order is filename sort descending — newest plans first, because
+// the numeric prefix is zero-padded sequential. Matches the default of
+// `stax plans list` (which also emits desc) and gives the UI the most
+// recent work above the fold.
+func readSystemDetail(staxDir, id string) (systemDetailResponse, bool) {
+	reg := parseRegistry(filepath.Join(staxDir, staxSystemsFile))
+	name, known := reg.byID[id]
+	if !known {
+		return systemDetailResponse{}, false
+	}
+
+	files, _ := filepath.Glob(filepath.Join(staxDir, "*"+planFileExt))
+	sort.Sort(sort.Reverse(sort.StringSlice(files)))
+
+	plans := make([]planDetail, 0, len(files))
+	for _, f := range files {
+		detail, ok := readPlanForAPI(f, id)
+		if !ok {
+			continue
+		}
+		plans = append(plans, detail)
+	}
+	return systemDetailResponse{ID: id, Name: name, Plans: plans}, true
+}
+
+// readPlanForAPI reads one plan file and, if its frontmatter declares
+// the supplied id in its `systems:` array, returns the planDetail row.
+// Returns (_, false) for files that fail to parse or lack the id —
+// individual bad plans never abort the whole /api/systems?id=... call.
+func readPlanForAPI(planPath, id string) (planDetail, bool) {
+	row, ok := parsePlan(planPath, io.Discard)
+	if !ok || !slices.Contains(row.systems, id) {
+		return planDetail{}, false
+	}
+	title, created := readPlanTitleAndCreated(planPath)
+	return planDetail{
+		Slug:    row.slug,
+		Title:   title,
+		Status:  row.status,
+		Created: created,
+	}, true
+}
+
+// readPlanTitleAndCreated extracts the `title:` and `created:`
+// frontmatter values from a plan file. Missing or unreadable files
+// yield empty strings — the caller has already validated through
+// parsePlan that the file is structurally sound, so this is purely an
+// optional-fields read. Frontmatter parsing duplicates the open/close
+// fence walk from parsePlan because parsePlan does not surface these
+// two fields.
+func readPlanTitleAndCreated(planPath string) (title, created string) {
+	data, err := os.ReadFile(planPath) // #nosec G304,G703 -- planPath comes from filepath.Glob on staxDir.
+	if err != nil {
+		return "", ""
+	}
+	content := string(data)
+	if !strings.HasPrefix(content, "---\n") && !strings.HasPrefix(content, "---\r\n") {
+		return "", ""
+	}
+	end := strings.Index(content[3:], "\n---")
+	if end < 0 {
+		return "", ""
+	}
+	fm := content[3 : 3+end]
+	if m := planTitleRe.FindStringSubmatch(fm); m != nil {
+		title = strings.Trim(strings.TrimSpace(m[1]), `"'`)
+	}
+	if m := planCreatedRe.FindStringSubmatch(fm); m != nil {
+		created = strings.TrimSpace(m[1])
+	}
+	return title, created
+}
+
+// handleAPIScopes serves /api/scopes — the list view that backs the
+// /scopes web page. Returns one row per plan file in cwd's .stax/
+// directory, carrying the slug (deep-link target), the title, and the
+// kebab-case ids of every system the plan declares (rendered by the
+// UI as links into /system?id=<id>). Missing .stax/ or a cwd that is
+// not a stax project produce a 200 with an empty array, matching the
+// "empty state is not an error" contract /api/systems uses.
+//
+// Plans whose frontmatter is malformed (missing status, missing
+// systems, no closing fence) are skipped silently — parsePlan logs to
+// io.Discard here so a broken plan never aborts the whole list. The
+// `stax plans lint` subcommand is the user-facing way to surface those
+// per-file findings.
+func handleAPIScopes(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, scopesListResponse{
+		Scopes: readScopesForAPI(staxDir),
 	})
+}
+
+// handleAPIScope serves /api/scope?id=<slug> — the detail view that
+// backs the /scope?id=<slug> web page. Returns the full plan body
+// pre-rendered to HTML plus every frontmatter field the detail UI
+// needs. Missing or unparseable plan files produce a 404 with a
+// `{error}` body so the UI can show a not-found state.
+func handleAPIScope(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, apiErrorResponse{Error: "missing required query parameter: id"})
+		return
+	}
+	detail, ok := readScopeDetail(staxDir, id)
+	if !ok {
+		writeJSON(w, http.StatusNotFound, apiErrorResponse{Error: "scope not found"})
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
+}
+
+// readScopesForAPI is the testable body of handleAPIScopes: walks
+// staxDir for plan files and returns one row per parseable plan,
+// sorted by slug (which equals filename order because the prefix is
+// zero-padded sequential). Missing staxDir returns an empty slice so
+// the UI's empty state surfaces naturally.
+func readScopesForAPI(staxDir string) []scopeListItem {
+	files, _ := filepath.Glob(filepath.Join(staxDir, "*"+planFileExt))
+	sort.Sort(sort.Reverse(sort.StringSlice(files)))
+	out := make([]scopeListItem, 0, len(files))
+	for _, f := range files {
+		row, ok := parsePlan(f, io.Discard)
+		if !ok {
+			continue
+		}
+		title, created := readPlanTitleAndCreated(f)
+		out = append(out, scopeListItem{
+			Slug:    row.slug,
+			Title:   title,
+			Status:  row.status,
+			Created: created,
+			Systems: append([]string(nil), row.systems...),
+		})
+	}
+	return out
+}
+
+// readScopeDetail is the testable body of handleAPIScope: reads one
+// plan file by slug, returns the populated detail plus a found bool.
+// false means the file doesn't exist, doesn't parse, or its body
+// can't be rendered — callers translate that into a 404.
+func readScopeDetail(staxDir, slug string) (scopeDetail, bool) {
+	planPath := filepath.Join(staxDir, slug+planFileExt)
+	row, ok := parsePlan(planPath, io.Discard)
+	if !ok {
+		return scopeDetail{}, false
+	}
+	body, ok := readPlanBody(planPath)
+	if !ok {
+		return scopeDetail{}, false
+	}
+	title, created := readPlanTitleAndCreated(planPath)
+	var buf bytes.Buffer
+	if err := markdownRenderer.Convert([]byte(body), &buf); err != nil {
+		return scopeDetail{}, false
+	}
+	return scopeDetail{
+		Slug:    row.slug,
+		Title:   title,
+		Status:  row.status,
+		Created: created,
+		Systems: append([]string(nil), row.systems...),
+		HTML:    buf.String(),
+	}, true
 }
 
 // readSystemsForAPI is the testable body of handleAPISystems: takes

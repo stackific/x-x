@@ -1,0 +1,27 @@
+{{#> layout title="Scope" page="scope" active="scopes" description="Stax — scope (plan) detail."}}
+  <section class="container py-l">
+    <a href="/scopes" class="link small-text mb-m">&larr; All scopes</a>
+    <div class="row middle-align mb-m">
+      <i class="large mr-s" aria-hidden="true">flag</i>
+      <h4 id="scope-title" class="max no-margin">Loading…</h4>
+    </div>
+    <div class="row middle-align mb-m wrap">
+      <span class="chip small no-elevate mr-t" id="scope-status" hidden></span>
+      <span class="small-text" id="scope-created"></span>
+      <div class="max"></div>
+      <div class="row wrap" id="scope-systems"></div>
+    </div>
+
+    <article id="scope-body" class="scope-body padding round surface-variant px-l py-l" aria-live="polite">
+      <p class="small-text">Loading plan body…</p>
+    </article>
+  </section>
+
+  <template id="tpl-system-link">
+    <a class="chip small no-elevate ml-t"></a>
+  </template>
+
+  <template id="tpl-error">
+    <p class="small-text bold" data-slot="error"></p>
+  </template>
+{{/layout}}

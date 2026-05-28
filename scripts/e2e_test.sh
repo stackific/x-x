@@ -579,6 +579,54 @@ systems_body="$(curl -fsS --max-time 1 "${BG_URL}${STAX_API_SYSTEMS_PATH}")"
 assert_contains "empty systems list" "$systems_body" '"systems":[]'
 bg_kill_stax
 
+# ---------- /api/systems?id=<known> detail mode with plans ----------
+#
+# Detail mode returns the named system plus every plan whose frontmatter
+# `systems:` array contains the id, with each plan's markdown body
+# pre-rendered to HTML server-side. Seed a project with one matching
+# plan and assert the response carries id/name/title/status and rendered
+# HTML — anything looser would let a regression in the markdown step
+# pass silently.
+
+case_start "stax /api/systems?id=<known> returns detail with rendered HTML"
+reset_user_home
+PROJ_DETAIL="$(fresh_project)"
+mkdir -p "$PROJ_DETAIL/${STAX_DIR}"
+printf 'systems:\n  - id: auth\n    name: Auth Service\n' \
+  > "$PROJ_DETAIL/${STAX_DIR}/${STAX_SYSTEMS_FILE}"
+write_full_plan "$PROJ_DETAIL/${STAX_DIR}" "0001-add-pkce.md" "valid" "auth" "Auth Service"
+bg_spawn_stax --no-browser --cwd "$PROJ_DETAIL"
+assert_eq "spawn succeeded" "$?" "0"
+detail_body="$(curl -fsS --max-time 1 "${BG_URL}${STAX_API_SYSTEMS_PATH}?id=auth")"
+assert_contains "detail id"     "$detail_body" '"id":"auth"'
+assert_contains "detail name"   "$detail_body" '"name":"Auth Service"'
+assert_contains "detail slug"    "$detail_body" '"slug":"0001-add-pkce"'
+assert_contains "detail status"  "$detail_body" '"status":"valid"'
+assert_contains "detail created" "$detail_body" '"created":"2026-05-23T14:30:00Z"'
+bg_kill_stax
+
+# ---------- /api/systems?id=<unknown> returns 404 ----------
+#
+# An id that is not declared in the registry must surface as a 404 with
+# a JSON error body so the UI can distinguish "system does not exist"
+# from "system exists but has no plans yet" (which is a 200 with empty
+# plans). curl --fail-with-body keeps the body even on non-2xx so we can
+# assert on the error message.
+
+case_start "stax /api/systems?id=<unknown> returns 404"
+reset_user_home
+PROJ_404="$(fresh_project)"
+mkdir -p "$PROJ_404/${STAX_DIR}"
+printf 'systems:\n  - id: auth\n    name: Auth Service\n' \
+  > "$PROJ_404/${STAX_DIR}/${STAX_SYSTEMS_FILE}"
+bg_spawn_stax --no-browser --cwd "$PROJ_404"
+assert_eq "spawn succeeded" "$?" "0"
+http_code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 1 "${BG_URL}${STAX_API_SYSTEMS_PATH}?id=nope")"
+assert_eq "404 status" "$http_code" "404"
+not_found_body="$(curl -sS --max-time 1 "${BG_URL}${STAX_API_SYSTEMS_PATH}?id=nope")"
+assert_contains "error field" "$not_found_body" '"error"'
+bg_kill_stax
+
 # ---------- --version (still prints notice for installer parsing) ----------
 #
 # INSTALL.sh's version-detection awk parses `stax --version` line 1 to

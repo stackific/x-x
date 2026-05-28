@@ -67,12 +67,12 @@ export function essay(): void {
       chip(
         "tpl-chip-parent",
         data.parentSystem.name,
-        `/systems?id=${encodeURIComponent(data.parentSystem.id)}`,
+        `/system?id=${encodeURIComponent(data.parentSystem.id)}`,
       ),
     );
   }
   meta.appendChild(
-    chip("tpl-chip-system", data.system.name, `/systems?id=${encodeURIComponent(data.system.id)}`),
+    chip("tpl-chip-system", data.system.name, `/system?id=${encodeURIComponent(data.system.id)}`),
   );
   if (data.minibook) {
     meta.appendChild(

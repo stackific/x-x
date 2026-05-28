@@ -158,6 +158,206 @@ func TestHandleAPISystems_NoProjectReturnsEmpty(t *testing.T) {
 	}
 }
 
+// seedDetailFixture writes a .stax/ tree containing the registry and the
+// supplied plan files. The plan body is wrapped in title/status/systems/
+// created frontmatter using the args, so tests can pin specific values
+// without hand-rolling the YAML. Returns the staxDir for assertions
+// that need it.
+func seedDetailFixture(t *testing.T, dir, registry string, plans map[string]string) string {
+	t.Helper()
+	staxPath := filepath.Join(dir, staxDir)
+	if err := os.MkdirAll(staxPath, 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(staxPath, staxSystemsFile), []byte(registry), 0o600); err != nil {
+		t.Fatalf("seed registry: %v", err)
+	}
+	for name, body := range plans {
+		if err := os.WriteFile(filepath.Join(staxPath, name), []byte(body), 0o600); err != nil {
+			t.Fatalf("seed %s: %v", name, err)
+		}
+	}
+	return staxPath
+}
+
+// TestReadSystemDetail_HappyPath exercises the pure body of the detail
+// branch: a known id returns its display name plus every plan whose
+// frontmatter `systems:` array contains the id, with each plan's
+// markdown body rendered to HTML. Plans that target a different system
+// are excluded.
+func TestReadSystemDetail_HappyPath(t *testing.T) {
+	dir := t.TempDir()
+	registry := "systems:\n" +
+		"  - id: auth\n    name: Auth Service\n" +
+		"  - id: billing\n    name: Billing\n"
+	plans := map[string]string{
+		"0001-add-pkce.md": "---\n" +
+			"title: Add PKCE to mobile flow\n" +
+			"status: valid\n" +
+			"systems: [auth]\n" +
+			"created: 2026-01-10T12:00:00Z\n" +
+			"---\n\n" +
+			"## Goal\nGate mobile sign-in on PKCE.\n",
+		"0002-bill-proration.md": "---\n" +
+			"title: Apply proration on upgrade\n" +
+			"status: valid\n" +
+			"systems: [billing]\n" +
+			"created: 2026-02-01T09:30:00Z\n" +
+			"---\n\n" +
+			"## Goal\nCredit unused days.\n",
+		"0003-auth-rotate.md": "---\n" +
+			"title: Rotate session tokens daily\n" +
+			"status: valid\n" +
+			"systems: [auth]\n" +
+			"created: 2026-03-15T16:45:00Z\n" +
+			"---\n\n" +
+			"## Goal\nShrink the stolen-token window.\n",
+	}
+	staxPath := seedDetailFixture(t, dir, registry, plans)
+
+	got, ok := readSystemDetail(staxPath, "auth")
+	if !ok {
+		t.Fatalf("readSystemDetail returned false for known id")
+	}
+	if got.ID != "auth" || got.Name != "Auth Service" {
+		t.Fatalf("id/name mismatch: %+v", got)
+	}
+	if len(got.Plans) != 2 {
+		t.Fatalf("plans len = %d, want 2 (%+v)", len(got.Plans), got.Plans)
+	}
+	// Plans must come back in filename order DESCENDING (newest first
+	// because the zero-padded prefix is sequential).
+	if got.Plans[0].Slug != "0003-auth-rotate" || got.Plans[1].Slug != "0001-add-pkce" {
+		t.Fatalf("plan order wrong: %+v", got.Plans)
+	}
+	if got.Plans[0].Title != "Rotate session tokens daily" {
+		t.Fatalf("title = %q, want %q", got.Plans[0].Title, "Rotate session tokens daily")
+	}
+	if got.Plans[0].Status != "valid" {
+		t.Fatalf("status = %q, want valid", got.Plans[0].Status)
+	}
+	if got.Plans[0].Created != "2026-03-15T16:45:00Z" {
+		t.Fatalf("created = %q, want 2026-03-15T16:45:00Z", got.Plans[0].Created)
+	}
+}
+
+// TestReadSystemDetail_UnknownID pins the not-found contract. A slug
+// that does not match any entry in .stax/_data_systems.yaml returns
+// (_, false) so the handler can translate it into a 404.
+func TestReadSystemDetail_UnknownID(t *testing.T) {
+	dir := t.TempDir()
+	seedDetailFixture(t, dir,
+		"systems:\n  - id: auth\n    name: Auth Service\n",
+		nil,
+	)
+	if _, ok := readSystemDetail(filepath.Join(dir, staxDir), "nope"); ok {
+		t.Fatalf("expected ok=false for unknown id")
+	}
+}
+
+// TestReadSystemDetail_KnownButNoPlans pins the empty-plans branch.
+// The id exists in the registry but no plan file declares it — the
+// response must still return ok=true with Plans as an empty (not nil)
+// slice so JSON encodes `[]` rather than `null`.
+func TestReadSystemDetail_KnownButNoPlans(t *testing.T) {
+	dir := t.TempDir()
+	staxPath := seedDetailFixture(t, dir,
+		"systems:\n  - id: auth\n    name: Auth Service\n",
+		map[string]string{
+			"0001-billing-only.md": "---\n" +
+				"title: Billing only\n" +
+				"status: valid\n" +
+				"systems: [billing]\n" +
+				"created: 2026-01-01T00:00:00Z\n" +
+				"---\n\n## Goal\nUnrelated.\n",
+		},
+	)
+	got, ok := readSystemDetail(staxPath, "auth")
+	if !ok {
+		t.Fatalf("ok=false for known id")
+	}
+	if got.Plans == nil {
+		t.Fatalf("plans = nil, want empty slice for JSON marshaling")
+	}
+	if len(got.Plans) != 0 {
+		t.Fatalf("plans len = %d, want 0", len(got.Plans))
+	}
+}
+
+// TestHandleAPISystems_DetailMode drives the full handler with ?id=
+// against a chdir'd temp directory holding a seeded registry and a
+// matching plan. Confirms the detail JSON shape and a markdown→HTML
+// rendering for the body so a regression in either layer surfaces here.
+func TestHandleAPISystems_DetailMode(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	seedDetailFixture(t, dir,
+		"systems:\n  - id: auth\n    name: Auth Service\n",
+		map[string]string{
+			"0001-add-pkce.md": "---\n" +
+				"title: Add PKCE\n" +
+				"status: valid\n" +
+				"systems: [auth]\n" +
+				"created: 2026-01-10T12:00:00Z\n" +
+				"---\n\n" +
+				"## Goal\nWrite PKCE.\n\n" +
+				"- [ ] When X, the Auth Service shall Y.\n",
+		},
+	)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, apiSystemsPath+"?id=auth", http.NoBody)
+	handleAPISystems(rec, req)
+
+	res := rec.Result()
+	defer func() { _ = res.Body.Close() }()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", res.StatusCode)
+	}
+	var parsed systemDetailResponse
+	if err := json.NewDecoder(res.Body).Decode(&parsed); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if parsed.ID != "auth" || parsed.Name != "Auth Service" {
+		t.Fatalf("id/name mismatch: %+v", parsed)
+	}
+	if len(parsed.Plans) != 1 {
+		t.Fatalf("plans len = %d, want 1", len(parsed.Plans))
+	}
+	if parsed.Plans[0].Title != "Add PKCE" {
+		t.Fatalf("plans[0].Title = %q, want %q", parsed.Plans[0].Title, "Add PKCE")
+	}
+}
+
+// TestHandleAPISystems_DetailUnknownID pins the 404 path for an id
+// that is not declared in the registry. The body is a small JSON
+// `{error: "..."}` so the UI can pattern-match on it.
+func TestHandleAPISystems_DetailUnknownID(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	seedDetailFixture(t, dir,
+		"systems:\n  - id: auth\n    name: Auth Service\n",
+		nil,
+	)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, apiSystemsPath+"?id=nope", http.NoBody)
+	handleAPISystems(rec, req)
+
+	res := rec.Result()
+	defer func() { _ = res.Body.Close() }()
+	if res.StatusCode != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", res.StatusCode)
+	}
+	var parsed apiErrorResponse
+	if err := json.NewDecoder(res.Body).Decode(&parsed); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if parsed.Error == "" {
+		t.Fatalf("error field empty")
+	}
+}
+
 // TestNewServerMux_ServesEmbeddedFrontend exercises the catch-all
 // static handler: a GET on `/index.html` reads
 // `frontend/dist/index.html` from the embed and returns it. Pins the
@@ -195,7 +395,7 @@ func TestNewServerMux_ServesEmbeddedFrontend(t *testing.T) {
 func TestNewServerMux_CleanURLs(t *testing.T) {
 	srv := httptest.NewServer(newServerMux())
 	t.Cleanup(srv.Close)
-	for _, page := range []string{"/systems", "/search", "/minibooks", "/essay"} {
+	for _, page := range []string{"/systems", "/system", "/search", "/scopes", "/scope", "/essay"} {
 		t.Run(page, func(t *testing.T) {
 			res, err := http.Get(srv.URL + page) // #nosec G107 -- srv.URL is httptest.
 			if err != nil {
@@ -210,6 +410,51 @@ func TestNewServerMux_CleanURLs(t *testing.T) {
 				t.Fatalf("GET %s: Content-Type = %q, want text/html prefix", page, ct)
 			}
 		})
+	}
+}
+
+// TestMarkdownRenderer_PinsHeadingsToH6 pins the forceH6Headings AST
+// transformer: every markdown heading level (`#` … `######`) MUST
+// render as <h6>. Plans declare `## Goal`, `## Approach`, `## Tasks`
+// in the body, and the page chrome (chip, breadcrumb, page title)
+// already supplies the visual hierarchy — without this pin, an
+// accidental drop of the transformer would re-flood the detail page
+// with oversized headings.
+func TestMarkdownRenderer_PinsHeadingsToH6(t *testing.T) {
+	src := strings.Join([]string{
+		"# H1 heading",
+		"## H2 heading",
+		"### H3 heading",
+		"#### H4 heading",
+		"##### H5 heading",
+		"###### H6 heading",
+		"",
+		"Body paragraph.",
+	}, "\n")
+	var buf bytes.Buffer
+	if err := markdownRenderer.Convert([]byte(src), &buf); err != nil {
+		t.Fatalf("convert: %v", err)
+	}
+	html := buf.String()
+	for _, want := range []string{"H1 heading", "H2 heading", "H3 heading", "H4 heading", "H5 heading", "H6 heading"} {
+		idx := strings.Index(html, want)
+		if idx < 0 {
+			t.Fatalf("rendered HTML missing %q: %s", want, html)
+		}
+		// Walk back to find the opening tag wrapping this heading text.
+		opener := strings.LastIndex(html[:idx], "<h")
+		if opener < 0 {
+			t.Fatalf("no opening <h tag before %q in HTML: %s", want, html)
+		}
+		if !strings.HasPrefix(html[opener:], "<h6") {
+			t.Fatalf("heading %q rendered with non-h6 tag: %q (HTML: %s)",
+				want, html[opener:opener+4], html)
+		}
+	}
+	for _, banned := range []string{"<h1", "<h2", "<h3", "<h4", "<h5"} {
+		if strings.Contains(html, banned) {
+			t.Fatalf("rendered HTML must not carry %s, got: %s", banned, html)
+		}
 	}
 }
 

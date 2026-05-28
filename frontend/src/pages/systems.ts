@@ -42,7 +42,7 @@ export async function systems(): Promise<void> {
     for (const s of items) {
       const node = tpl("tpl-system");
       const a = node.querySelector<HTMLAnchorElement>("a");
-      if (a && s.id) a.href = `/systems?id=${encodeURIComponent(s.id)}`;
+      if (a && s.id) a.href = `/system?id=${encodeURIComponent(s.id)}`;
       $('[data-slot="name"]', node).textContent = s.name;
       $('[data-slot="brief"]', node).textContent = s.brief ?? "";
       $('[data-slot="count"]', node).textContent = formatCount(s);

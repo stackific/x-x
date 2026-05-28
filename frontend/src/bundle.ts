@@ -5,8 +5,10 @@ import "./styles/app.scss";
 
 import { essay } from "./pages/essay";
 import { home } from "./pages/home";
-import { minibooks } from "./pages/minibooks";
+import { scope } from "./pages/scope";
+import { scopes } from "./pages/scopes";
 import { search } from "./pages/search";
+import { system } from "./pages/system";
 import { systems } from "./pages/systems";
 import { syncActiveNav } from "./shared/nav";
 import { initSidebar } from "./shared/sidebar";
@@ -16,7 +18,9 @@ const pages: Record<string, () => void | Promise<void>> = {
   home,
   search,
   systems,
-  minibooks,
+  system,
+  scopes,
+  scope,
   essay,
 };
 
