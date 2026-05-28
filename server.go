@@ -91,6 +91,7 @@ func mustSubFS(parent embed.FS, dir string) fs.FS {
 type systemEntry struct {
 	ID     string `json:"id"`
 	Name   string `json:"name"`
+	Brief  string `json:"brief"`
 	Scopes int    `json:"scopes"`
 }
 
@@ -121,10 +122,11 @@ type systemsResponse struct {
 // body is intentionally not included — /api/scope?id=<slug> serves the
 // full markdown body for any plan a user actually opens.
 type planDetail struct {
-	Slug    string `json:"slug"`
-	Title   string `json:"title"`
-	Status  string `json:"status"`
-	Created string `json:"created"`
+	Slug         string `json:"slug"`
+	Title        string `json:"title"`
+	Status       string `json:"status"`
+	Created      string `json:"created"`
+	HasOpenTasks bool   `json:"hasOpenTasks"`
 }
 
 // systemDetailResponse is the body of /api/systems?id=<slug> on a hit:
@@ -263,6 +265,7 @@ func newServerMux() *http.ServeMux {
 	mux.HandleFunc(apiSystemsPath, handleAPISystems)
 	mux.HandleFunc(apiScopesPath, handleAPIScopes)
 	mux.HandleFunc(apiScopePath, handleAPIScope)
+	mux.HandleFunc(apiSearchPath, handleAPISearch)
 	mux.HandleFunc("/", handleFrontend)
 	return mux
 }
@@ -416,11 +419,13 @@ func readPlanForAPI(planPath, id string) (planDetail, bool) {
 		return planDetail{}, false
 	}
 	title, created := readPlanTitleAndCreated(planPath)
+	body, _ := readPlanBody(planPath)
 	return planDetail{
-		Slug:    row.slug,
-		Title:   title,
-		Status:  row.status,
-		Created: created,
+		Slug:         row.slug,
+		Title:        title,
+		Status:       row.status,
+		Created:      created,
+		HasOpenTasks: strings.Contains(body, "- [ ]"),
 	}, true
 }
 
@@ -521,6 +526,105 @@ func readScopesForAPI(staxDir string) []scopeListItem {
 		})
 	}
 	return out
+}
+
+// searchResponse is the body of /api/search?q=<query>. Two sections:
+// scopes first (the work being planned), systems second (the buckets
+// that work falls into). Both lists are filtered subsets of the
+// existing /api/scopes and /api/systems shapes so the UI can reuse the
+// row templates verbatim. The query is echoed back so a UI that
+// renders against a debounced fetch can confirm the response matches
+// what's currently in the input box.
+type searchResponse struct {
+	Query   string          `json:"query"`
+	Scopes  []scopeListItem `json:"scopes"`
+	Systems []systemEntry   `json:"systems"`
+}
+
+// handleAPISearch serves /api/search?q=<query>. Returns matching
+// scopes + systems in two arrays. Empty query → both arrays empty
+// (200), letting the frontend's hint UI handle the "type to search"
+// state. Whitespace-only queries are treated as empty. Case-
+// insensitive substring match: scopes are searched across slug,
+// title, status, declared system ids, AND the markdown body; systems
+// are searched across id and display name.
+func handleAPISearch(w http.ResponseWriter, r *http.Request) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if q == "" {
+		writeJSON(w, http.StatusOK, searchResponse{Query: "", Scopes: []scopeListItem{}, Systems: []systemEntry{}})
+		return
+	}
+	writeJSON(w, http.StatusOK, runSearch(staxDir, q))
+}
+
+// runSearch is the testable body of handleAPISearch. Walks scope and
+// system data from staxDir, filters by case-insensitive substring,
+// and returns a populated searchResponse. Always returns non-nil
+// slices for both Scopes and Systems so the JSON encodes as `[]`
+// rather than `null` on no matches (UI can `.length` either case).
+//
+// Match rules:
+//   - scope matches when needle appears in slug, title, status, any
+//     declared system id, OR the plan body (case-insensitive)
+//   - system matches when needle appears in id or display name
+//     (case-insensitive)
+//
+// Scope order matches /api/scopes (newest first); system order
+// matches /api/systems (id-sorted).
+func runSearch(staxDir, query string) searchResponse {
+	needle := strings.ToLower(query)
+	out := searchResponse{
+		Query:   query,
+		Scopes:  []scopeListItem{},
+		Systems: []systemEntry{},
+	}
+	scopes := readScopesForAPI(staxDir)
+	for i := range scopes {
+		if scopeMatchesQuery(staxDir, &scopes[i], needle) {
+			out.Scopes = append(out.Scopes, scopes[i])
+		}
+	}
+	for _, sys := range readSystemsForAPI(staxDir) {
+		if systemMatchesQuery(sys, needle) {
+			out.Systems = append(out.Systems, sys)
+		}
+	}
+	return out
+}
+
+// scopeMatchesQuery decides whether one scope row matches the lowercase
+// needle. Checks the cheap frontmatter fields first and only reads the
+// plan body when none of them hit — body reads are the most expensive
+// step in the search loop, so deferring them keeps queries that hit on
+// title or system id fast. Pointer receiver because scopeListItem hit
+// gocritic's hugeParam threshold (96 bytes).
+func scopeMatchesQuery(staxDir string, s *scopeListItem, needle string) bool {
+	if strings.Contains(strings.ToLower(s.Slug), needle) ||
+		strings.Contains(strings.ToLower(s.Title), needle) ||
+		strings.Contains(strings.ToLower(s.Status), needle) {
+		return true
+	}
+	for _, id := range s.Systems {
+		if strings.Contains(strings.ToLower(id), needle) {
+			return true
+		}
+	}
+	body, ok := readPlanBody(filepath.Join(staxDir, s.Slug+planFileExt))
+	if !ok {
+		return false
+	}
+	return strings.Contains(strings.ToLower(body), needle)
+}
+
+// systemMatchesQuery decides whether one system row matches the
+// lowercase needle. Matches across id, display name, and the brief
+// blurb the system registry carries — the brief is the most
+// description-y field so a search for a domain word (e.g. "OAuth")
+// surfaces the matching system even when the name doesn't contain it.
+func systemMatchesQuery(sys systemEntry, needle string) bool {
+	return strings.Contains(strings.ToLower(sys.ID), needle) ||
+		strings.Contains(strings.ToLower(sys.Name), needle) ||
+		strings.Contains(strings.ToLower(sys.Brief), needle)
 }
 
 // readScopeDetail is the testable body of handleAPIScope: reads one
@@ -634,7 +738,7 @@ func readSystemsForAPI(staxDir string) []systemEntry {
 	counts := countScopesPerSystem(staxDir)
 	out := make([]systemEntry, 0, len(reg.byID))
 	for id, name := range reg.byID {
-		out = append(out, systemEntry{ID: id, Name: name, Scopes: counts[id]})
+		out = append(out, systemEntry{ID: id, Name: name, Brief: reg.byBrief[id], Scopes: counts[id]})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out

@@ -734,10 +734,11 @@ func planLint(args []string, staxDir string, stdout, stderr io.Writer) int {
 //	         lintEarsTasks to translate before set-comparing against the
 //	         declared id array. Maps display name → id.
 //
-// Both maps are always non-nil so callers can index without a guard.
+// All maps are always non-nil so callers can index without a guard.
 type registry struct {
-	byID   map[string]string
-	byName map[string]string
+	byID    map[string]string
+	byName  map[string]string
+	byBrief map[string]string // id → brief, surfaced via /api/systems for the UI list view.
 }
 
 // parseRegistry walks the systems registry YAML and returns id↔name maps
@@ -752,14 +753,22 @@ type registry struct {
 // the broken plan referencing such a slug will surface its own lint
 // finding instead.
 func parseRegistry(path string) registry {
-	empty := registry{byID: make(map[string]string), byName: make(map[string]string)}
+	empty := registry{
+		byID:    make(map[string]string),
+		byName:  make(map[string]string),
+		byBrief: make(map[string]string),
+	}
 	f, err := os.Open(path) // #nosec G304 -- path = staxDir/staxSystemsFile, both constants.
 	if err != nil {
 		return empty
 	}
 	defer func() { _ = f.Close() }()
 
-	p := registryParser{reg: registry{byID: make(map[string]string), byName: make(map[string]string)}}
+	p := registryParser{reg: registry{
+		byID:    make(map[string]string),
+		byName:  make(map[string]string),
+		byBrief: make(map[string]string),
+	}}
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		p.feed(scanner.Text())
@@ -777,17 +786,20 @@ func parseRegistry(path string) registry {
 // so the per-line branches live in feed() and parseRegistry stays a thin
 // scan loop.
 type registryParser struct {
-	reg                registry
-	curID, curName     string
-	inSystems, inEntry bool
+	reg                      registry
+	curID, curName, curBrief string
+	inSystems, inEntry       bool
 }
 
 func (p *registryParser) flush() {
 	if p.inEntry && p.curID != "" && p.curName != "" {
 		p.reg.byID[p.curID] = p.curName
 		p.reg.byName[p.curName] = p.curID
+		if p.curBrief != "" {
+			p.reg.byBrief[p.curID] = p.curBrief
+		}
 	}
-	p.curID, p.curName = "", ""
+	p.curID, p.curName, p.curBrief = "", "", ""
 	p.inEntry = false
 }
 
@@ -816,13 +828,13 @@ func (p *registryParser) feed(line string) {
 		p.inEntry = true
 		if rest := strings.TrimSpace(m[2]); rest != "" {
 			if kv := registryKVLineRe.FindStringSubmatch(rest); kv != nil {
-				setRegistryField(&p.curID, &p.curName, kv[1], kv[2])
+				setRegistryField(&p.curID, &p.curName, &p.curBrief, kv[1], kv[2])
 			}
 		}
 		return
 	}
 	if kv := registryKVLineRe.FindStringSubmatch(line); kv != nil {
-		setRegistryField(&p.curID, &p.curName, kv[1], kv[2])
+		setRegistryField(&p.curID, &p.curName, &p.curBrief, kv[1], kv[2])
 	}
 }
 
@@ -830,13 +842,15 @@ func (p *registryParser) feed(line string) {
 // other key (`brief`, future ad-hoc fields) is dropped. Pulled out so the
 // item-start and continuation-line paths share one normalization
 // (whitespace trim + quote strip).
-func setRegistryField(id, name *string, key, raw string) {
+func setRegistryField(id, name, brief *string, key, raw string) {
 	v := strings.Trim(strings.TrimSpace(raw), `"'`)
 	switch key {
 	case "id":
 		*id = v
 	case "name":
 		*name = v
+	case "brief":
+		*brief = v
 	}
 }
 

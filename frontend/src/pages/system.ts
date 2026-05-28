@@ -9,6 +9,7 @@ type Plan = {
   title: string;
   status: string;
   created: string;
+  hasOpenTasks: boolean;
 };
 
 type SystemDetail = {
@@ -49,6 +50,10 @@ export async function system(): Promise<void> {
       const node = tpl("tpl-plan");
       const a = node.querySelector<HTMLAnchorElement>("a");
       if (a) a.href = `/scope?id=${encodeURIComponent(p.slug)}`;
+      if (p.hasOpenTasks) {
+        const icon = node.querySelector<HTMLElement>("i");
+        if (icon) icon.classList.add("primary-text");
+      }
       $('[data-slot="title"]', node).textContent = p.title;
       const statusEl = $<HTMLSpanElement>('[data-slot="status"]', node);
       statusEl.textContent = p.status;

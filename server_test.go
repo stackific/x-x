@@ -678,3 +678,113 @@ func TestListenWithFallbackOn_AllPortsBusy(t *testing.T) {
 		t.Fatalf("error %q must mention 'all in use'", err.Error())
 	}
 }
+
+// TestHandleAPISearch_EmptyQuery pins the no-query contract: the
+// handler answers 200 with both arrays empty (not null) and echoes
+// the query field as the empty string. Lets the UI treat the
+// "type-to-search" state as a normal render rather than an error.
+func TestHandleAPISearch_EmptyQuery(t *testing.T) {
+	chdir(t, t.TempDir())
+	// Whitespace forms encoded so httptest.NewRequest accepts the URL;
+	// the handler trims after parsing, so all three land in the
+	// no-query branch.
+	for _, q := range []string{"", "%20%20%20", "%09%0A"} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, apiSearchPath+"?q="+q, http.NoBody)
+		handleAPISearch(rec, req)
+
+		var body searchResponse
+		if err := json.NewDecoder(rec.Result().Body).Decode(&body); err != nil {
+			t.Fatalf("q=%q decode: %v", q, err)
+		}
+		if body.Scopes == nil || body.Systems == nil {
+			t.Fatalf("q=%q expected non-nil empty slices, got %+v", q, body)
+		}
+		if len(body.Scopes) != 0 || len(body.Systems) != 0 {
+			t.Fatalf("q=%q expected empty results, got %+v", q, body)
+		}
+		if body.Query != "" {
+			t.Fatalf("q=%q expected empty echoed query, got %q", q, body.Query)
+		}
+	}
+}
+
+// TestRunSearch pins the substring-match rules across both arrays:
+// case-insensitive title / system-id / body matches surface the right
+// scope, system id and name matches surface the right system, and
+// queries that don't match anywhere return an empty (not nil)
+// response. Body match happens last, so the test seeds a plan where
+// the only place the needle appears is the markdown body.
+func TestRunSearch(t *testing.T) {
+	dir := t.TempDir()
+	seedDetailFixture(t, dir,
+		"systems:\n  - id: auth-service\n    name: Auth Service\n  - id: billing\n    name: Billing\n",
+		map[string]string{
+			"0001-add-pkce.md":       "---\ntitle: Add PKCE to mobile flow\nstatus: valid\nsystems: [auth-service]\ncreated: 2026-01-10T12:00:00Z\n---\n\n## Goal\nGate mobile sign-in on PKCE.\n",
+			"0002-proration.md":      "---\ntitle: Apply proration on upgrade\nstatus: valid\nsystems: [billing]\ncreated: 2026-02-01T09:30:00Z\n---\n\n## Goal\nCredit unused days on plan changes.\n",
+			"0003-stripe-webhook.md": "---\ntitle: Retry failed webhooks\nstatus: valid\nsystems: [billing]\ncreated: 2026-03-01T09:00:00Z\n---\n\n## Goal\nA short body that mentions exponential-backoff so a body-only query hits.\n",
+		},
+	)
+	staxPath := filepath.Join(dir, staxDir)
+
+	cases := []struct {
+		name        string
+		q           string
+		wantScopes  []string // slugs we expect, in any order
+		wantSystems []string // ids we expect, in any order
+	}{
+		{"title hit", "PKCE", []string{"0001-add-pkce"}, nil},
+		{"system-id hit on scope row", "billing", []string{"0003-stripe-webhook", "0002-proration"}, []string{"billing"}},
+		{"body-only hit", "exponential-backoff", []string{"0003-stripe-webhook"}, nil},
+		{"system name hit", "auth service", nil, []string{"auth-service"}},
+		{"no matches", "this-text-is-nowhere", []string{}, []string{}},
+		{"case insensitive", "PRORATION", []string{"0002-proration"}, nil},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := runSearch(staxPath, c.q)
+			assertSearchScopes(t, got.Scopes, c.wantScopes)
+			assertSearchSystems(t, got.Systems, c.wantSystems)
+		})
+	}
+}
+
+// assertSearchScopes verifies every wanted slug appears in got and
+// (when wantSlugs is non-empty) that the counts match. Extracted from
+// TestRunSearch to keep its inner case-loop body under the project's
+// cognitive-complexity cap.
+func assertSearchScopes(t *testing.T, got []scopeListItem, wantSlugs []string) {
+	t.Helper()
+	gotSlugs := make(map[string]bool, len(got))
+	for _, s := range got {
+		gotSlugs[s.Slug] = true
+	}
+	for _, want := range wantSlugs {
+		if !gotSlugs[want] {
+			t.Errorf("expected scope %q in results, got %v", want, gotSlugs)
+		}
+	}
+	if len(wantSlugs) > 0 && len(got) != len(wantSlugs) {
+		t.Errorf("scope count = %d, want %d (%v)", len(got), len(wantSlugs), got)
+	}
+}
+
+// assertSearchSystems mirrors assertSearchScopes for the systems
+// slice: every wanted id must appear, and an explicit empty want
+// (non-nil zero-length slice) means no system hits are allowed.
+func assertSearchSystems(t *testing.T, got []systemEntry, wantIDs []string) {
+	t.Helper()
+	gotIDs := make(map[string]bool, len(got))
+	for _, s := range got {
+		gotIDs[s.ID] = true
+	}
+	for _, want := range wantIDs {
+		if !gotIDs[want] {
+			t.Errorf("expected system %q in results, got %v", want, gotIDs)
+		}
+	}
+	if wantIDs != nil && len(wantIDs) == 0 && len(got) != 0 {
+		t.Errorf("expected no system hits, got %+v", got)
+	}
+}

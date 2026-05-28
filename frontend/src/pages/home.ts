@@ -11,6 +11,7 @@ type Scope = {
   status: string;
   created: string;
   systems: string[];
+  hasOpenTasks: boolean;
 };
 
 type ScopesResponse = { scopes: Scope[] };
@@ -45,6 +46,10 @@ function renderLatestScopes(host: HTMLElement, scopes: Scope[]): void {
     const node = tpl("tpl-scope");
     const card = node.querySelector<HTMLAnchorElement>("a");
     if (card) card.href = `/scope?id=${encodeURIComponent(s.slug)}`;
+    if (s.hasOpenTasks) {
+      const icon = node.querySelector<HTMLElement>("i");
+      if (icon) icon.classList.add("primary-text");
+    }
     $('[data-slot="title"]', node).textContent = s.title || s.slug;
     $('[data-slot="created"]', node).textContent = relativeTime(s.created);
     const statusEl = $<HTMLSpanElement>('[data-slot="status"]', node);

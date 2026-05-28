@@ -540,4 +540,5 @@ const (
 	apiSystemsPath = "/api/systems"
 	apiScopesPath  = "/api/scopes"
 	apiScopePath   = "/api/scope"
+	apiSearchPath  = "/api/search"
 )

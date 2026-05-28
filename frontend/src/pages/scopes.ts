@@ -57,7 +57,7 @@ function renderList(host: HTMLElement, scopes: Scope[]): void {
     if (card) card.href = `/scope?id=${encodeURIComponent(s.slug)}`;
     if (s.hasOpenTasks) {
       const icon = node.querySelector<HTMLElement>("i");
-      if (icon) icon.classList.add("error-text");
+      if (icon) icon.classList.add("primary-text");
     }
     $('[data-slot="title"]', node).textContent = s.title || s.slug;
     const statusEl = $<HTMLSpanElement>('[data-slot="status"]', node);

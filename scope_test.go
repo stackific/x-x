@@ -1958,21 +1958,22 @@ func TestInlineSlugSet(t *testing.T) {
 	}
 }
 
-// TestSetRegistryField pins the key dispatch (id, name, other-ignored)
-// and the value normalization (quote-strip + whitespace-trim) that the
-// hand-rolled parser relies on for both single-line and continuation
-// forms.
+// TestSetRegistryField pins the key dispatch (id, name, brief,
+// other-ignored) and the value normalization (quote-strip +
+// whitespace-trim) that the hand-rolled parser relies on for both
+// single-line and continuation forms.
 func TestSetRegistryField(t *testing.T) {
-	var id, name string
-	setRegistryField(&id, &name, "id", `"auth-service"`)
-	setRegistryField(&id, &name, "name", `   Auth Service   `)
-	if id != "auth-service" || name != "Auth Service" {
-		t.Fatalf("got id=%q name=%q", id, name)
+	var id, name, brief string
+	setRegistryField(&id, &name, &brief, "id", `"auth-service"`)
+	setRegistryField(&id, &name, &brief, "name", `   Auth Service   `)
+	setRegistryField(&id, &name, &brief, "brief", `"OAuth and session management."`)
+	if id != "auth-service" || name != "Auth Service" || brief != "OAuth and session management." {
+		t.Fatalf("got id=%q name=%q brief=%q", id, name, brief)
 	}
 	// Unknown keys are silently dropped.
-	setRegistryField(&id, &name, "brief", "ignored")
-	if id != "auth-service" || name != "Auth Service" {
-		t.Fatalf("unknown-key mutated state: id=%q name=%q", id, name)
+	setRegistryField(&id, &name, &brief, "unknown", "ignored")
+	if id != "auth-service" || name != "Auth Service" || brief != "OAuth and session management." {
+		t.Fatalf("unknown-key mutated state: id=%q name=%q brief=%q", id, name, brief)
 	}
 }
 
