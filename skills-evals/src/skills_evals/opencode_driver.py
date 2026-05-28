@@ -207,12 +207,22 @@ def _drive_loop(
       log("driver", f"cwd: {workspace}")
 
       argv = [*next_cmd, next_input] if next_input else list(next_cmd)
+      # opencode resolves the worktree root from `process.env.PWD ??
+      # process.cwd()` (sst/opencode cli/cmd/run.ts). subprocess.Popen
+      # sets the child's cwd but inherits the parent's PWD, so without
+      # an explicit override opencode would walk up from pytest's cwd
+      # (skills-evals/) instead of the workspace and find none of the
+      # `.opencode/commands/` files x-x init wrote. The CI failure mode
+      # was "Available commands: init, review, customize-opencode" —
+      # only built-ins, because cfg.command was never populated.
+      env = {**os.environ, "PWD": str(workspace)}
       proc = subprocess.Popen(
         argv,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         cwd=str(workspace),
+        env=env,
         text=True,
         bufsize=1,
       )
