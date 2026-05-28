@@ -5,16 +5,20 @@
 1. Load `.env` (from skills-evals/ or any parent) so DEEPSEEK_API_KEY
    reaches every supported agent backend — the judge LLM (DeepSeek
    directly), Claude Code (Anthropic-compatible env vars), OpenCode
-   (deepseek provider via Models.dev), and GitHub Copilot CLI (BYOK env
-   vars with provider type `anthropic`).
+   (deepseek provider via Models.dev), GitHub Copilot CLI (BYOK env
+   vars with provider type `anthropic`), and Kilo Code CLI (via a
+   workspace-local `kilo.json` declaring an openai-compatible provider).
 2. Provide a fresh, isolated `workspace` directory per test — `x-x init`
-   runs in it before any skill is invoked.
+   runs in it before any skill is invoked. For Kilo Code, the fixture
+   also writes `kilo.json` into the workspace so the agent has a
+   routable provider before the first `kilo run` invocation.
 
 Everything logs verbosely. Silence is a bug.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -65,43 +69,92 @@ COPILOT_ENV_DEFAULTS = {
   "COPILOT_PROVIDER_MAX_OUTPUT_TOKENS": "128000",
 }
 
+# Kilo Code CLI defaults. Kilo is a fork of anomalyco/opencode and shares
+# opencode's `--format json` wire format, but unlike opencode (which reads
+# DEEPSEEK_API_KEY directly via Models.dev), routing a custom OpenAI-
+# compatible endpoint requires a workspace-local `kilo.json` declaring
+# the provider stanza — see KILOCODE_WORKSPACE_CONFIG below and
+# kilo.ai/docs/code-with-ai/agents/custom-models. KILO_PROVIDER nudges
+# the CLI toward the right provider id when both built-ins and the
+# workspace stanza are visible; KILO_MODEL keeps the chosen model string
+# consistent with kilocode_driver.DEFAULT_MODEL.
+KILOCODE_ENV_DEFAULTS = {
+  "KILO_PROVIDER": "openai-compatible",
+  "KILO_MODEL": "openai-compatible/deepseek-v4-pro",
+}
+
+# Provider stanza written into each Kilocode test workspace as `kilo.json`.
+# The `{env:DEEPSEEK_API_KEY}` substitution is the documented Kilo pattern
+# (kilo.ai/docs/code-with-ai/agents/custom-models) — keeps the secret out
+# of the config file and resolves at agent startup against the live env.
+# The model entry under `provider.openai-compatible.models` is REQUIRED
+# for `--model openai-compatible/deepseek-v4-pro` to resolve; without it
+# kilo rejects the run with a "model not found" error.
+KILOCODE_WORKSPACE_CONFIG = {
+  "$schema": "https://app.kilo.ai/config.json",
+  "model": "openai-compatible/deepseek-v4-pro",
+  "provider": {
+    "openai-compatible": {
+      "options": {
+        "apiKey": "{env:DEEPSEEK_API_KEY}",
+        "baseURL": "https://api.deepseek.com/v1",
+      },
+      "models": {
+        "deepseek-v4-pro": {
+          "name": "DeepSeek V4 Pro",
+          "tool_call": True,
+          "limit": {"context": 128000, "output": 8192},
+        },
+      },
+    },
+  },
+}
+
 # Which agent backend the workspace fixture installs and probes for.
 # Default `claude` keeps the existing Claude tests running unchanged.
 # Workflows targeting other backends (e.g. manual-opencode-judge.yml,
-# manual-copilot-judge.yml) set X_X_AGENT_KEY=<key> to flip both the
-# binary the fixture skips on if missing and the per-agent env defaults
-# that get pointed at DeepSeek.
-VALID_AGENT_KEYS = ("claude", "opencode", "copilot")
+# manual-copilot-judge.yml, manual-kilocode-judge.yml) set
+# X_X_AGENT_KEY=<key> to flip both the binary the fixture skips on if
+# missing and the per-agent env defaults that get pointed at DeepSeek.
+VALID_AGENT_KEYS = ("claude", "opencode", "copilot", "kilocode")
 AGENT_BINARY_FOR_KEY = {
   "claude": "claude",
   "opencode": "opencode",
   "copilot": "copilot",
+  # Kilo Code CLI ships the binary as `kilo` (package `@kilocode/cli`).
+  "kilocode": "kilo",
 }
 AGENT_ENV_DEFAULTS_FOR_KEY = {
   "claude": CLAUDE_ENV_DEFAULTS,
   "opencode": OPENCODE_ENV_DEFAULTS,
   "copilot": COPILOT_ENV_DEFAULTS,
+  "kilocode": KILOCODE_ENV_DEFAULTS,
 }
 # Value passed to `x-x init --agents <value>` for each backend. Today the
 # binary's agentTargets registry (constants.go) recognizes "claude",
-# "codex", and "opencode" — "copilot" is not yet a registered target, so
-# Copilot tests install the Claude skill layout as a transitional shape
-# and the copilot CLI discovers them by the cross-agent SKILL.md
-# convention. When copilot is added to agentTargets, flip this entry to
-# "copilot" in the same change.
+# "codex", "opencode", and "copilot" — "kilocode" is not yet a registered
+# target, so Kilocode tests install the Claude skill layout as a
+# transitional shape and the Kilo CLI discovers them by the cross-agent
+# SKILL.md convention (Kilo reads `.claude/skills/` in compat mode per
+# kilo.ai/docs/customize/skills). When kilocode is added to agentTargets,
+# flip this entry to "kilocode" / "kilo" in the same change.
 AGENT_INIT_VALUE_FOR_KEY = {
   "claude": "claude",
   "opencode": "opencode",
   "copilot": "claude",
+  "kilocode": "claude",
 }
 # Per-agent skills install root under $HOME used by the user-scope
 # post-install log. Reflects each agent's discovery convention — Claude
 # reads `.claude/skills/`, OpenCode reads `.opencode/commands/`, Copilot
-# CLI (via the transitional Claude layout) reads `.claude/skills/`.
+# CLI (via the transitional Claude layout) reads `.claude/skills/`,
+# Kilocode (also via the transitional Claude layout, since Kilo's
+# compat-mode lookup includes `.claude/skills/`) reads `.claude/skills/`.
 AGENT_USER_SKILLS_REL_FOR_KEY = {
   "claude": Path(".claude") / "skills",
   "opencode": Path(".opencode") / "commands",
   "copilot": Path(".claude") / "skills",
+  "kilocode": Path(".claude") / "skills",
 }
 
 # Which `x-x init --scope` value to use when bootstrapping each test's
@@ -209,6 +262,14 @@ def _load_dotenv_and_route_agent() -> None:
     os.environ["COPILOT_PROVIDER_API_KEY"] = api_key
     log("conftest", "mirrored DEEPSEEK_API_KEY into COPILOT_PROVIDER_API_KEY")
 
+  # Kilo Code reads its API key via the `{env:DEEPSEEK_API_KEY}` substitution
+  # inside the workspace `kilo.json`; KILO_API_KEY is a belt-and-suspenders
+  # mirror for code paths that bypass the workspace config (e.g. provider
+  # fallback when the workspace stanza fails to load).
+  if agent_key == "kilocode" and not os.environ.get("KILO_API_KEY"):
+    os.environ["KILO_API_KEY"] = api_key
+    log("conftest", "mirrored DEEPSEEK_API_KEY into KILO_API_KEY")
+
   for k, v in AGENT_ENV_DEFAULTS_FOR_KEY[agent_key].items():
     if k in os.environ:
       log("conftest", f"env {k} already set: {os.environ[k]}")
@@ -315,6 +376,18 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         f"workspace setup failed: {' '.join(cmd)} exited {result.returncode}",
         pytrace=False,
       )
+
+  # Kilo Code requires a workspace-local provider config to route at a
+  # custom OpenAI-compatible endpoint; no env-var-only path exists for
+  # `baseURL` overrides. Write `kilo.json` after `x-x init` so the
+  # workspace already has skills installed when the agent reads its
+  # config. The file lives in the workspace root regardless of install
+  # scope — at user scope skills go to ~/.claude/skills/ but the
+  # provider stanza still has to be in the cwd kilo runs from.
+  if agent_key == "kilocode":
+    kilo_cfg = ws / "kilo.json"
+    kilo_cfg.write_text(json.dumps(KILOCODE_WORKSPACE_CONFIG, indent=2))
+    log("conftest", f"wrote kilo.json ({kilo_cfg.stat().st_size} bytes) to {kilo_cfg}")
 
   log("conftest", f"workspace ready: {sorted(p.name for p in ws.iterdir())}")
   if scope == "user":
