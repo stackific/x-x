@@ -1,5 +1,6 @@
 import { api } from "../shared/api";
 import { $, tpl } from "../shared/dom";
+import { relativeTime } from "../shared/relative-time";
 
 // Mirrors the Go-side scopeListItem in server.go: one row per plan in
 // the project's .stax/ tree. systems carries the kebab-case ids the
@@ -14,21 +15,6 @@ type Scope = {
 };
 
 type ScopesResponse = { scopes: Scope[] };
-
-// formatDate renders the ISO 8601 UTC created timestamp the API hands
-// us (`YYYY-MM-DDTHH:MM:SSZ`) as a short, locale-aware "Jan 10, 2026"
-// string. Empty input → empty output so the slot collapses cleanly
-// rather than showing "Invalid Date".
-function formatDate(iso: string): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
 
 function renderError(host: HTMLElement, msg: string): void {
   const node = tpl("tpl-error");
@@ -74,7 +60,7 @@ function renderList(host: HTMLElement, scopes: Scope[]): void {
     } else {
       statusEl.hidden = true;
     }
-    $('[data-slot="created"]', node).textContent = formatDate(s.created);
+    $('[data-slot="created"]', node).textContent = relativeTime(s.created);
     const systemsHost = $<HTMLDivElement>('[data-slot="systems"]', node);
     renderSystems(systemsHost, s.systems);
     frag.appendChild(node);

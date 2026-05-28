@@ -9,15 +9,14 @@
   </section>
 
   <template id="tpl-scope">
-    <a class="row padding round surface-variant wave no-elevate mb-s">
+    <a class="row padding round surface-variant wave no-elevate mb-s middle-align">
       <i class="large" aria-hidden="true">flag</i>
-      <div class="max ml-s">
-        <div class="row middle-align wrap">
-          <h6 class="max no-margin" data-slot="title"></h6>
-          <span class="chip small no-elevate ml-t" data-slot="status"></span>
-        </div>
-        <p class="small-text mt-t" data-slot="created"></p>
-        <div class="row wrap mt-t" data-slot="systems"></div>
+      <h6 class="small no-margin max ml-s" data-slot="title"></h6>
+      <div class="row wrap middle-align" data-slot="systems"></div>
+      <div class="row middle-align small-text ml-s">
+        <span data-slot="created"></span>
+        <span class="mx-s">·</span>
+        <span data-slot="status"></span>
       </div>
     </a>
   </template>

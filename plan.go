@@ -333,7 +333,7 @@ func applyOverflowNarrow(rows []planRow, keywords []string, staxDir string, thre
 // caller can skip them; lintPlanFile surfaces those as per-file findings
 // on its own pass.
 func readPlanBody(path string) (string, bool) {
-	data, err := os.ReadFile(path) // #nosec G304 -- path is composed from a CLI-driven staxDir + slug.
+	data, err := os.ReadFile(path) // #nosec G304,G703 -- path is composed from a CLI-driven staxDir + slug.
 	if err != nil {
 		return "", false
 	}
@@ -479,7 +479,7 @@ func listPlans(staxDir string, width int, warnW io.Writer) ([]planRow, error) {
 // file lacks frontmatter or is missing a required field — warn-and-skip
 // so a single bad file never aborts the whole `plans list` walk.
 func parsePlan(path string, warnW io.Writer) (planRow, bool) {
-	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from a CLI-driven ReadDir of staxDir.
+	data, err := os.ReadFile(path) // #nosec G304,G703 -- path is constructed from a CLI-driven ReadDir of staxDir.
 	if err != nil {
 		_, _ = fmt.Fprintf(warnW, "warning: %s: %v; skipping\n", path, err)
 		return planRow{}, false
