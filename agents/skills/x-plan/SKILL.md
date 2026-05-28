@@ -1,7 +1,7 @@
 ---
 # SPDX-License-Identifier: Apache-2.0
 name: x-plan
-description: Plan-first workflow for this repo. Loads the shared planning context, then writes a tightly-scoped plan following EARS-format tasks. Invoke at the start of any planning or design task.
+description: Plan-first workflow for `<cwd>`. Loads the shared planning context, then writes a tightly-scoped plan following EARS-format tasks. Invoke at the start of any planning or design task.
 ---
 
 # x-plan
@@ -12,7 +12,7 @@ Required reads before doing anything else:
 
 - `<cwd>/.x-plans/_data_systems.yaml` — registry of named systems (id, name, brief). Consultation and propose-new-system rules are in Appendix C.
 - `<cwd>/.x-plans/_config.lock` — extract `max_plan_lines` (integer). If the lock file is missing, STOP and tell the user this directory isn't set up for x-x yet — they need to run `x-x init`. If the file exists but the key is absent or non-positive, fall back to `30` (matches `x-x plans lint`). Remember the resolved value as the plan line cap for the rest of this turn.
-- The project constitution: whichever of `CLAUDE.md`, `AGENTS.md`, or `GEMINI.md` exists at the repo root. Read whichever is present and take it as the override on all defaults in this skill. If none exist, suggest the user create one as a helpful tip and proceed.
+- The project constitution: any of `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`, or `.clinerules` at <cwd>. Read whichever is present and take it as the override on all defaults in this skill. `AGENTS.md` is the de-facto cross-agent convention (Kilocode, OpenCode, Codex, Cursor, Antigravity, pi, omp); the others are each agent's bespoke filename (`CLAUDE.md` for Claude Code, `GEMINI.md` for Gemini CLI, `.github/copilot-instructions.md` for GitHub Copilot, `.clinerules` for Cline). If none exist, suggest the user create one as a helpful tip and proceed.
 
 The plan-first protocol (full approval loop + sub-plan template) is defined in Appendix A. The EARS criteria rules referenced from Step 3's `## Tasks` are in Appendix B. The named-systems registry rules referenced from Steps 2a / 3 are in Appendix C. All three appendices are part of this SKILL.md and are already in your context — refer back to them when each step calls for them.
 
@@ -20,25 +20,25 @@ The plan-first protocol (full approval loop + sub-plan template) is defined in A
 
 Skip this step by default. Trigger it only when the request is genuinely underspecified — ambiguous scope, a system that would need to be proposed to the registry, or a real technology choice with no obvious default. Routine plans don't need clarification.
 
-When clarification IS needed, ask the user all questions in a single `AskUserQuestion` call (where available, which is the harness's structured-question tool — options with header chips, optional previews). The tool caps at 4 questions per call — sufficient because plans are bounded at `max_plan_lines` (from `<cwd>/.x-plans/_config.lock`, default 30); needing more than 4 means the scope is too big and the request should split. Each split spec gets its own `AskUserQuestion` call. Never ask in plain prose. Do not write the plan in the same turn as the questions.
+When clarification IS needed, ask the user all questions in a single use of your harness's structured-question capability — a multi-choice question tool that returns all answers in one round-trip (most modern coding agents expose one). Where your harness has no such tool, fall back to one numbered list of plain questions in a single message and stop. Never bury questions in prose. Do not write the plan in the same turn as the questions.
 
 ## 2a. Check for overlap with valid plans
 
 Resolve the kebab `id:` of every system the new plan will touch via `<cwd>/.x-plans/_data_systems.yaml`. Run `x-x plans list --status valid --system <id1>,<id2>,... --overflow-keywords <terms>` where `<terms>` is a short comma-separated list of case-insensitive literal substrings chosen to discriminate *this* plan from siblings in the same systems (e.g. `webhook,retry` when several payment-system plans already exist — pick terms that further narrow the system-filtered list, not terms already implied by the systems themselves). `--system` filters server-side, so every emitted row already intersects the new plan's systems — no third-column comparison needed. `--overflow-keywords` is a no-op when the post-`--system` row count is ≤20; above that it narrows further by body substring (falling back to the latest 20 if no term matches). Pass both flags every time.
 
-For each emitted row, ask the user — in the same single-turn questions batch from step 2 — whether the new plan **extends** or **supersedes** that plan, referenced by full slug (e.g. `00003-checkout-retry`). Find potential discrepencies between the user's ask vs. existing plans. For more accuracy, you may dig deeper by reading the overlapping plan via `<cwd>/.x-plans/<overlapping-plan-slug>.md`. Remember the answer per predecessor: a **supersedes** answer becomes a `supersedes:` entry on the new plan; an **extends** answer becomes a back-reference on the predecessor (see step 3 — you will `Edit` the predecessor's frontmatter to append the new plan's slug to its `extended_by` array).
+For each emitted row, ask the user — in the same single-turn questions batch from step 2 — whether the new plan **extends** or **supersedes** that plan, referenced by full slug (e.g. `00003-checkout-retry`). Find potential discrepancies between the user's ask vs. existing plans. For more accuracy, you may dig deeper by reading the overlapping plan via `<cwd>/.x-plans/<overlapping-plan-slug>.md`. Remember the answer per predecessor: a **supersedes** answer becomes a `supersedes:` entry on the new plan; an **extends** answer becomes a back-reference on the predecessor (see step 3 — you will edit the predecessor's frontmatter to append the new plan's slug to its `extended_by` array).
 
 ## 2b. Research dependencies and external APIs
 
-Before drafting tasks that reference a specific library, a third-party API, an authentication mechanism, or any external service contract, run `WebSearch` and (where the search points at upstream docs) `WebFetch` to confirm current details. Do NOT trust training-data versions or API forms — both drift.
+Before drafting tasks that reference a specific library, a third-party API, an authentication mechanism, or any external service contract, use your harness's web-search capability (and, where the search points at upstream docs, its URL-fetch capability) to confirm current details. Do NOT trust training-data versions or API forms — both drift.
 
 Mandatory when the plan touches:
-- A new package/adddependency — web-search the latest stable release before pinning (AGENTS.md hard rule).
+- A new package or dependency — web-search the latest stable release before pinning (AGENTS.md hard rule).
 - An external service API (proxy providers, search engines, browser-automation libraries, observability backends, CDN/CI platforms, etc.).
 - An authentication format (proxy URL syntax, OAuth flows, HMAC payload layouts, header conventions).
 - A platform CLI (`gh`, `docker compose`, `uv`, etc.) where flags or output format change between versions.
 
-Cite the upstream URLs in the plan's Approach section as parenthetical `(docs: <url>)` notes so the user can audit. If research surfaces a design conflict with the user's stated intent, do not write the plan in the same turn — loop back to step 2 and clarify via `AskUserQuestion`.
+Cite the upstream URLs in the plan's Approach section as parenthetical `(docs: <url>)` notes so the user can audit. If research surfaces a design conflict with the user's stated intent, do not write the plan in the same turn — loop back to step 2 and clarify via your harness's structured-question capability.
 
 ## 3. Write the plan(s)
 
@@ -46,9 +46,9 @@ Run `x-x plans next-prefix` to obtain `<prefix>`. Pick a one-line `<title>` for 
 
 For each predecessor the user answered **extends** in step 2a, write the link on **both** sides:
 1. On the new plan, add `extends: [<pred1-slug>, <pred2-slug>, ...]` to the frontmatter (insert it right after any `supersedes:` line, before `created:`).
-2. On every predecessor, `Edit` its frontmatter to append `<prefix>-<slug>` to its `extended_by:` array (create the array right before `created:` if absent).
+2. On every predecessor, edit its frontmatter to append `<prefix>-<slug>` to its `extended_by:` array (create the array right before `created:` if absent).
 
-The predecessor and the extender both stay `status: valid`. `x-x plans lint` enforces bidirectional integrity — a missing back link on either side fails the lint. Treat each predecessor `Edit` as a side effect that goes through the plan-first sub-plan protocol.
+The predecessor and the extender both stay `status: valid`. `x-x plans lint` enforces bidirectional integrity — a missing back link on either side fails the lint. Treat each predecessor edit as a side effect that goes through the plan-first sub-plan protocol.
 
 **Before drafting the `## Tasks` section, refer to Appendix B (EARS rules).** Every EARS criterion names exactly one system from `<cwd>/.x-plans/_data_systems.yaml`.
 
@@ -78,7 +78,7 @@ Every plan that has side effects — creating, updating, removing, git committin
 2. **Build the plan.** Compose the full set of changes you intend to make.
 3. **Present the plan.** Output a clear plan to the user using the template below. End with the literal sentence:
    > Reply `yes` to proceed, or tell me what to change.
-4. **Wait for approval.** Wait until the user replies. A reply of `yes`, `y`, `ok`, `proceed`, `go`, `confirm`, or `approved` is approval. Anything else is a request to revise — go back to step 2 with the user's feedback.
+4. **Wait for approval.** Wait until the user replies. Any unambiguous affirmation counts as approval — `yes`, `y`, `yep`, `yeah`, `ok`, `okay`, `sure`, `lgtm`, `sounds good`, `proceed`, `go`, `go ahead`, `do it`, `ship it`, `confirm`, `accept`, `approved`, `affirmative`, `+1`, and similar. Anything ambiguous or that requests a change is a revision — go back to step 2 with the user's feedback.
 5. **Execute.** Now execute what the user wanted. After each command, report what happened in one line.
 6. **Summarize.** When done, give a one-line confirmation per entity created/changed/deleted.
 
@@ -119,6 +119,8 @@ created: 2026-05-23T14:30:00Z
 ---
 ```
 
+(All forward/back-link fields shown together for reference only — a real plan typically has at most one such pair.)
+
 Frontmatter rules:
 
 - `title` (mandatory, **first** key): one-line human-readable and comprehensive title. The post-prefix portion of the filename MUST equal `x-x plans slugify "<title>"`; lint enforces this.
@@ -140,7 +142,7 @@ Body sections, in this order:
 
 ### Plan tooling
 
-Four Go subcommands under `x-x plans`:
+The `x-x plans` subcommands:
 
 - `x-x plans next-prefix` — prints the next unused zero-padded prefix from `<cwd>/.x-plans`. Takes no arguments. Width is read from `<cwd>/.x-plans/_config.lock` (`prefix_width`) and falls back to `4` when the lock file is missing.
 - `x-x plans list [--status NAME[,NAME...]] [--system ID] [--order asc|desc] [--overflow-keywords PATTERN[,PATTERN...]]` — lists plans in `<cwd>/.x-plans`, one tab-separated row per plan: `<slug>\t<status>\t<id>,<id>,...`.
@@ -151,7 +153,7 @@ Four Go subcommands under `x-x plans`:
 - `x-x plans lint` — validates every plan file in `<cwd>/.x-plans` against the contract: filename pattern, line cap (`max_plan_lines`), frontmatter (including `title:` first / `created:` last), status values, registry membership, supersedes resolution, `created:` format, filename-slug ↔ `slugify(title)` equality, required sections, EARS-subject ↔ `systems:` equality. Exit 0 = all pass, exit 1 = at least one failure. Findings go to stdout, one per line, prefixed with the file path; the `<ok>/<failed>` summary goes to stderr.
 - `x-x plans slugify "<title>"` — prints the kebab-case slug for the given title. Use it to derive the post-prefix portion of new plan filenames so author and lint agree on the same algorithm.
 
-All Go commands except `slugify` read width/line-cap from `<cwd>/.x-plans/_config.lock` (seeded by `x-x init`). Files with missing or malformed frontmatter trigger stderr warnings in `x-x plans list` and are reported as findings by `x-x plans lint`.
+All `x-x plans` subcommands except `slugify` read width/line-cap from `<cwd>/.x-plans/_config.lock` (seeded by `x-x init`). Files with missing or malformed frontmatter trigger stderr warnings in `x-x plans list` and are reported as findings by `x-x plans lint`.
 
 ### Approval discipline
 
@@ -294,8 +296,8 @@ Try to be one level more granular when choosing a system name: if you choose the
 
 A few do-and-don't examples:
 
-| ✅ Good | ❌ Bad | Why |
-|---------|--------|-----|
+| Good | Bad | Why |
+|------|-----|-----|
 | `"Checkout Service"` | `"checkout_service"` | Underscores aren't allowed; use natural spaces. |
 | `"Kanban Board UI"` | `"kanban-board-ui"` | Present the human label, not the slug. |
 | `"Order Audit Log"` | `"The Order Audit Log"` | Names must not start with "the". |

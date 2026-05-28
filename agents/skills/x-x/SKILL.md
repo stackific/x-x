@@ -24,7 +24,7 @@ The user may switch modes at any point ("review per plan" / "review per task"); 
 Required reads before doing anything else:
 
 - `<cwd>/.x-plans/_data_systems.yaml` — registry of named systems (id, name, brief). If missing, STOP and tell the user this directory isn't set up for x-x yet — they need to run `x-x init`.
-- The project constitution: whichever of `CLAUDE.md`, `AGENTS.md`, or `GEMINI.md` exists at the repo root. Read whichever is present and take it as the override on all defaults in this skill. If none exist, suggest the user create one as a helpful tip and proceed.
+- The project constitution: any of `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`, or `.clinerules` at <cwd>. Read whichever is present and take it as the override on all defaults in this skill. `AGENTS.md` is the de-facto cross-agent convention (Kilocode, OpenCode, Codex, Cursor, Antigravity, pi, omp); the others are each agent's bespoke filename (`CLAUDE.md` for Claude Code, `GEMINI.md` for Gemini CLI, `.github/copilot-instructions.md` for GitHub Copilot, `.clinerules` for Cline). If none exist, suggest the user create one as a helpful tip and proceed.
 
 The plan-first protocol (used by Step 3.3.2 when presenting sub-plans) is defined inline in Appendix A at the bottom of this file. Read it before the first approval prompt.
 
@@ -36,15 +36,15 @@ Run `x-x plans list --status valid --order=asc`. Output is tab-separated, one ro
 <slug>\t<status>\t<id>,<id>,...
 ```
 
-All emitted rows are the work queue — the `--status valid` flag filters out `superseded` and `deprecated`. Files in `.x-plans/` that match `<prefix>-<slug>.md` but have missing or malformed frontmatter trigger stderr warnings from the script; flag those in your end-of-run summary so they aren't lost.
+All emitted rows are the work queue — the `--status valid` flag filters out `superseded` and `deprecated`. Files in `.x-plans/` that match `<prefix>-<slug>.md` but have missing or malformed frontmatter trigger stderr warnings from `x-x`; flag those in your end-of-run summary so they aren't lost.
 
 The third column is each plan's **scope** — the kebab `id:` of every system it touches, as declared in `<cwd>/.x-plans/_data_systems.yaml`.
 
 ## 2a. Progress tracking
 
-Always maintain a visible task list during execution. After enumeration, create one `TaskCreate` task per plan in the work queue (subject = plan slug, description = its scope). Mark each task `in_progress` when you start the plan's first incomplete EARS task and `completed` when the plan's last task is `[x]`. In parallel mode, give each worktree-bound plan its own task. Keep the list in sync with reality — every status change reflects an actual execution event.
+Always maintain a visible task list during execution. After enumeration, create one entry per plan in the work queue using your harness's task/todo-tracking capability (subject = plan slug, description = its scope). If your harness has no native task tool, keep an equivalent markdown checklist inline in your reply and update it as plans progress. Mark each entry `in_progress` when you start the plan's first incomplete EARS task and `completed` when the plan's last task is `[x]`. In parallel mode, give each worktree-bound plan its own entry. Keep the list in sync with reality — every status change reflects an actual execution event.
 
-If the user enqueues new work mid-execution — a new plan dropped into `.x-plans/`, a new `[ ]` EARS criterion added to a running plan, or an out-of-band request — append it via `TaskCreate` immediately so the visible queue stays complete. Never absorb new work silently. Prioritization (interrupt vs. queue-at-end) follows the user's instruction; default is queue-at-end unless they signal otherwise.
+If the user enqueues new work mid-execution — a new plan dropped into `.x-plans/`, a new `[ ]` EARS criterion added to a running plan, or an out-of-band request — append it to the visible queue immediately so the queue stays complete. Never absorb new work silently. Prioritization (interrupt vs. queue-at-end) follows the user's instruction; default is queue-at-end unless they signal otherwise.
 
 ## 3. Sequential mode (default)
 
@@ -61,7 +61,7 @@ For each plan, in numerical order:
    4. **Verify before flipping.** If the task added new code paths (endpoint, worker, parser, adapter, signal handler, etc.), write at least one unit or smoke test exercising the new path in the project's test layout. Then run the project's standard test + lint + type-check target, if exists. They MUST exit 0 before the checkbox flips. If verification fails, leave the checkbox `[ ]` and apply the failure-mode protocol in step 6. Pure config / doc / registry / settings edits skip the test-write step but still run lint + type-checks.
    5. Flip the checkbox from `[ ]` to `[x]` in the plan file.
 4. After all tasks in the plan are `[x]`:
-   1. If the plan's frontmatter includes `supersedes: [<slug>, ...]`, for each listed predecessor: `Edit` its plan file to (a) flip `status: valid` → `status: superseded`, and (b) append this plan's slug to its `superseded_by:` array (create the array right before `created:` if absent). Both edits must land in the same revision — `x-x plans lint` enforces that the supersedes ↔ superseded_by back link is symmetric. Treat each predecessor `Edit` as a side effect that goes through the plan-first sub-plan protocol.
+   1. If the plan's frontmatter includes `supersedes: [<slug>, ...]`, for each listed predecessor: edit its plan file to (a) flip `status: valid` → `status: superseded`, and (b) append this plan's slug to its `superseded_by:` array (create the array right before `created:` if absent). Both edits must land in the same revision — `x-x plans lint` enforces that the supersedes ↔ superseded_by back link is symmetric. Treat each predecessor edit as a side effect that goes through the plan-first sub-plan protocol.
    2. Report one-line completion and move to the next plan.
 
 ## 4. Parallel mode (auto-detected)
@@ -70,9 +70,7 @@ If the next contiguous run of upcoming plans declares pairwise disjoint scopes (
 
 On approval, for each plan in the parallel run:
 
-1. Create a worktree off the current HEAD:
-   `git worktree add ../<repo>.worktrees/<prefix>-<slug> -b plan/<prefix>-<slug>`
-   where `<repo>` is the basename of the current repo directory.
+1. Create an isolated git worktree (and a dedicated branch) off the current HEAD. Worktree path and branch name are your call — pick something that keeps the plan's prefix and slug recoverable.
 2. Execute the plan inside its own worktree following the sequential rules above (sub-plans included).
 3. On completion, leave the worktree intact and report the worktree path + branch.
 
@@ -97,7 +95,7 @@ Every sub-plan presented for approval in Step 3.3.2 follows this protocol. The s
 2. **Build the plan.** Compose the full set of changes you intend to make.
 3. **Present the plan.** Output a clear plan to the user using the template below. End with the literal sentence:
    > Reply `yes` to proceed, or tell me what to change.
-4. **Wait for approval.** Wait until the user replies. A reply of `yes`, `y`, `ok`, `proceed`, `go`, `confirm`, or `approved` is approval. Anything else is a request to revise — go back to step 2 with the user's feedback.
+4. **Wait for approval.** Wait until the user replies. Any unambiguous affirmation counts as approval — `yes`, `y`, `yep`, `yeah`, `ok`, `okay`, `sure`, `lgtm`, `sounds good`, `proceed`, `go`, `go ahead`, `do it`, `ship it`, `confirm`, `accept`, `approved`, `affirmative`, `+1`, and similar. Anything ambiguous or that requests a change is a revision — go back to step 2 with the user's feedback.
 5. **Execute.** Now execute what the user wanted. After each command, report what happened in one line.
 6. **Summarize.** When done, give a one-line confirmation per entity created/changed/deleted.
 
