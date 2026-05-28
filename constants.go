@@ -364,9 +364,14 @@ var ownedFiles = []string{
 // without inspecting individual call sites.
 const (
 	// updateCheckInterval bounds how often the CLI is willing to probe
-	// GitHub for a new release. 24 hours is gentle enough to never hit
-	// the 60-req/hour unauthenticated API limit even on a busy laptop.
-	updateCheckInterval = 24 * time.Hour
+	// GitHub for a new release. 1 hour balances "fresh installs see a
+	// release that landed an hour ago" against the 60-req/hour
+	// unauthenticated GitHub API limit (per IP, shared across the whole
+	// CLI population on a given network — well under cap for typical
+	// solo / small-team use). The installer seeds `last_checked` to
+	// install time, so the first nudge fires at most one hour after
+	// install regardless of how long ago the binary was downloaded.
+	updateCheckInterval = time.Hour
 
 	// updateHTTPTimeout is the wall-clock cap on the latest-release lookup.
 	// Kept short — the check is opportunistic and must never delay the
