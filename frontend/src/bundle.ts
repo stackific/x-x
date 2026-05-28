@@ -1,5 +1,4 @@
 import "beercss/dist/cdn/beer.min.css";
-import "@fontsource-variable/geist";
 import "material-dynamic-colors";
 import "./styles/app.scss";
 
