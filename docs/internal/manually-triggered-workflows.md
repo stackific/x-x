@@ -46,10 +46,11 @@ each other.
 1. **Standalone single-platform regressions.** E.g. `windows-cli.yml`.
    These run a fixed test matrix on one platform and assert pass/fail. They
    stay as standalone files forever — there's no "later" they merge into.
-2. **Agent-eval family.** E.g. `skills-eval-claude.yml`, future
-   `skills-eval-codex.yml`, `skills-eval-cursor.yml`. Same planner +
-   executor + LLM-judge loop, different agent backends. These will
-   eventually fold into a single workflow with an `agent:` input.
+2. **Agent-eval family.** E.g. `skills-eval-claude.yml`,
+   `skills-eval-cline.yml`, `skills-eval-opencode.yml`, and their
+   per-agent siblings. Same planner + executor + LLM-judge loop,
+   different agent backends. These will eventually fold into a single
+   workflow with an `agent:` input.
 
 ## Adding the DeepSeek API key as a repo secret
 
