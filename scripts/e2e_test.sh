@@ -36,17 +36,12 @@ readonly DEFAULT_PREFIX_WIDTH=4                    # defaultPrefixWidth
 readonly PLANS_LIST_OVERFLOW_THRESHOLD=20          # plansListOverflowThreshold
 
 # Bundled skill directory names (skill*Dir in constants.go).
-readonly SKILL_SHARED_DIR="_x-x_shared"           # skillSharedDir
 readonly SKILL_X_PLAN_DIR="x-plan"                # skillXPlanDir
 readonly SKILL_X_X_DIR="x-x"                      # skillXXDir
 readonly SKILL_MANIFEST_FILE="SKILL.md"           # skillManifestFile
 
-# Filenames under agents/skills/_x-x_shared/ (sharedDoc* in constants.go).
-readonly SHARED_DOC_PLAN_FIRST="_plan_first.md"   # sharedDocPlanFirst
-readonly SHARED_DOC_SYSTEMS="_systems.md"         # sharedDocSystems
-readonly SHARED_DOC_EARS="_ears.md"               # sharedDocEars
 # ownedSkills, flattened to a space-separated list for `for` iteration.
-readonly OWNED_SKILLS="${SKILL_SHARED_DIR} ${SKILL_X_PLAN_DIR} ${SKILL_X_X_DIR}"
+readonly OWNED_SKILLS="${SKILL_X_PLAN_DIR} ${SKILL_X_X_DIR}"
 
 # agentTargets in constants.go — index 0 = Claude Code, 1 = Codex CLI.
 readonly CLAUDE_SKILLS_REL=".claude/skills"       # agentTargets[0].skillsRel
@@ -1321,128 +1316,13 @@ run_capture "" init --scope project
 assert_contains "progress on stdout" "$RUN_OUT" "Installing"
 assert_not_contains "no progress on stderr" "$RUN_ERR" "Installing"
 
-# ---------- shared-doc resolution invariants ----------
-#
-# Both shipped SKILL.md files (x-x, x-plan) tell readers that shared
-# `_x-x_shared/*.md` files live under both `.claude/skills/` and
-# `.agents/skills/` at project and user scope, with "project scope first,
-# then user scope" as the resolution order. The binary doesn't implement
-# that resolution — Claude Code / Codex CLI do — but the install layout
-# has to *support* it. These cases pin every observable property the rule
-# depends on.
-#
-# The three shared files the docs actually reference by basename.
-# Composed from the mirrored constants so the next rename only touches
-# constants.go + the shell mirror — never the case bodies below.
-readonly SHARED_DOC_FILES="${SHARED_DOC_PLAN_FIRST} ${SHARED_DOC_SYSTEMS} ${SHARED_DOC_EARS}"
-# The bundled-source path under the repo, joined here so call sites stay flat.
-readonly SHARED_BUNDLE_DIR="${REPO_ROOT}/${AGENTS_EMBED_ROOT}/${SKILLS_SUBDIR}/${SKILL_SHARED_DIR}"
-
-case_start "shared docs land at both agent roots under project scope"
-reset_user_home
-PROJ_SD1="$(fresh_project)"
-cd "$PROJ_SD1"
-run_capture "" init --scope=project --agents=claude,codex
-assert_eq "init exit 0" "$RUN_RC" "0"
-for fname in $SHARED_DOC_FILES; do
-  assert_is_file "project Claude has $fname" \
-    "$PROJ_SD1/${CLAUDE_SKILLS_REL}/${SKILL_SHARED_DIR}/${fname}"
-  assert_is_file "project Codex has $fname" \
-    "$PROJ_SD1/${CODEX_SKILLS_REL}/${SKILL_SHARED_DIR}/${fname}"
-done
-
-case_start "shared docs land at both agent roots under user scope"
-reset_user_home
-cd "$(fresh_project)"
-run_capture "" init --scope=user --agents=claude,codex
-assert_eq "init exit 0" "$RUN_RC" "0"
-for fname in $SHARED_DOC_FILES; do
-  # User-scope installs are symlinks on macOS/Linux; assert through the
-  # link by checking the resolved file exists.
-  assert_exists "user Claude has $fname (via symlink)" \
-    "$HOME/${CLAUDE_SKILLS_REL}/${SKILL_SHARED_DIR}/${fname}"
-  assert_exists "user Codex has $fname (via symlink)" \
-    "$HOME/${CODEX_SKILLS_REL}/${SKILL_SHARED_DIR}/${fname}"
-done
-
-case_start "shared docs are byte-identical across Claude and Codex roots"
-# Reuses PROJ_SD1 from the project-scope case above. At project scope the
-# two copies are independent file writes; equal bytes proves the embed
-# walk wrote the same content to both destinations.
-for fname in $SHARED_DOC_FILES; do
-  claude_sha="$(sha256_of "$PROJ_SD1/${CLAUDE_SKILLS_REL}/${SKILL_SHARED_DIR}/${fname}")"
-  codex_sha="$(sha256_of  "$PROJ_SD1/${CODEX_SKILLS_REL}/${SKILL_SHARED_DIR}/${fname}")"
-  assert_eq "project $fname Claude≡Codex sha256" "$claude_sha" "$codex_sha"
-done
-# Same property at user scope. Both sides symlink into ~/.x-x/agents/,
-# so the digests collapse onto the single bundled source — still a useful
-# invariant: if init ever started copying instead of linking, byte drift
-# would be the first thing we'd see.
-for fname in $SHARED_DOC_FILES; do
-  claude_sha="$(sha256_of "$HOME/${CLAUDE_SKILLS_REL}/${SKILL_SHARED_DIR}/${fname}")"
-  codex_sha="$(sha256_of  "$HOME/${CODEX_SKILLS_REL}/${SKILL_SHARED_DIR}/${fname}")"
-  assert_eq "user $fname Claude≡Codex sha256" "$claude_sha" "$codex_sha"
-done
-
-case_start "installed shared docs match the embed source byte-for-byte"
-# Pins that `x-x init` doesn't mutate content on the way out — the file
-# the user reads is the file the binary was built with.
-for fname in $SHARED_DOC_FILES; do
-  bundle_sha="$(sha256_of "${SHARED_BUNDLE_DIR}/${fname}")"
-  proj_sha="$(sha256_of   "$PROJ_SD1/${CLAUDE_SKILLS_REL}/${SKILL_SHARED_DIR}/${fname}")"
-  user_sha="$(sha256_of   "$HOME/${CLAUDE_SKILLS_REL}/${SKILL_SHARED_DIR}/${fname}")"
-  assert_eq "$fname project ≡ embed sha256" "$proj_sha" "$bundle_sha"
-  assert_eq "$fname user ≡ embed sha256"    "$user_sha" "$bundle_sha"
-done
-
-case_start "resolution-rule paragraph is present at every install location"
-# Anchor phrase chosen to be specific enough that random doc edits don't
-# accidentally satisfy it. The rule now lives in each SKILL.md (not in
-# the shared file itself), so scan both SKILL.md files at every install
-# root. If the rule is removed from either, this fails.
-readonly RESOLUTION_ANCHOR="Check project scope first, then user scope"
-for root in \
-  "$PROJ_SD1/${CLAUDE_SKILLS_REL}" \
-  "$PROJ_SD1/${CODEX_SKILLS_REL}" \
-  "$HOME/${CLAUDE_SKILLS_REL}" \
-  "$HOME/${CODEX_SKILLS_REL}"; do
-  for skill in "${SKILL_X_X_DIR}" "${SKILL_X_PLAN_DIR}"; do
-    body="$(cat "${root}/${skill}/${SKILL_MANIFEST_FILE}")"
-    assert_contains "resolution anchor in ${root}/${skill}" "$body" "$RESOLUTION_ANCHOR"
-  done
-done
-
-case_start "installed shared/skill docs do not hardcode .claude/skills/_x-x_shared"
-# Any reintroduction of a Claude-only path inside the cross-agent docs
-# breaks the rule above. Scan every doc the user-facing skills actually
-# point at, at every install location.
-readonly FORBIDDEN_PATH=".claude/skills/${SKILL_SHARED_DIR}"
-docs_to_scan=(
-  "${SKILL_SHARED_DIR}/${SHARED_DOC_PLAN_FIRST}"
-  "${SKILL_SHARED_DIR}/${SHARED_DOC_SYSTEMS}"
-  "${SKILL_SHARED_DIR}/${SHARED_DOC_EARS}"
-  "${SKILL_X_X_DIR}/${SKILL_MANIFEST_FILE}"
-  "${SKILL_X_PLAN_DIR}/${SKILL_MANIFEST_FILE}"
-)
-for root in \
-  "$PROJ_SD1/${CLAUDE_SKILLS_REL}" \
-  "$PROJ_SD1/${CODEX_SKILLS_REL}" \
-  "$HOME/${CLAUDE_SKILLS_REL}" \
-  "$HOME/${CODEX_SKILLS_REL}"; do
-  for rel in "${docs_to_scan[@]}"; do
-    body="$(cat "${root}/${rel}")"
-    assert_not_contains "no hardcoded Claude path in ${root}/${rel}" "$body" "$FORBIDDEN_PATH"
-  done
-done
-
 case_start "project + user scopes coexist; project copies are not symlinks"
-# Run user-scope init from a throwaway cwd (user-scope init still seeds
-# `.x-plans/` in whatever directory it was launched from, but we don't
-# care about that dir). Then move to a fresh project dir for the
-# project-scope init. All four install roots must end up populated, and
-# the project-scope copies must be regular files (not symlinks back into
-# ~/.x-x/agents/) — otherwise a hand-edit at project scope would
-# silently propagate to every other project on the machine.
+# Run user-scope init from a throwaway cwd. Then move to a fresh project
+# dir for project-scope init. All four install roots must end up
+# populated with each bundled skill's SKILL.md, and the project-scope
+# copies must be regular files (not symlinks back into ~/.x-x/agents/) —
+# otherwise a hand-edit at project scope would silently propagate to
+# every other project on the machine.
 reset_user_home
 cd "$(fresh_project)"
 run_capture "" init --scope=user   --agents=claude,codex
@@ -1451,23 +1331,24 @@ PROJ_SD7="$(fresh_project)"
 cd "$PROJ_SD7"
 run_capture "" init --scope=project --agents=claude,codex
 assert_eq "project init exit 0" "$RUN_RC" "0"
-for fname in $SHARED_DOC_FILES; do
-  assert_is_file "project Claude $fname exists"  "$PROJ_SD7/${CLAUDE_SKILLS_REL}/${SKILL_SHARED_DIR}/${fname}"
-  assert_is_file "project Codex $fname exists"   "$PROJ_SD7/${CODEX_SKILLS_REL}/${SKILL_SHARED_DIR}/${fname}"
-  assert_exists  "user Claude $fname exists"     "$HOME/${CLAUDE_SKILLS_REL}/${SKILL_SHARED_DIR}/${fname}"
-  assert_exists  "user Codex $fname exists"      "$HOME/${CODEX_SKILLS_REL}/${SKILL_SHARED_DIR}/${fname}"
+for skill in $OWNED_SKILLS; do
+  manifest="${skill}/${SKILL_MANIFEST_FILE}"
+  assert_is_file "project Claude $manifest exists"  "$PROJ_SD7/${CLAUDE_SKILLS_REL}/${manifest}"
+  assert_is_file "project Codex $manifest exists"   "$PROJ_SD7/${CODEX_SKILLS_REL}/${manifest}"
+  assert_exists  "user Claude $manifest exists"     "$HOME/${CLAUDE_SKILLS_REL}/${manifest}"
+  assert_exists  "user Codex $manifest exists"      "$HOME/${CODEX_SKILLS_REL}/${manifest}"
   # Project-scope must be a regular file (not a symlink). User-scope is
   # allowed to be a symlink (it's how cross-project refresh propagates).
-  [ ! -L "$PROJ_SD7/${CLAUDE_SKILLS_REL}/${SKILL_SHARED_DIR}/${fname}" ] \
-    && ok "project Claude $fname is not a symlink" \
-    || fail "project Claude $fname is not a symlink" "found symlink — project copy would track user-scope edits"
-  [ ! -L "$PROJ_SD7/${CODEX_SKILLS_REL}/${SKILL_SHARED_DIR}/${fname}" ] \
-    && ok "project Codex $fname is not a symlink" \
-    || fail "project Codex $fname is not a symlink" "found symlink — project copy would track user-scope edits"
+  [ ! -L "$PROJ_SD7/${CLAUDE_SKILLS_REL}/${manifest}" ] \
+    && ok "project Claude $manifest is not a symlink" \
+    || fail "project Claude $manifest is not a symlink" "found symlink — project copy would track user-scope edits"
+  [ ! -L "$PROJ_SD7/${CODEX_SKILLS_REL}/${manifest}" ] \
+    && ok "project Codex $manifest is not a symlink" \
+    || fail "project Codex $manifest is not a symlink" "found symlink — project copy would track user-scope edits"
 done
 
-case_start "project shared-doc edits survive a 24h user-scope refresh"
-# Hand-edit a project-scope shared doc with a sentinel byte. Trigger the
+case_start "project SKILL.md edits survive a 24h user-scope refresh"
+# Hand-edit a project-scope SKILL.md with a sentinel byte. Trigger the
 # 24h refresh that wholesale-rewrites ~/.x-x/agents/. The project copy
 # must retain the sentinel; the user-scope copy (a symlink into the
 # refreshed bundled tree) must reflect the embed bytes again.
@@ -1477,7 +1358,7 @@ run_capture "" init --scope=user   --agents=claude,codex
 PROJ_SD8="$(fresh_project)"
 cd "$PROJ_SD8"
 run_capture "" init --scope=project --agents=claude,codex
-sentinel_doc="$PROJ_SD8/${CLAUDE_SKILLS_REL}/${SKILL_SHARED_DIR}/${SHARED_DOC_PLAN_FIRST}"
+sentinel_doc="$PROJ_SD8/${CLAUDE_SKILLS_REL}/${SKILL_X_X_DIR}/${SKILL_MANIFEST_FILE}"
 printf '\n<!-- e2e sentinel: PROJECT-EDITED -->\n' >> "$sentinel_doc"
 # Backdate .config.json so the next bare invocation fires the 24h refresh.
 echo "{\"version\":\"${E2E_VERSION}\",\"last_checked\":0}" \
@@ -1489,11 +1370,11 @@ project_body="$(cat "$sentinel_doc")"
 assert_contains "project sentinel survives refresh" "$project_body" "PROJECT-EDITED"
 # User-scope copy (read through the symlink) must be back to the embed
 # bytes — no sentinel, original SHA.
-user_doc="$HOME/${CLAUDE_SKILLS_REL}/${SKILL_SHARED_DIR}/${SHARED_DOC_PLAN_FIRST}"
+user_doc="$HOME/${CLAUDE_SKILLS_REL}/${SKILL_X_X_DIR}/${SKILL_MANIFEST_FILE}"
 user_body="$(cat "$user_doc")"
 assert_not_contains "user copy refreshed from embed" "$user_body" "PROJECT-EDITED"
 user_sha="$(sha256_of "$user_doc")"
-bundle_sha="$(sha256_of "${SHARED_BUNDLE_DIR}/${SHARED_DOC_PLAN_FIRST}")"
+bundle_sha="$(sha256_of "${REPO_ROOT}/${AGENTS_EMBED_ROOT}/${SKILLS_SUBDIR}/${SKILL_X_X_DIR}/${SKILL_MANIFEST_FILE}")"
 assert_eq "user copy ≡ embed sha256 after refresh" "$user_sha" "$bundle_sha"
 
 # ---------- plan next-prefix ----------

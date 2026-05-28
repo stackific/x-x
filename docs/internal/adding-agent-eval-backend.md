@@ -290,11 +290,10 @@ main worktree, not the branch you're editing.
 ## References
 
 - `agents/skills/x-plan/SKILL.md` — what the planner skill expects
-  from the agent
+  from the agent; Appendix A inside that file documents the
+  bidirectional plan-link contract (extends/supersedes)
 - `agents/skills/x-x/SKILL.md` — what the executor skill expects
   (review modes, verify-before-flip, etc.)
-- `agents/skills/_x-x_shared/_plan_first.md` — bidirectional plan
-  link contract (extends/supersedes)
 - `skills-evals/README.md` — local dev setup
 - `docs/internal/manually-triggered-workflows.md` — workflow
   conventions and DeepSeek routing

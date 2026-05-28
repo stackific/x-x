@@ -714,8 +714,8 @@ func TestScopeRootFor(t *testing.T) {
 
 // TestListSkills exercises the directory filter logic: regular dirs +
 // underscore-prefixed shared dirs pass; dotfiles and regular files are
-// excluded. The shared-dir behavior is critical (the bundle includes
-// _x-x_shared) so a stricter filter would break the install.
+// excluded. The underscore-allowed behavior is kept so any future shared
+// helper directory ships without needing a filter relaxation here.
 func TestListSkills(t *testing.T) {
 	dir := t.TempDir()
 	// Bundled-form sample: regular skill, shared (underscore prefix

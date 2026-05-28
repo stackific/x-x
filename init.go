@@ -874,9 +874,9 @@ func scopeRootFor(scope initScope, cwd string) (string, error) {
 // target. Dotfiles (and dot-prefixed dirs) are filtered out so things like
 // a stray .DS_Store don't surface as "skills".
 //
-// Note: dirs whose name STARTS with "_" (e.g. _x-x_shared) ARE included
-// — by convention these are shared helpers consumed by other skills. We
-// install them too because their absence would break the dependent skills.
+// Note: dirs whose name STARTS with "_" ARE included — by convention
+// these are shared helpers consumed by other skills. None ship today,
+// but keeping the filter permissive avoids a re-rule when one is added.
 func listSkills(source string) ([]string, error) {
 	entries, err := os.ReadDir(source)
 	if err != nil {
