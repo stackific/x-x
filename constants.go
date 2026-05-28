@@ -198,6 +198,39 @@ var agentTargets = []agentTarget{
 	// Skills-only for now — no settings.json / hooks file bundled for
 	// cline; configSrc and configRel stay empty.
 	{"cline", "Cline", ".cline/skills", "", "", ""},
+	// omp (oh-my-pi, omp.sh / can1357/oh-my-pi) is a TS coding agent
+	// that registers a documented `agents` skill provider at priority
+	// 70 — see oh-my-pi/docs/skills.md "priority 70 group (in
+	// registration order): claude-plugins, agents, codex" and the
+	// matching source at packages/coding-agent/src/discovery/agents.ts.
+	// That provider walks `.agent/` and `.agents/` (both names) at:
+	//   project scope → walk up from cwd to repoRoot, scanning
+	//                   `<dir>/.agents/skills/` at each ancestor
+	//   user scope    → `$HOME/.agents/skills/`
+	//
+	// We pin to `.agents/skills` at both scopes — the cross-agent open
+	// spec path, identical to Codex's project-scope path and Copilot
+	// CLI's officially-documented add-skills location at both scopes.
+	// Reasons:
+	//   1. Symmetric across scopes — no userSkillsRel override needed,
+	//      `omp -h` does not introduce a user-scope/project-scope
+	//      asymmetry for this provider (unlike the native priority-100
+	//      `.omp` provider where user-scope lives under `.omp/agent/`).
+	//   2. Cross-platform — node:path joins resolve to `.agents\skills`
+	//      on Windows automatically (omp's binary is officially
+	//      "macOS, Linux, Windows, no WSL bridge" per README).
+	//   3. Stays out of omp's private session-storage tree
+	//      (`~/.omp/agent/`, owned end-to-end by omp's own runtime —
+	//      writing into it is a layering violation).
+	//   4. Idempotent with Codex/Copilot/Pi: `--agents codex,copilot,pi,omp`
+	//      collapses to one shared `.agents/skills/` install plus
+	//      Codex's own `.codex/hooks.json`.
+	//
+	// Skills-only — omp's user settings live at `~/.omp/config.yml`
+	// (interactive Settings → Memory tab) and its model registry at
+	// `~/.omp/agent/models.yml`. Both are user-owned end-to-end and
+	// outside the x-x install scope.
+	{"omp", "omp (oh-my-pi)", ".agents/skills", "", "", ""},
 }
 
 // skillsSubdir is the directory inside ~/.x-x/agents/ that holds the

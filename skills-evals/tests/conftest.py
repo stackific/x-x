@@ -48,6 +48,14 @@ CLAUDE_ENV_DEFAULTS = {
 # stays uniform across backends.
 OPENCODE_ENV_DEFAULTS: dict[str, str] = {}
 
+# omp (oh-my-pi) ships a built-in `deepseek` provider catalog (see
+# provider-models/descriptors.ts `catalogDescriptor("deepseek", ...)`),
+# so DEEPSEEK_API_KEY routes directly to api.deepseek.com — same pattern
+# as OpenCode. Model selection is passed via `--model deepseek/<id>` from
+# omp_driver.py at spawn time. Recorded as an empty dict so the per-agent
+# env-setup loop stays uniform across backends.
+OMP_ENV_DEFAULTS: dict[str, str] = {}
+
 # GitHub Copilot CLI BYOK routing. Provider type MUST be `anthropic` (not
 # `openai`) — DeepSeek requires reasoning_content echo-back on subsequent
 # requests, which Copilot CLI's OpenAI integration does not support and
@@ -87,16 +95,18 @@ CLINE_ENV_DEFAULTS: dict[str, str] = {}
 # Which agent backend the workspace fixture installs and probes for.
 # Default `claude` keeps the existing Claude tests running unchanged.
 # Workflows targeting other backends (e.g. skills-eval-opencode.yml,
-# skills-eval-copilot.yml, skills-eval-pi.yml, skills-eval-cline.yml)
-# set X_X_AGENT_KEY=<key> to flip both the binary the fixture skips on
-# if missing and the per-agent env defaults that get pointed at DeepSeek.
-VALID_AGENT_KEYS = ("claude", "opencode", "copilot", "pi", "cline")
+# skills-eval-copilot.yml, skills-eval-pi.yml, skills-eval-cline.yml,
+# manual-omp-judge.yml) set X_X_AGENT_KEY=<key> to flip both the binary
+# the fixture skips on if missing and the per-agent env defaults that
+# get pointed at DeepSeek.
+VALID_AGENT_KEYS = ("claude", "opencode", "copilot", "pi", "cline", "omp")
 AGENT_BINARY_FOR_KEY = {
   "claude": "claude",
   "opencode": "opencode",
   "copilot": "copilot",
   "pi": "pi",
   "cline": "cline",
+  "omp": "omp",
 }
 AGENT_ENV_DEFAULTS_FOR_KEY = {
   "claude": CLAUDE_ENV_DEFAULTS,
@@ -104,23 +114,25 @@ AGENT_ENV_DEFAULTS_FOR_KEY = {
   "copilot": COPILOT_ENV_DEFAULTS,
   "pi": PI_ENV_DEFAULTS,
   "cline": CLINE_ENV_DEFAULTS,
+  "omp": OMP_ENV_DEFAULTS,
 }
 # Value passed to `x-x init --agents <value>` for each backend. Today
 # the binary's agentTargets registry (constants.go) recognizes "claude",
-# "codex", "opencode", "copilot", "pi", and "cline" — pi and cline are
-# first-class entries with their own skillsRel. Copilot's transitional
-# `--agents claude` workaround remains because copilot uses
-# `.agents/skills` (the cross-agent open spec path) and shipped before
-# its registry row landed; flip to "copilot" once that follow-up
-# merges. Cline reads from its own `.cline/skills` per docs.cline.bot,
-# so `--agents cline` lands the files exactly where the cline driver
-# looks.
+# "codex", "opencode", "pi", "cline", and "omp" — pi, cline, and omp
+# are first-class entries with their own skillsRel. Copilot is still
+# not a registered target, so Copilot tests install the Claude skill
+# layout as a transitional shape and the copilot CLI discovers them via
+# its cross-agent add-skills path list (`.claude/skills` at project
+# scope, `~/.agents/skills/` at user scope, both on the May 2026 docs
+# list). When copilot is added to agentTargets, flip its entry to
+# "copilot".
 AGENT_INIT_VALUE_FOR_KEY = {
   "claude": "claude",
   "opencode": "opencode",
   "copilot": "claude",
   "pi": "pi",
   "cline": "cline",
+  "omp": "omp",
 }
 # Per-agent skills install root used by the user-scope post-install log
 # and the cline driver's `_resolve_skill_path`. Reflects each agent's
@@ -128,13 +140,19 @@ AGENT_INIT_VALUE_FOR_KEY = {
 # `.opencode/commands/`, Copilot CLI (via the transitional Claude
 # layout) reads `.claude/skills/`, Pi reads `~/.agents/skills/` (one of
 # its documented user-scope skill discovery locations alongside
-# `~/.pi/agent/skills/`), and Cline reads `.cline/skills/`.
+# `~/.pi/agent/skills/`), Cline reads `.cline/skills/`, and omp's
+# `agents` skill provider (priority 70 in oh-my-pi docs/skills.md,
+# source at packages/coding-agent/src/discovery/agents.ts) walks
+# `$HOME/.agents/skills/` at user scope — the same path Codex, Pi, and
+# Copilot use at user scope. The registered omp agent target in
+# constants.go points there.
 AGENT_USER_SKILLS_REL_FOR_KEY = {
   "claude": Path(".claude") / "skills",
   "opencode": Path(".opencode") / "commands",
   "copilot": Path(".claude") / "skills",
   "pi": Path(".agents") / "skills",
   "cline": Path(".cline") / "skills",
+  "omp": Path(".agents") / "skills",
 }
 
 # Which `x-x init --scope` value to use when bootstrapping each test's
