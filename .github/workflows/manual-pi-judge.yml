@@ -1,16 +1,30 @@
 name: manual / pi <- llm judge
 
-# Manually-triggered experiment in the agent-eval lineage. Targets the
-# Pi CLI (`pi`, from pi.dev — a minimal terminal coding harness with
-# pluggable provider routing). Drivers, judges, and test files live
-# in a follow-up PR — this workflow ships the scaffold (CLI install,
-# env routing, pytest invocation) so the eval suite can plug in once
-# the pi driver lands.
+# Manually-triggered experiment from the agent-eval lineage. The loop:
 #
-# Non-interactive entry: `pi -p "<query>"` with `--mode json` for an
-# NDJSON event stream. Pi supports Anthropic, OpenAI, Google, Azure,
-# and 10+ other providers — DeepSeek routing will be wired in the
-# driver's provider config.
+#   1. Install Pi (`@earendil-works/pi-coding-agent` from pi.dev) on the
+#      runner; install x-x to PATH.
+#   2. Sync the uv-managed skills-evals project (deepeval, openai, pytest,
+#      python-dotenv).
+#   3. Run `uv run pytest`. The tests:
+#        a. Spawn `pi --mode json --model deepseek/<id> -p "/skill:<name>
+#           <task>"` per turn (single-shot subprocesses; resume with -c).
+#           Pi's CLI command parser resolves `/skill:<name>` against
+#           SKILL.md frontmatter `name:` values — `x-x init --agents codex`
+#           writes `.agents/skills/x-plan/SKILL.md` and pi discovers it
+#           walking up from cwd (one of pi's documented skill locations
+#           alongside `.pi/skills/` and `~/.pi/agent/skills/`).
+#        b. Drive the x-plan / x-x skill prompts via that slash-command
+#           form in skills_evals.pi_driver. Confirmation gates show up as
+#           text events the driver matches against the "Reply yes" pattern
+#           and replies to with `pi -c -p yes` on the next turn.
+#        c. Score the plan and the produced artifacts with two DeepEval
+#           `GEval` metrics backed by DeepSeek.
+#   4. Upload the pytest tmp directory (transcripts + workspace) on
+#      failure so the run can be inspected offline.
+#
+# See docs/internal/manually-triggered-workflows.md for the conventions
+# this file follows.
 
 on:
   workflow_dispatch:
@@ -21,12 +35,28 @@ permissions:
 jobs:
   eval:
     runs-on: ubuntu-latest
+    # One scenario (TODO app) takes 5–15 min: planner + executor + two
+    # judge LLM calls. 60-minute cap leaves headroom for DeepSeek
+    # latency without rewarding a stuck agent.
     timeout-minutes: 60
 
     env:
+      # X_X_AGENT_KEY tells the skills-evals conftest which backend's
+      # tests to collect, which binary to require on PATH, and which
+      # `--agents <key>` value to pass to `x-x init`. Default is
+      # "claude"; this workflow runs the Pi set.
       X_X_AGENT_KEY: pi
 
+      # Pi reads `DEEPSEEK_API_KEY` directly for the `deepseek` provider
+      # entry in its model registry — no rename mirror needed (unlike
+      # Claude Code, where the DeepSeek key has to land at
+      # ANTHROPIC_AUTH_TOKEN). The judge LLM uses the same key directly.
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+
+      # Pi reaches `pi.dev/api/latest-version` and `pi.dev/api/report-install`
+      # on startup. Disable both so a transient pi.dev outage can't bleed
+      # into the eval's wall-clock or leak a CI install ping.
+      PI_OFFLINE: "1"
 
     steps:
       - uses: actions/checkout@v6
@@ -36,18 +66,32 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # `go install .` lands a release-flavored x-x in $(go env GOPATH)/bin.
+      # The setup-go action puts that directory on PATH.
       - name: install x-x to PATH
         run: |
           go install .
           x-x --version
 
-      # Pi has an npm path too, but the canonical install is the
-      # shell installer documented on pi.dev.
+      # Pi requires Node 22+ (legacy-node20 tag is pinned to 0.74.2 only).
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      # The shell installer (curl pi.dev/install.sh) is itself an npm
+      # wrapper that requires Node already present; cutting straight to
+      # npm gives us deterministic PATH placement under setup-node's
+      # global bin dir. Pin to @latest until we have a known-good version;
+      # bump intentionally if the smoke test starts failing on a fresh
+      # release. `--ignore-scripts` matches the README's recommended form
+      # (pi does not require install scripts for normal npm installs).
       - name: install pi cli
         run: |
-          curl -fsSL https://pi.dev/install.sh | sh
+          npm install -g --ignore-scripts @earendil-works/pi-coding-agent@latest
           pi --version
 
+      # setup-uv no longer publishes moving major tags (@v8), so pin to
+      # a specific version. Bump intentionally after checking release notes.
       - uses: astral-sh/setup-uv@v8.1.0
         with:
           enable-cache: true
@@ -56,10 +100,18 @@ jobs:
         working-directory: skills-evals
         run: uv sync --frozen || uv sync
 
+      # `test_pi_stream_json_smoke.py` runs first (smoke-first
+      # ordering in conftest.pytest_collection_modifyitems) — a
+      # wire-format / env / version failure fails it without burning a
+      # full planner+executor cycle on the real scenario.
       - name: run pytest
         working-directory: skills-evals
         run: uv run pytest
 
+      # Pytest writes transcripts and per-test workspaces under tmp_path
+      # (`/tmp/pytest-of-runner/...`). Uploading on failure gives us the
+      # JSONL stream that records every event the agent emitted, plus
+      # the workspace state at failure.
       - name: upload pytest tmp on failure
         if: failure()
         uses: actions/upload-artifact@v5

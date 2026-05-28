@@ -5,8 +5,9 @@
 1. Load `.env` (from skills-evals/ or any parent) so DEEPSEEK_API_KEY
    reaches every supported agent backend — the judge LLM (DeepSeek
    directly), Claude Code (Anthropic-compatible env vars), OpenCode
-   (deepseek provider via Models.dev), and GitHub Copilot CLI (BYOK env
-   vars with provider type `anthropic`).
+   (deepseek provider via Models.dev), GitHub Copilot CLI (BYOK env
+   vars with provider type `anthropic`), and Pi (reads DEEPSEEK_API_KEY
+   directly for the `deepseek` provider).
 2. Provide a fresh, isolated `workspace` directory per test — `x-x init`
    runs in it before any skill is invoked.
 
@@ -65,43 +66,58 @@ COPILOT_ENV_DEFAULTS = {
   "COPILOT_PROVIDER_MAX_OUTPUT_TOKENS": "128000",
 }
 
+# Pi reads provider credentials directly from `DEEPSEEK_API_KEY` for its
+# `deepseek` provider (packages/coding-agent/docs/providers.md in
+# earendil-works/pi-mono). No additional env mirror is required — the same
+# variable powers the judge LLM, x-x's other backends, and pi. Model
+# selection is passed via `--model deepseek/<id>` from pi_driver.py at
+# spawn time, not from env. Empty dict keeps the per-agent env-setup loop
+# in `_load_dotenv_and_route` uniform across backends.
+PI_ENV_DEFAULTS: dict[str, str] = {}
+
 # Which agent backend the workspace fixture installs and probes for.
 # Default `claude` keeps the existing Claude tests running unchanged.
 # Workflows targeting other backends (e.g. manual-opencode-judge.yml,
-# manual-copilot-judge.yml) set X_X_AGENT_KEY=<key> to flip both the
-# binary the fixture skips on if missing and the per-agent env defaults
-# that get pointed at DeepSeek.
-VALID_AGENT_KEYS = ("claude", "opencode", "copilot")
+# manual-copilot-judge.yml, manual-pi-judge.yml) set X_X_AGENT_KEY=<key>
+# to flip both the binary the fixture skips on if missing and the
+# per-agent env defaults that get pointed at DeepSeek.
+VALID_AGENT_KEYS = ("claude", "opencode", "copilot", "pi")
 AGENT_BINARY_FOR_KEY = {
   "claude": "claude",
   "opencode": "opencode",
   "copilot": "copilot",
+  "pi": "pi",
 }
 AGENT_ENV_DEFAULTS_FOR_KEY = {
   "claude": CLAUDE_ENV_DEFAULTS,
   "opencode": OPENCODE_ENV_DEFAULTS,
   "copilot": COPILOT_ENV_DEFAULTS,
+  "pi": PI_ENV_DEFAULTS,
 }
 # Value passed to `x-x init --agents <value>` for each backend. Today the
 # binary's agentTargets registry (constants.go) recognizes "claude",
-# "codex", and "opencode" — "copilot" is not yet a registered target, so
-# Copilot tests install the Claude skill layout as a transitional shape
-# and the copilot CLI discovers them by the cross-agent SKILL.md
-# convention. When copilot is added to agentTargets, flip this entry to
-# "copilot" in the same change.
+# "codex", "opencode", and "copilot" — "pi" is not a registered target,
+# so Pi tests install the Codex skill layout as a transitional shape (Pi
+# discovers skills from `.agents/skills/` walking up from cwd, which is
+# exactly what `x-x init --agents codex` writes). When pi is added to
+# agentTargets, flip this entry to "pi" in the same change.
 AGENT_INIT_VALUE_FOR_KEY = {
   "claude": "claude",
   "opencode": "opencode",
   "copilot": "claude",
+  "pi": "codex",
 }
 # Per-agent skills install root under $HOME used by the user-scope
 # post-install log. Reflects each agent's discovery convention — Claude
 # reads `.claude/skills/`, OpenCode reads `.opencode/commands/`, Copilot
-# CLI (via the transitional Claude layout) reads `.claude/skills/`.
+# CLI (via the transitional Claude layout) reads `.claude/skills/`, and
+# Pi reads `~/.agents/skills/` (one of its documented user-scope skill
+# discovery locations alongside `~/.pi/agent/skills/`).
 AGENT_USER_SKILLS_REL_FOR_KEY = {
   "claude": Path(".claude") / "skills",
   "opencode": Path(".opencode") / "commands",
   "copilot": Path(".claude") / "skills",
+  "pi": Path(".agents") / "skills",
 }
 
 # Which `x-x init --scope` value to use when bootstrapping each test's
@@ -167,7 +183,8 @@ def _load_dotenv_and_route_agent() -> None:
   pointed at DeepSeek's compat shim; OpenCode picks up the deepseek
   provider directly from `DEEPSEEK_API_KEY`; Copilot uses the BYOK
   `COPILOT_PROVIDER_*` block plus a mirror of DEEPSEEK_API_KEY into
-  `COPILOT_PROVIDER_API_KEY`.
+  `COPILOT_PROVIDER_API_KEY`; Pi reads `DEEPSEEK_API_KEY` directly via
+  the deepseek provider entry in its model registry.
   """
   log("conftest", f"python={sys.version.split()[0]} platform={sys.platform}")
 
