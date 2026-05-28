@@ -478,19 +478,37 @@ const (
 // address is pinned to the loopback interface so the server never
 // accepts connections from elsewhere on the network: this is a per-user
 // CLI assistant, not a shared service. Port 7829 is the documented
-// bare-stax port (advertised in docs/public/reference.md and the
-// `stax -h` panel) — colliding with an already-running stax server
-// fails the bind fast with a clear "address already in use" error.
+// preferred port; when it is already in use, listenWithFallback walks
+// forward through serverPortFallbackAttempts adjacent ports (7830,
+// 7831, …) so a second concurrent `stax` invocation lands on a free
+// port rather than failing with "address already in use".
 const (
-	// serverListenAddr is the host:port the bare-stax HTTP server binds.
-	// Loopback-only by design; never bind 0.0.0.0 here without a deliberate
-	// security review.
+	// serverListenAddr is the preferred host:port the bare-stax HTTP
+	// server binds first. The bind host is the literal `127.0.0.1` (not
+	// `localhost`) so the listen is deterministic — `net.Listen("tcp",
+	// "localhost:N")` would resolve through DNS / /etc/hosts and land
+	// on whichever stack the resolver picks first, which differs across
+	// macOS, Linux, and WSL. Pinning the IPv4 loopback removes that
+	// variability and rules out an accidental bind to 0.0.0.0 if a
+	// future config slips a hostname through.
 	serverListenAddr = "127.0.0.1:7829"
 
-	// serverDisplayURL is the http:// URL printed to the user and handed
-	// off to the OS-default browser. Composed from serverListenAddr so a
-	// future port change is a one-line edit.
-	serverDisplayURL = "http://" + serverListenAddr
+	// serverDisplayURL is the http:// URL printed in help text, the
+	// banner stdout line, and handed off to the OS-default browser.
+	// Uses `localhost` rather than `127.0.0.1` because browsers treat
+	// the literal `localhost` as a secure context by default (per the
+	// W3C secure-contexts spec) and it reads better in logs. The split
+	// between bind host and display host is intentional — see
+	// serverListenAddr above for the rationale on each side.
+	serverDisplayURL = "http://localhost:7829"
+
+	// serverPortFallbackAttempts bounds how many adjacent ports the
+	// listener will try after the preferred port fails with EADDRINUSE.
+	// Stops after 100 attempts (7830..7929 inclusive) so a permanently
+	// claimed range surfaces as a clear error rather than an infinite
+	// loop, while still leaving plenty of headroom for a dozen
+	// concurrent stax instances on the same machine.
+	serverPortFallbackAttempts = 100
 
 	// serverReadHeaderTimeout caps how long the server will wait for a
 	// client's request headers. Short, fixed value because the server

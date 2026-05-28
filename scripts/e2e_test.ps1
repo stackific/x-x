@@ -101,7 +101,7 @@ Set-Variable -Option Constant -Name ZED_SKILLS_REL              -Value '.agents\
 # HTTP listener on serverListenAddr; the Windows e2e spawns it in the
 # background and probes these paths the same way the bash harness does.
 Set-Variable -Option Constant -Name STAX_SERVER_LISTEN_ADDR -Value '127.0.0.1:7829'
-Set-Variable -Option Constant -Name STAX_SERVER_DISPLAY_URL -Value 'http://127.0.0.1:7829'
+Set-Variable -Option Constant -Name STAX_SERVER_DISPLAY_URL -Value 'http://localhost:7829'
 Set-Variable -Option Constant -Name STAX_API_HELLO_PATH     -Value '/api/hello'
 Set-Variable -Option Constant -Name STAX_API_SYSTEMS_PATH   -Value '/api/systems'
 

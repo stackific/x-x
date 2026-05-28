@@ -38,10 +38,10 @@ readonly PLANS_LIST_OVERFLOW_THRESHOLD=20          # plansListOverflowThreshold
 # / apiHelloPath / apiSystemsPath in constants.go. The
 # TestE2EShellConstantsMatchGo drift check re-reads this block at
 # `go test` time and fails on byte-level divergence from the Go side.
-readonly STAX_SERVER_LISTEN_ADDR="127.0.0.1:7829"  # serverListenAddr
-readonly STAX_SERVER_DISPLAY_URL="http://${STAX_SERVER_LISTEN_ADDR}"  # serverDisplayURL
-readonly STAX_API_HELLO_PATH="/api/hello"          # apiHelloPath
-readonly STAX_API_SYSTEMS_PATH="/api/systems"      # apiSystemsPath
+readonly STAX_SERVER_LISTEN_ADDR="127.0.0.1:7829"   # serverListenAddr (bind)
+readonly STAX_SERVER_DISPLAY_URL="http://localhost:7829"  # serverDisplayURL (user-facing)
+readonly STAX_API_HELLO_PATH="/api/hello"           # apiHelloPath
+readonly STAX_API_SYSTEMS_PATH="/api/systems"       # apiSystemsPath
 
 # Bundled skill directory names (skill*Dir in constants.go).
 readonly SKILL_SCOPE_DIR="scope"                   # skillScopeDir
@@ -242,25 +242,50 @@ fresh_project() {
 bg_spawn_stax() {
   BG_STDOUT="$(mktemp)"
   BG_STDERR="$(mktemp)"
+  BG_URL=""
   "$BUILD_BIN" "$@" >"$BG_STDOUT" 2>"$BG_STDERR" </dev/null &
   BG_PID=$!
-  # Poll up to 5s for the server to start listening. Curl's --max-time
-  # bounds each probe at 1s; a 50-iteration loop with sleep 0.1 gives a
-  # combined ~5s cap that covers the slowest realistic startup.
-  local i
+  # Poll up to 5s for OUR spawn's listening banner to appear in
+  # BG_STDOUT. Trusting "curl succeeded" alone would be unsafe: if a
+  # stray stax server (or some other process) is already squatting on
+  # the port, OUR spawn either exits with EADDRINUSE or falls through
+  # to an adjacent port (per serverPortFallbackAttempts) — curl against
+  # the hard-coded preferred URL would talk to the squatter, not us.
+  # Extracting the URL from the banner ("Stax server listening on
+  # <URL>") is the unforgeable signal that our process actually bound
+  # AND the right host:port to probe. Cross-checked with a zombie-aware
+  # liveness probe (kill -0 returns success for an unreaped child until
+  # wait() runs).
+  local i stat extracted_url
   for i in $(seq 1 50); do
+    extracted_url="$(grep -oE 'Stax server listening on [^[:space:]]+' "$BG_STDOUT" 2>/dev/null | head -1 | awk '{print $NF}')"
+    if [ -n "$extracted_url" ]; then
+      BG_URL="$extracted_url"
+      if curl -fsS --max-time 1 "${BG_URL}${STAX_API_HELLO_PATH}" >/dev/null 2>&1; then
+        return 0
+      fi
+    fi
     if ! kill -0 "$BG_PID" 2>/dev/null; then
       printf 'stax background process died before listening\n' >&2
       printf '  stdout: %s\n' "$(cat "$BG_STDOUT")" >&2
       printf '  stderr: %s\n' "$(cat "$BG_STDERR")" >&2
+      wait "$BG_PID" 2>/dev/null
       return 1
     fi
-    if curl -fsS --max-time 1 "${STAX_SERVER_DISPLAY_URL}${STAX_API_HELLO_PATH}" >/dev/null 2>&1; then
-      return 0
+    # Zombie detection: ps prints 'Z' (or 'Z+') in the STAT column for
+    # an exited-but-unreaped child. Without this, a child that died on
+    # bind would keep us looping until the 5s timeout.
+    stat="$(ps -p "$BG_PID" -o stat= 2>/dev/null | tr -d ' ')"
+    if [ "${stat#Z}" != "$stat" ]; then
+      printf 'stax background process exited (zombie) before listening\n' >&2
+      printf '  stdout: %s\n' "$(cat "$BG_STDOUT")" >&2
+      printf '  stderr: %s\n' "$(cat "$BG_STDERR")" >&2
+      wait "$BG_PID" 2>/dev/null
+      return 1
     fi
     sleep 0.1
   done
-  printf 'stax server never started listening on %s\n' "$STAX_SERVER_DISPLAY_URL" >&2
+  printf 'stax server never printed a listening banner\n' >&2
   printf '  stdout: %s\n' "$(cat "$BG_STDOUT")" >&2
   printf '  stderr: %s\n' "$(cat "$BG_STDERR")" >&2
   kill "$BG_PID" 2>/dev/null
@@ -493,16 +518,19 @@ case_start "stax --no-browser starts the loopback API server"
 reset_user_home
 bg_spawn_stax --no-browser
 assert_eq "spawn succeeded" "$?" "0"
-# /api/hello carries the running version + a hello message — the
-# liveness probe the bg_spawn_stax helper already waited on succeeded,
-# so a redundant curl here lets us assert on the body shape.
-hello_body="$(curl -fsS --max-time 1 "${STAX_SERVER_DISPLAY_URL}${STAX_API_HELLO_PATH}")"
+# Curl the URL the spawn actually bound (BG_URL is exported by
+# bg_spawn_stax after extracting it from the listening banner) — the
+# preferred port may have been busy and the server fell forward to an
+# adjacent one. /api/hello carries the running version + a hello
+# message; the liveness probe bg_spawn_stax already waited on
+# succeeded, so a redundant curl here lets us assert on body shape.
+hello_body="$(curl -fsS --max-time 1 "${BG_URL}${STAX_API_HELLO_PATH}")"
 assert_contains "hello message"  "$hello_body" '"message":"hello"'
 assert_contains "hello version"  "$hello_body" "\"version\":\"${E2E_VERSION}\""
 # stdout carries the listening banner — pin both the URL and the
 # Ctrl-C hint so a reshuffle of runServer's banner shows up here.
 listening_banner="$(cat "$BG_STDOUT")"
-assert_contains "listening banner"   "$listening_banner" "$STAX_SERVER_DISPLAY_URL"
+assert_contains "listening banner"   "$listening_banner" "$BG_URL"
 assert_contains "ctrl-c hint"        "$listening_banner" "Ctrl-C"
 # --no-browser suppresses the browser handoff. No browser-error noise
 # should hit stderr (the warning only fires when openBrowser is called
@@ -531,7 +559,7 @@ printf 'systems:\n  - id: auth\n    name: Auth Service\n' \
   > "$PROJ_API/${STAX_DIR}/${STAX_SYSTEMS_FILE}"
 bg_spawn_stax --no-browser --cwd "$PROJ_API"
 assert_eq "spawn succeeded" "$?" "0"
-systems_body="$(curl -fsS --max-time 1 "${STAX_SERVER_DISPLAY_URL}${STAX_API_SYSTEMS_PATH}")"
+systems_body="$(curl -fsS --max-time 1 "${BG_URL}${STAX_API_SYSTEMS_PATH}")"
 assert_contains "systems id"   "$systems_body" '"id":"auth"'
 assert_contains "systems name" "$systems_body" '"name":"Auth Service"'
 bg_kill_stax
@@ -547,7 +575,7 @@ reset_user_home
 NOPROJ="$(fresh_project)"
 bg_spawn_stax --no-browser --cwd "$NOPROJ"
 assert_eq "spawn succeeded" "$?" "0"
-systems_body="$(curl -fsS --max-time 1 "${STAX_SERVER_DISPLAY_URL}${STAX_API_SYSTEMS_PATH}")"
+systems_body="$(curl -fsS --max-time 1 "${BG_URL}${STAX_API_SYSTEMS_PATH}")"
 assert_contains "empty systems list" "$systems_body" '"systems":[]'
 bg_kill_stax
 

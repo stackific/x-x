@@ -4,11 +4,16 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -273,5 +278,110 @@ func TestNewServerMux_RoutesBothEndpoints(t *testing.T) {
 				t.Fatalf("body %q must contain %q", string(buf[:n]), c.want)
 			}
 		})
+	}
+}
+
+// reserveFreePort grabs a kernel-assigned port via "127.0.0.1:0",
+// closes it, and returns the host:port string. Used by the
+// listenWithFallback tests so they exercise the fallback loop against
+// arbitrary unused ports instead of the hard-coded 7829 (which a
+// developer's running stax server may be holding).
+//
+// There is a TOCTOU window between Close and the next Listen — the
+// kernel could hand the port to someone else. Acceptable for unit
+// tests; the alternative (keep the listener and pass it in) would
+// defeat the purpose of testing listenWithFallback's bind path.
+func reserveFreePort(t *testing.T) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve free port: %v", err)
+	}
+	addr := ln.Addr().String()
+	_ = ln.Close()
+	return addr
+}
+
+// TestListenWithFallbackOn_UsesPreferredPortWhenFree pins the happy
+// path: when the requested bind address is free, listenWithFallbackOn
+// binds it and returns the matching displayHost URL without printing
+// any fallback diagnostic.
+func TestListenWithFallbackOn_UsesPreferredPortWhenFree(t *testing.T) {
+	bind := reserveFreePort(t)
+	var stderr bytes.Buffer
+	ln, gotURL, err := listenWithFallbackOn(bind, "localhost", 10, &stderr)
+	if err != nil {
+		t.Fatalf("listenWithFallbackOn: %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+	_, portStr, _ := net.SplitHostPort(bind)
+	wantURL := "http://localhost:" + portStr
+	if gotURL != wantURL {
+		t.Fatalf("url = %q, want %q (preferred-port URL)", gotURL, wantURL)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty (no fallback diagnostic on happy path)", stderr.String())
+	}
+}
+
+// TestListenWithFallbackOn_WalksForwardWhenPreferredBusy pins the
+// fallback path: a foreign listener already owns the preferred port,
+// so listenWithFallbackOn must land on the next free port and print a
+// single-line stderr explainer. The returned URL keeps displayHost
+// (`localhost` here) and carries the actually-bound port.
+func TestListenWithFallbackOn_WalksForwardWhenPreferredBusy(t *testing.T) {
+	bind := reserveFreePort(t)
+	squatter, err := net.Listen("tcp", bind)
+	if err != nil {
+		t.Fatalf("squat preferred port: %v", err)
+	}
+	defer func() { _ = squatter.Close() }()
+
+	var stderr bytes.Buffer
+	ln, gotURL, err := listenWithFallbackOn(bind, "localhost", 10, &stderr)
+	if err != nil {
+		t.Fatalf("listenWithFallbackOn: %v", err)
+	}
+	defer func() { _ = ln.Close() }()
+
+	_, basePortStr, _ := net.SplitHostPort(bind)
+	basePort, _ := strconv.Atoi(basePortStr)
+	wantURL := fmt.Sprintf("http://localhost:%d", basePort+1)
+	if gotURL != wantURL {
+		t.Fatalf("url = %q, want %q (first fallback port)", gotURL, wantURL)
+	}
+	if !strings.Contains(stderr.String(), fmt.Sprintf("port %d already in use", basePort)) {
+		t.Fatalf("stderr = %q, want fallback diagnostic mentioning preferred port", stderr.String())
+	}
+}
+
+// TestListenWithFallbackOn_AllPortsBusy pins the exhausted-range path:
+// every port in the candidate range is held, so listenWithFallbackOn
+// returns an error mentioning the range. Uses attempts=2 so the test
+// only needs to squat three adjacent ports.
+func TestListenWithFallbackOn_AllPortsBusy(t *testing.T) {
+	bind := reserveFreePort(t)
+	_, basePortStr, _ := net.SplitHostPort(bind)
+	basePort, _ := strconv.Atoi(basePortStr)
+	const attempts = 2
+	var squatters []net.Listener
+	defer func() {
+		for _, s := range squatters {
+			_ = s.Close()
+		}
+	}()
+	for offset := 0; offset <= attempts; offset++ {
+		s, lerr := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(basePort+offset)))
+		if lerr != nil {
+			t.Skipf("could not squat port %d for exhaustion test: %v", basePort+offset, lerr)
+		}
+		squatters = append(squatters, s)
+	}
+	_, _, err := listenWithFallbackOn(bind, "localhost", attempts, io.Discard)
+	if err == nil {
+		t.Fatalf("expected error when every candidate port is held")
+	}
+	if !strings.Contains(err.Error(), "all in use") {
+		t.Fatalf("error %q must mention 'all in use'", err.Error())
 	}
 }

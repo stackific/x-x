@@ -31,12 +31,24 @@ tasks:
   # ---------- Dev runtime ----------
 
   run:
-    desc: Run the CLI (forwards extra args after `--`)
+    desc: Run the CLI with the latest embedded frontend (forwards extra args after `--`)
+    # Rebuild the frontend first so the //go:embed directive picks up the
+    # current `frontend/dist/`. Without this dep, `task run` would happily
+    # ship the last-built bundle even if the user just edited
+    # `frontend/src/...` — a "why am I seeing old UI?" footgun.
+    deps:
+      - frontend:build
     cmds:
       - go run . {{.CLI_ARGS}}
 
   build:
     desc: Cross-compile binaries for macOS, Linux, and Windows (amd64 + arm64) into ./bin
+    # Build the frontend first so every shipped binary embeds the latest
+    # `frontend/dist/`. The Go build's //go:embed directive is baked at
+    # compile time; without this dep, cross-compiled artifacts would
+    # ship the last-built (possibly stale) Vite output.
+    deps:
+      - frontend:build
     cmds:
       - mkdir -p bin
       - |

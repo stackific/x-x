@@ -27,16 +27,19 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 )
@@ -222,6 +225,82 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 	_ = json.NewEncoder(w).Encode(payload)
 }
 
+// listenWithFallback is the production entry point — wires
+// listenWithFallbackOn to the package-level serverListenAddr /
+// serverDisplayURL / serverPortFallbackAttempts constants. Pulled
+// apart from its parameterized form so tests can drive the fallback
+// loop against arbitrary base ports (selected via 127.0.0.1:0 to
+// avoid colliding with the user's running stax server on 7829).
+func listenWithFallback(stderr io.Writer) (net.Listener, string, error) {
+	displayHost, err := displayHostFromURL(serverDisplayURL)
+	if err != nil {
+		return nil, "", err
+	}
+	return listenWithFallbackOn(serverListenAddr, displayHost, serverPortFallbackAttempts, stderr)
+}
+
+// listenWithFallbackOn binds the preferred bindAddr first and, if it
+// is already in use, walks forward through `attempts` adjacent ports
+// (basePort+1, basePort+2, …) until it finds a free one. Returns the
+// bound listener plus the user-facing URL composed from displayHost
+// (typically `localhost`) and the actually-bound port.
+//
+// A successful fallback prints a single line to stderr explaining the
+// port shift; otherwise the function is silent so the normal "listening
+// on …" banner stays the first thing the user reads on stdout.
+//
+// Non-EADDRINUSE errors (permission denied, bad host, etc.) are
+// returned immediately — those won't resolve by trying a different
+// port, so retrying would just hide the real diagnostic.
+func listenWithFallbackOn(bindAddr, displayHost string, attempts int, stderr io.Writer) (net.Listener, string, error) {
+	bindHost, basePortStr, err := net.SplitHostPort(bindAddr)
+	if err != nil {
+		return nil, "", fmt.Errorf("parse bind addr %q: %w", bindAddr, err)
+	}
+	basePort, err := strconv.Atoi(basePortStr)
+	if err != nil {
+		return nil, "", fmt.Errorf("parse port from bind addr %q: %w", bindAddr, err)
+	}
+	var lastErr error
+	for offset := 0; offset <= attempts; offset++ {
+		port := basePort + offset
+		addr := net.JoinHostPort(bindHost, strconv.Itoa(port))
+		ln, lerr := net.Listen("tcp", addr)
+		if lerr == nil {
+			runtimeURL := "http://" + net.JoinHostPort(displayHost, strconv.Itoa(port))
+			if offset > 0 {
+				_, _ = fmt.Fprintf(stderr,
+					"port %d already in use, using %d instead\n", basePort, port)
+			}
+			return ln, runtimeURL, nil
+		}
+		if !errors.Is(lerr, syscall.EADDRINUSE) {
+			return nil, "", lerr
+		}
+		lastErr = lerr
+	}
+	return nil, "", fmt.Errorf("ports %d..%d all in use: %w",
+		basePort, basePort+attempts, lastErr)
+}
+
+// displayHostFromURL extracts the host portion of serverDisplayURL so
+// listenWithFallback can compose a runtime URL that keeps the same
+// user-facing host (e.g. `localhost`) regardless of which port the
+// listener ended up on. Pulled out so a malformed serverDisplayURL
+// (a programming error) surfaces with a clear message rather than
+// silently corrupting the banner.
+func displayHostFromURL(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("parse serverDisplayURL %q: %w", raw, err)
+	}
+	h := u.Hostname()
+	if h == "" {
+		return "", fmt.Errorf("serverDisplayURL %q has no host", raw)
+	}
+	return h, nil
+}
+
 // runServer starts the loopback HTTP server, optionally hands the URL
 // to the OS-default browser, and blocks until the process receives
 // SIGINT or SIGTERM (Ctrl-C in an interactive shell, kill in a script).
@@ -240,19 +319,21 @@ func runServer(stdout, stderr io.Writer, autoOpenBrowser bool) error {
 		ReadHeaderTimeout: serverReadHeaderTimeout,
 	}
 
-	// Bind explicitly via net.Listen so a port collision surfaces as
-	// an error returned to runDefault (which prints + exits non-zero)
-	// rather than disappearing into a goroutine.
-	ln, err := net.Listen("tcp", serverListenAddr)
+	// Bind explicitly via listenWithFallback so a port collision walks
+	// forward through serverPortFallbackAttempts adjacent ports before
+	// giving up. The runtime URL (which may differ from serverDisplayURL
+	// when the preferred port was busy) is what every downstream caller
+	// sees in the banner / browser handoff.
+	ln, runtimeURL, err := listenWithFallback(stderr)
 	if err != nil {
-		return fmt.Errorf("listen on %s: %w", serverListenAddr, err)
+		return fmt.Errorf("listen near %s: %w", serverListenAddr, err)
 	}
 
 	// Announce on stdout so the user (or a wrapping script) can see
 	// where to connect. Stdout (not stderr) so it pipes cleanly into
 	// `stax | grep` patterns and so the line is the first thing in
 	// the captured output of a CI smoke test.
-	_, _ = fmt.Fprintf(stdout, "Stax server listening on %s\n", serverDisplayURL)
+	_, _ = fmt.Fprintf(stdout, "Stax server listening on %s\n", runtimeURL)
 	_, _ = fmt.Fprintln(stdout, "  Press Ctrl-C to stop.")
 
 	// Optional browser handoff. hasDesktop() suppresses the launch on
@@ -260,7 +341,7 @@ func runServer(stdout, stderr io.Writer, autoOpenBrowser bool) error {
 	// without spamming an error from a missing xdg-open. Errors during
 	// the handoff are non-fatal — the URL is already printed.
 	if autoOpenBrowser && hasDesktop() {
-		if err := openBrowser(serverDisplayURL); err != nil {
+		if err := openBrowser(runtimeURL); err != nil {
 			_, _ = fmt.Fprintf(stderr, "warning: could not open browser: %v\n", err)
 		}
 	}
