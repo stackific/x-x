@@ -168,14 +168,20 @@ type scopesListResponse struct {
 // server-side (so the browser doesn't need its own markdown library).
 // systems carries the kebab-case ids exactly as parsed from
 // frontmatter, so the UI can compose /system?id=<id> links without
-// having to re-parse anything.
+// having to re-parse anything. supersedes / supersededBy mirror the
+// frontmatter relationship arrays — supersededBy is what the user
+// needs to see on a `status: superseded` plan ("you are looking at a
+// retired plan; the current one is over here"), and supersedes is
+// the matching forward-pointer for the successor view.
 type scopeDetail struct {
-	Slug    string   `json:"slug"`
-	Title   string   `json:"title"`
-	Status  string   `json:"status"`
-	Created string   `json:"created"`
-	Systems []string `json:"systems"`
-	HTML    string   `json:"html"`
+	Slug         string   `json:"slug"`
+	Title        string   `json:"title"`
+	Status       string   `json:"status"`
+	Created      string   `json:"created"`
+	Systems      []string `json:"systems"`
+	Supersedes   []string `json:"supersedes"`
+	SupersededBy []string `json:"supersededBy"`
+	HTML         string   `json:"html"`
 }
 
 // forceH6Headings is a goldmark AST transformer that pins every
@@ -520,18 +526,55 @@ func readScopeDetail(staxDir, slug string) (scopeDetail, bool) {
 		return scopeDetail{}, false
 	}
 	title, created := readPlanTitleAndCreated(planPath)
+	supersedes, supersededBy := readPlanRelations(planPath)
 	var buf bytes.Buffer
 	if err := markdownRenderer.Convert([]byte(body), &buf); err != nil {
 		return scopeDetail{}, false
 	}
 	return scopeDetail{
-		Slug:    row.slug,
-		Title:   title,
-		Status:  row.status,
-		Created: created,
-		Systems: append([]string(nil), row.systems...),
-		HTML:    buf.String(),
+		Slug:         row.slug,
+		Title:        title,
+		Status:       row.status,
+		Created:      created,
+		Systems:      append([]string(nil), row.systems...),
+		Supersedes:   supersedes,
+		SupersededBy: supersededBy,
+		HTML:         buf.String(),
 	}, true
+}
+
+// readPlanRelations extracts the inline `supersedes:` and
+// `superseded_by:` arrays from a plan's frontmatter. Both are optional
+// — a plan that's neither replaced anything nor been replaced returns
+// (nil, nil). The pair is read together because the /scope detail view
+// surfaces both sides of the relationship: predecessors (supersedes)
+// for context on what the current plan replaced, and successors
+// (supersededBy) so a reader on a retired plan can jump to the live
+// one.
+func readPlanRelations(planPath string) (supersedes, supersededBy []string) {
+	if !isSafePlanPath(planPath) {
+		return nil, nil
+	}
+	data, err := fs.ReadFile(os.DirFS(filepath.Dir(planPath)), filepath.Base(planPath))
+	if err != nil {
+		return nil, nil
+	}
+	body := string(data)
+	if !strings.HasPrefix(body, "---\n") && !strings.HasPrefix(body, "---\r\n") {
+		return nil, nil
+	}
+	end := strings.Index(body[3:], "\n---")
+	if end < 0 {
+		return nil, nil
+	}
+	fm := body[3 : 3+end]
+	if m := planSupersedesRe.FindStringSubmatch(fm); m != nil {
+		supersedes = parseInlineSystems(m[1])
+	}
+	if m := planSupersededByRe.FindStringSubmatch(fm); m != nil {
+		supersededBy = parseInlineSystems(m[1])
+	}
+	return supersedes, supersededBy
 }
 
 // readSystemsForAPI is the testable body of handleAPISystems: takes
