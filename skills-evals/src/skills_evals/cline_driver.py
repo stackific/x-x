@@ -34,11 +34,11 @@ slash-command registry in interactive (TUI / VS Code) mode, but `cline
 into, and the prompt argument lands in front of the LLM verbatim. So
 `drive_skill` inlines the SKILL.md body the same way the opencode driver
 did before opencode's `--command` resolver landed (sst/opencode#2348):
-read `<workspace>/.claude/skills/<skill>/SKILL.md`, concatenate with the
+read `<workspace>/.cline/skills/<skill>/SKILL.md`, concatenate with the
 user task + CI directive, and pass as one prompt. `x-x init --agents
-claude` (the transitional init value for cline; see
-AGENT_INIT_VALUE_FOR_KEY) is what writes the SKILL.md files where this
-helper reads them.
+cline` (now a first-class entry in agentTargets in constants.go) is
+what writes the SKILL.md files where this helper reads them, at
+`.cline/skills/` per docs.cline.bot/customization/overview (2026).
 
 Logging: every state transition, every NDJSON event, every external
 call gets a line on stderr via `_logging.log`. CI logs are the only
@@ -117,18 +117,18 @@ class SkillRun:
         f.write(json.dumps(event) + "\n")
 
 
-SKILL_REL = Path(".claude") / "skills"
+SKILL_REL = Path(".cline") / "skills"
 
 
 def _resolve_skill_path(workspace: Path, skill: str) -> Path:
   """Return the SKILL.md path under either project or user scope.
 
-  `x-x init --scope project --agents claude` writes
-  `<workspace>/.claude/skills/<skill>/SKILL.md`. `x-x init --scope user
-  --agents claude` writes the same tree under `$HOME/.claude/skills/`.
-  Both scopes are valid; we probe project first (workflow default) then
-  fall back to $HOME so the user-scope workflow (X_X_INSTALL_SCOPE=user)
-  resolves the same templates.
+  `x-x init --scope project --agents cline` writes the bundled tree to
+  `<workspace>/.cline/skills/<skill>/SKILL.md`. `--scope user` writes
+  the same tree under `$HOME/.cline/skills/<skill>/SKILL.md`. Both are
+  cline's native discovery paths per docs.cline.bot/customization/
+  overview (2026); we probe project first (workflow default) then fall
+  back to $HOME so X_X_INSTALL_SCOPE=user resolves the same templates.
   """
   candidates = [
     workspace / SKILL_REL / skill / "SKILL.md",
@@ -139,7 +139,7 @@ def _resolve_skill_path(workspace: Path, skill: str) -> Path:
       return path
   raise FileNotFoundError(
     f"SKILL template not found at any of: {[str(p) for p in candidates]} "
-    f"— did `x-x init --agents claude` run (in the workspace fixture) "
+    f"— did `x-x init --agents cline` run (in the workspace fixture) "
     f"before drive_skill was called?"
   )
 
@@ -147,12 +147,14 @@ def _resolve_skill_path(workspace: Path, skill: str) -> Path:
 def compose_skill_prompt(workspace: Path, skill: str, arguments: str) -> str:
   """Inline the SKILL.md body + user task + CI directive into one prompt.
 
-  Matches the opencode driver's pre-`--command` strategy: cline has no
-  native slash-resolver in headless mode, so the SKILL.md body is read
-  off disk and prepended to the user task. `x-x init --agents claude`
-  (the transitional init value for cline) is what placed the SKILL.md
-  files; the helper above probes both project- and user-scope install
-  locations so a single driver implementation serves both workflows.
+  Matches the opencode driver's pre-`--command` strategy: cline's
+  `--yolo` headless mode does not resolve slash commands from disk
+  (`.clinerules/workflows/` is a TUI/extension surface only), so the
+  SKILL.md body is read off disk and prepended to the user task.
+  `x-x init --agents cline` is what placed the SKILL.md files at
+  `.cline/skills/<skill>/SKILL.md`; the helper above probes both
+  project- and user-scope install locations so a single driver
+  implementation serves both workflows.
   """
   skill_path = _resolve_skill_path(workspace, skill)
   body = skill_path.read_text(encoding="utf-8")

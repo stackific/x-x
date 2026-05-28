@@ -19,7 +19,7 @@ iex (irm https://stackific.com/x-x/INSTALL.ps1)
 
 ```bash
 # Run this inside of a project folder
-$ x-x init        # installs bundled skills into ~/.claude/skills, ~/.agents/skills (or project-local)
+$ x-x init        # installs bundled skills into ~/.claude/skills, ~/.agents/skills, ~/.opencode/commands, ~/.cline/skills (or project-local)
 ```
 
 See [Reference](reference.md) for the full command reference.

@@ -65,15 +65,17 @@ Set-Variable -Option Constant -Name SKILL_MANIFEST_FILE -Value 'SKILL.md'
 Set-Variable -Option Constant -Name OWNED_SKILLS -Value @($SKILL_X_PLAN_DIR, $SKILL_X_X_DIR)
 
 # agentTargets in constants.go — index 0 = Claude Code, 1 = Codex CLI,
-# 2 = OpenCode, 3 = GitHub Copilot CLI, 4 = Pi. Codex, Copilot, and Pi
-# all resolve skills from `.agents\skills` at both scopes (cross-agent
-# open spec, install is idempotent so the three rows co-exist on disk
-# without conflict). The agentTarget.userSkillsRel field exists for
-# future agents whose project- vs user-scope paths diverge; none of the
-# registered agents need it today because the bundled x-x skill content
-# already documents `.claude\skills` and `.agents\skills` as the
-# canonical roots. OpenCode ships no per-agent config today (configRel
-# is "") so there is no OPENCODE_CONFIG_REL mirror.
+# 2 = OpenCode, 3 = GitHub Copilot CLI, 4 = Pi, 5 = Cline. Codex,
+# Copilot, and Pi resolve skills from `.agents\skills` at both scopes
+# (cross-agent open spec, install is idempotent so the three rows
+# co-exist on disk without conflict). Cline does NOT use the cross-agent
+# path — per docs.cline.bot/customization/overview it reads from
+# `.cline\skills` (project) and `~\.cline\skills` (user) only. The
+# agentTarget.userSkillsRel field exists for future agents whose
+# project- vs user-scope paths diverge; none of the current rows need it
+# (Cline's project and user paths are the same `.cline\skills` relative
+# to scope root). OpenCode ships no per-agent config today (configRel is
+# "") so there is no OPENCODE_CONFIG_REL mirror.
 Set-Variable -Option Constant -Name CLAUDE_SKILLS_REL   -Value '.claude\skills'
 Set-Variable -Option Constant -Name CLAUDE_CONFIG_REL   -Value '.claude'
 Set-Variable -Option Constant -Name CODEX_SKILLS_REL    -Value '.agents\skills'
@@ -81,6 +83,7 @@ Set-Variable -Option Constant -Name CODEX_CONFIG_REL    -Value '.codex'
 Set-Variable -Option Constant -Name OPENCODE_SKILLS_REL -Value '.opencode\commands'
 Set-Variable -Option Constant -Name COPILOT_SKILLS_REL  -Value '.agents\skills'
 Set-Variable -Option Constant -Name PI_SKILLS_REL       -Value '.agents\skills'
+Set-Variable -Option Constant -Name CLINE_SKILLS_REL    -Value '.cline\skills'
 
 # Bundled config filenames (not constants in Go; pinned here for assertions).
 Set-Variable -Option Constant -Name CLAUDE_SETTINGS_FILE -Value 'settings.json'
@@ -2448,6 +2451,40 @@ try {
     (Join-Path $env:USERPROFILE (Join-Path $PI_SKILLS_REL $SKILL_X_X_DIR))
   Assert-NotExists 'no install under project cwd' `
     (Join-Path $projPi2 (Join-Path $PI_SKILLS_REL $SKILL_X_X_DIR))
+} finally { Pop-Location }
+
+Start-Case 'init --agents=cline project-scope install'
+Reset-UserHome
+$projCL1 = New-FreshProject
+Push-Location $projCL1
+try {
+  Invoke-XX init --scope project --agents=cline `
+                    --prefix-width 4 --max-plan-lines 30 --review-per task
+  Assert-Eq    'exit 0' $RunRC 0
+  # Cline reads project skills from `.cline\skills` per docs.cline.bot/
+  # customization/overview. Sibling agent dirs stay absent.
+  Assert-IsDir 'cline project skills present' `
+    (Join-Path $projCL1 (Join-Path $CLINE_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'claude skills NOT present' `
+    (Join-Path $projCL1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'codex skills NOT present' `
+    (Join-Path $projCL1 (Join-Path $CODEX_SKILLS_REL $SKILL_X_X_DIR))
+} finally { Pop-Location }
+
+Start-Case 'init --agents=cline --scope=user lands at ~/.cline/skills'
+Reset-UserHome
+$projCL2 = New-FreshProject
+Push-Location $projCL2
+try {
+  Invoke-XX init --scope user --agents=cline `
+                    --prefix-width 4 --max-plan-lines 30 --review-per task
+  Assert-Eq    'exit 0' $RunRC 0
+  # User scope: cline's `.cline\skills` resolves relative to $HOME.
+  # Skills land under USERPROFILE, project cwd stays untouched.
+  Assert-IsDir 'cline user-scope skills landed' `
+    (Join-Path $env:USERPROFILE (Join-Path $CLINE_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'no install under project cwd' `
+    (Join-Path $projCL2 (Join-Path $CLINE_SKILLS_REL $SKILL_X_X_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init --prefix-width=6 seeds the lock with 6'

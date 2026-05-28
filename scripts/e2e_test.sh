@@ -44,13 +44,16 @@ readonly SKILL_MANIFEST_FILE="SKILL.md"           # skillManifestFile
 readonly OWNED_SKILLS="${SKILL_X_PLAN_DIR} ${SKILL_X_X_DIR}"
 
 # agentTargets in constants.go — index 0 = Claude Code, 1 = Codex CLI,
-# 2 = OpenCode, 3 = GitHub Copilot CLI, 4 = Pi. Codex, Copilot, and Pi all
-# resolve skills from `.agents/skills` at both scopes (cross-agent open
-# spec, install is idempotent so the three rows co-exist on disk without
-# conflict). The agentTarget.userSkillsRel field exists for future agents
-# whose project- vs user-scope paths diverge; none of the registered
-# agents need it today because the bundled x-x skill content already
-# documents `.claude/skills` and `.agents/skills` as the canonical roots.
+# 2 = OpenCode, 3 = GitHub Copilot CLI, 4 = Pi, 5 = Cline. Codex,
+# Copilot, and Pi all resolve skills from `.agents/skills` at both
+# scopes (cross-agent open spec, install is idempotent so the three rows
+# co-exist on disk without conflict). Cline does NOT use the cross-agent
+# path — per docs.cline.bot/customization/overview it reads from
+# `.cline/skills/` (project) and `~/.cline/skills/` (user) only. The
+# agentTarget.userSkillsRel field exists for future agents whose
+# project- vs user-scope paths diverge; none of the current rows need it
+# (cline's project and user paths are the same `.cline/skills` relative
+# to scope root).
 readonly CLAUDE_SKILLS_REL=".claude/skills"            # agentTargets[0].skillsRel
 readonly CLAUDE_CONFIG_REL=".claude"                   # agentTargets[0].configRel
 readonly CODEX_SKILLS_REL=".agents/skills"             # agentTargets[1].skillsRel
@@ -60,6 +63,7 @@ readonly OPENCODE_SKILLS_REL=".opencode/commands"      # agentTargets[2].skillsR
 # empty), so no OPENCODE_CONFIG_REL mirror is needed.
 readonly COPILOT_SKILLS_REL=".agents/skills"           # agentTargets[3].skillsRel
 readonly PI_SKILLS_REL=".agents/skills"                # agentTargets[4].skillsRel
+readonly CLINE_SKILLS_REL=".cline/skills"              # agentTargets[5].skillsRel
 # Parent of CODEX_SKILLS_REL — used by isolation cases that seed sibling
 # files alongside the Codex skills dir. Derived (not a Go constant) to
 # avoid drift if agentTargets[1].skillsRel ever moves.
@@ -67,6 +71,9 @@ readonly CODEX_SKILLS_PARENT="${CODEX_SKILLS_REL%/*}"
 # Parent of OPENCODE_SKILLS_REL — used by reset_user_home to wipe the
 # whole .opencode/ tree between cases. Derived for the same drift reason.
 readonly OPENCODE_SKILLS_PARENT="${OPENCODE_SKILLS_REL%/*}"
+# Parent of CLINE_SKILLS_REL — wiped between cases. Cline owns its own
+# `.cline/` dir at both project and user scope.
+readonly CLINE_SKILLS_PARENT="${CLINE_SKILLS_REL%/*}"
 
 # Bundle-provided config filenames (agents/<configSrc>/* in the embed). Not
 # named in constants.go (the embed tree is the source) but pinned here
@@ -181,6 +188,7 @@ reset_user_home() {
          "$HOME/${CODEX_CONFIG_REL}" \
          "$HOME/${CODEX_SKILLS_PARENT}" \
          "$HOME/${OPENCODE_SKILLS_PARENT}" \
+         "$HOME/${CLINE_SKILLS_PARENT}" \
          "$HOME/${XX_HOME_DIR}"
 }
 
@@ -667,6 +675,31 @@ assert_is_dir "pi user-scope skills landed" \
   "${SANDBOX_HOME}/${PI_SKILLS_REL}/${SKILL_X_X_DIR}"
 assert_absent "no install under project cwd" \
   "$PROJ_PI_USER/${PI_SKILLS_REL}"
+
+case_start "x-x init --agents=cline installs Cline at project scope"
+reset_user_home
+PROJ_CL="$(fresh_project)"
+cd "$PROJ_CL"
+run_capture "" init --agents=cline --scope=project
+assert_eq "exit 0" "$RUN_RC" "0"
+# Cline reads project skills from `.cline/skills` (per docs.cline.bot/
+# customization/overview). Sibling agent directories must remain absent.
+assert_is_dir "cline project skills installed" "$PROJ_CL/${CLINE_SKILLS_REL}/${SKILL_X_X_DIR}"
+assert_absent "claude NOT installed" "$PROJ_CL/${CLAUDE_SKILLS_REL}"
+assert_absent "codex NOT installed" "$PROJ_CL/${CODEX_SKILLS_REL}"
+
+case_start "x-x init --agents=cline --scope=user lands at ~/.cline/skills"
+PROJ_CL_USER="$(fresh_project)"
+cd "$PROJ_CL_USER"
+reset_user_home
+run_capture "" init --agents=cline --scope=user
+assert_eq "exit 0" "$RUN_RC" "0"
+# Cline's user-scope path mirrors its project-scope path under $HOME.
+# Skills land under SANDBOX_HOME; project cwd stays clean.
+assert_is_dir "cline user-scope skills landed" \
+  "${SANDBOX_HOME}/${CLINE_SKILLS_REL}/${SKILL_X_X_DIR}"
+assert_absent "no install under project cwd" \
+  "$PROJ_CL_USER/${CLINE_SKILLS_REL}"
 
 case_start "x-x init --agents=invalid rejects unknown agent"
 reset_user_home

@@ -41,8 +41,8 @@ jobs:
       # X_X_AGENT_KEY tells the skills-evals conftest which backend's
       # tests to collect (`test_cline_*`), which binary to require on
       # PATH (`cline`), and which `--agents <key>` value to pass to
-      # `x-x init` (transitionally "claude" until cline gets added to
-      # the agentTargets registry).
+      # `x-x init` (`cline` — first-class entry in agentTargets, lands
+      # skills at `.cline/skills/` per docs.cline.bot).
       X_X_AGENT_KEY: cline
 
       # Cline reads its DeepSeek routing from its on-disk auth state,

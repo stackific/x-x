@@ -185,6 +185,19 @@ var agentTargets = []agentTarget{
 	// `~/.pi/agent/AGENTS.md` and `~/.pi/agent/settings.json` if a user
 	// adds them, which is outside the scope of x-x's install.
 	{"pi", "Pi", ".agents/skills", "", "", ""},
+	// Cline (cline.bot) reads skills from `.cline/skills/` at project scope
+	// and `~/.cline/skills/` at user scope, per the official 2026 config
+	// docs at docs.cline.bot/customization/overview. The cross-agent
+	// `.agents/skills` path codex and copilot share is NOT a documented
+	// cline lookup, so installing there would land files cline never
+	// discovers. The bundled skill tree shape (`<name>/SKILL.md`) matches
+	// cline's documented skill format — a Skill is a directory with a
+	// SKILL.md inside — so no embed restructure is needed; the install
+	// loop walks `agents/skills/<name>/` and lands each subtree under
+	// `<root>/.cline/skills/<name>/` unchanged.
+	// Skills-only for now — no settings.json / hooks file bundled for
+	// cline; configSrc and configRel stay empty.
+	{"cline", "Cline", ".cline/skills", "", "", ""},
 }
 
 // skillsSubdir is the directory inside ~/.x-x/agents/ that holds the

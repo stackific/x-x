@@ -105,37 +105,36 @@ AGENT_ENV_DEFAULTS_FOR_KEY = {
   "pi": PI_ENV_DEFAULTS,
   "cline": CLINE_ENV_DEFAULTS,
 }
-# Value passed to `x-x init --agents <value>` for each backend. Today the
-# binary's agentTargets registry (constants.go) recognizes "claude",
-# "codex", "opencode", "copilot", and "pi". Copilot still uses "claude"
-# as a transitional shape because copilot also reads `.claude/skills/`
-# and the bundled SKILL.md content references that path; flipping it
-# would mean writing skills only to `.agents/skills/` and re-validating
-# copilot still finds them. Cline is not yet a registered target either,
-# so Cline tests install the Claude skill layout transitionally; the
-# cline driver reads SKILL.md off `.claude/skills/` directly when
-# composing its inlined prompt. When cline is added to agentTargets,
-# flip this entry to "cline".
+# Value passed to `x-x init --agents <value>` for each backend. Today
+# the binary's agentTargets registry (constants.go) recognizes "claude",
+# "codex", "opencode", "copilot", "pi", and "cline" — pi and cline are
+# first-class entries with their own skillsRel. Copilot's transitional
+# `--agents claude` workaround remains because copilot uses
+# `.agents/skills` (the cross-agent open spec path) and shipped before
+# its registry row landed; flip to "copilot" once that follow-up
+# merges. Cline reads from its own `.cline/skills` per docs.cline.bot,
+# so `--agents cline` lands the files exactly where the cline driver
+# looks.
 AGENT_INIT_VALUE_FOR_KEY = {
   "claude": "claude",
   "opencode": "opencode",
   "copilot": "claude",
   "pi": "pi",
-  "cline": "claude",
+  "cline": "cline",
 }
-# Per-agent skills install root under $HOME used by the user-scope
-# post-install log. Reflects each agent's discovery convention — Claude
-# reads `.claude/skills/`, OpenCode reads `.opencode/commands/`, Copilot
-# CLI (via the transitional Claude layout) reads `.claude/skills/`, Pi
-# reads `~/.agents/skills/` (one of its documented user-scope skill
-# discovery locations alongside `~/.pi/agent/skills/`), and Cline (via
-# the transitional Claude layout) reads `.claude/skills/`.
+# Per-agent skills install root used by the user-scope post-install log
+# and the cline driver's `_resolve_skill_path`. Reflects each agent's
+# discovery convention — Claude reads `.claude/skills/`, OpenCode reads
+# `.opencode/commands/`, Copilot CLI (via the transitional Claude
+# layout) reads `.claude/skills/`, Pi reads `~/.agents/skills/` (one of
+# its documented user-scope skill discovery locations alongside
+# `~/.pi/agent/skills/`), and Cline reads `.cline/skills/`.
 AGENT_USER_SKILLS_REL_FOR_KEY = {
   "claude": Path(".claude") / "skills",
   "opencode": Path(".opencode") / "commands",
   "copilot": Path(".claude") / "skills",
   "pi": Path(".agents") / "skills",
-  "cline": Path(".claude") / "skills",
+  "cline": Path(".cline") / "skills",
 }
 
 # Which `x-x init --scope` value to use when bootstrapping each test's
