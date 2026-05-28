@@ -3,9 +3,9 @@
 """End-to-end: drive OpenCode through plan-supersede + artifact-replace.
 
 Mirror of test_claude_reminders_supersedes_todo.py adapted for the
-OpenCode headless path. Each skill invocation inlines the SKILL.md
-content via `compose_skill_prompt` because `opencode run` does not
-currently resolve slash commands (anomalyco/opencode#7345).
+OpenCode headless path. Each skill invocation is
+`opencode run --command <name> <task>`; opencode resolves the SKILL.md
+by frontmatter `name:`.
 
 Sequence:
   1. x-plan a todo list app.
@@ -32,12 +32,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from skills_evals.judges import ArtifactJudge
-from skills_evals.opencode_driver import (
-  DEFAULT_MAX_TURNS,
-  compose_skill_prompt,
-  drive_skill,
-  resolve_skill_template,
-)
+from skills_evals.opencode_driver import DEFAULT_MAX_TURNS, drive_command
 from skills_evals.workspace import load_all_plans
 
 TODO_TASK = "build a single HTML and localStorage-based todo list app"
@@ -56,13 +51,12 @@ def test_opencode_reminders_supersedes_todo(
   workspace: Path, tmp_path: Path
 ) -> None:
   transcripts = tmp_path / "transcripts"
-  plan_template = resolve_skill_template(workspace, "x-plan")
-  exec_template = resolve_skill_template(workspace, "x-x")
 
   # --- Plan 1: todo list ---
-  todo_run = drive_skill(
+  todo_run = drive_command(
     workspace,
-    compose_skill_prompt(plan_template, TODO_TASK),
+    "x-plan",
+    TODO_TASK,
     transcript_path=transcripts / "x-plan-todo.jsonl",
   )
   assert todo_run.exit_code == 0, (
@@ -73,9 +67,10 @@ def test_opencode_reminders_supersedes_todo(
   assert todo_run.turns < DEFAULT_MAX_TURNS
 
   # --- Plan 2: reminders (supersedes todo) ---
-  reminders_run = drive_skill(
+  reminders_run = drive_command(
     workspace,
-    compose_skill_prompt(plan_template, REMINDERS_TASK),
+    "x-plan",
+    REMINDERS_TASK,
     transcript_path=transcripts / "x-plan-reminders.jsonl",
   )
   assert reminders_run.exit_code == 0, (
@@ -86,12 +81,10 @@ def test_opencode_reminders_supersedes_todo(
   assert reminders_run.turns < DEFAULT_MAX_TURNS
 
   # --- Execute ---
-  exec_run = drive_skill(
+  exec_run = drive_command(
     workspace,
-    compose_skill_prompt(
-      exec_template,
-      "Execute the planning queue in .x-plans/ as described above.",
-    ),
+    "x-x",
+    "",
     transcript_path=transcripts / "x-x.jsonl",
   )
   assert exec_run.exit_code == 0, (

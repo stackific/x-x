@@ -4,9 +4,8 @@
 the extends mechanic.
 
 Mirror of test_claude_plan_extends.py adapted for the OpenCode headless
-path. Each x-plan invocation inlines the SKILL.md content via
-`compose_skill_prompt` because `opencode run` does not currently
-resolve slash commands (anomalyco/opencode#7345).
+path. Each x-plan invocation is `opencode run --command x-plan <task>`;
+opencode's command resolver finds the SKILL.md by frontmatter `name:`.
 
 Per agents/skills/x-plan/SKILL.md step 2a + step 3, when a new plan
 "extends" a predecessor (rather than supersedes it):
@@ -23,12 +22,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from skills_evals.opencode_driver import (
-  DEFAULT_MAX_TURNS,
-  compose_skill_prompt,
-  drive_skill,
-  resolve_skill_template,
-)
+from skills_evals.opencode_driver import DEFAULT_MAX_TURNS, drive_command
 from skills_evals.workspace import load_all_plans
 
 BASE_TASK = "build a single HTML and localStorage-based todo list app"
@@ -41,12 +35,12 @@ EXTENSION_TASK = (
 
 def test_opencode_plan_extends(workspace: Path, tmp_path: Path) -> None:
   transcripts = tmp_path / "transcripts"
-  plan_template = resolve_skill_template(workspace, "x-plan")
 
   # --- Plan A: the base todo app ---
-  a_run = drive_skill(
+  a_run = drive_command(
     workspace,
-    compose_skill_prompt(plan_template, BASE_TASK),
+    "x-plan",
+    BASE_TASK,
     transcript_path=transcripts / "x-plan-a.jsonl",
   )
   assert a_run.exit_code == 0, (
@@ -60,9 +54,10 @@ def test_opencode_plan_extends(workspace: Path, tmp_path: Path) -> None:
   assert a_run.turns < DEFAULT_MAX_TURNS
 
   # --- Plan B: extension of plan A ---
-  b_run = drive_skill(
+  b_run = drive_command(
     workspace,
-    compose_skill_prompt(plan_template, EXTENSION_TASK),
+    "x-plan",
+    EXTENSION_TASK,
     transcript_path=transcripts / "x-plan-b.jsonl",
   )
   assert b_run.exit_code == 0, (

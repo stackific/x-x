@@ -2,36 +2,53 @@
 # Copyright 2026 Stackific Inc.
 """Drive an OpenCode session non-interactively with auto-yes replies.
 
-Mirrors the public surface of `claude_driver.drive_skill`, but adapts to
+Mirrors the public surface intent of `claude_driver.drive_skill`, but adapts to
 OpenCode's CLI conventions which differ from Claude Code's in three ways
 that matter for the eval loop:
 
 1. **Per-turn subprocess.** `opencode run` is single-shot: each invocation
-   sends one user message, streams the agent's response, and exits. There
-   is no stdin-based multi-turn protocol (the equivalent of Claude's
-   stream-json). To drive multiple turns we re-invoke `opencode run` with
-   `--continue` (resume the last session) so the agent keeps its prior
-   context. The auto-yes loop becomes "spawn one process per `yes` reply".
+   sends one user message, streams events to stdout, and exits when the
+   session goes idle. There is no stdin-based multi-turn stream-json
+   protocol (the Claude analog). To drive multiple turns we re-invoke
+   `opencode run --continue` so the agent keeps its prior context. The
+   auto-yes loop becomes "spawn one process per `yes` reply".
 
-2. **`--format json` event stream.** OpenCode emits JSON Lines on stdout
-   when `--format json` is set. Each line is one event. The wire format
-   isn't as well-documented as Claude's, so this driver logs every
-   non-trivial line type and keeps a permissive parser — anything we
-   can't classify lands in the transcript verbatim.
+2. **Slash commands resolve via `--command`.** `opencode run --command <name>`
+   resolves <name> against `.opencode/{command,commands}/**/*.md` and the
+   skill registry (`.claude/skills/`, `.agents/skills/`, etc.). The lookup
+   keys off the file's frontmatter `name:` value, not the on-disk path —
+   so `x-x init --agents opencode` writing `.opencode/commands/x-plan/SKILL.md`
+   with `name: x-plan` registers a command callable as
+   `opencode run --command x-plan`. Verified empirically against opencode 1.x.
+   This sidesteps the `/x-plan ...`-as-literal-text problem the earlier
+   inline-template workaround was built for.
 
-3. **Slash commands are NOT resolved by `opencode run`.** Known open
-   issue: anomalyco/opencode#7345, with feature requests
-   anomalyco/opencode#2330 and #5073 tracking a `--command` flag /
-   `opencode run "/cmd"` resolution path. Until those land, the test
-   harness must INLINE the SKILL.md content into the prompt rather than
-   send `"/x-plan <task>"` verbatim — the literal `/x-plan` would be
-   passed to the LLM, which would hallucinate an error. The
-   `compose_skill_prompt` helper below builds an inlined prompt from a
-   SKILL.md path + task description.
+   When the command template has no `$ARGUMENTS` / `$N` placeholders,
+   opencode appends the positional message to the template body
+   (session/prompt.ts in sst/opencode). The bundled x-x SKILL.md files
+   don't carry placeholders, so the user task lands at the end of the
+   prompt verbatim.
+
+3. **`--format json` event stream.** Each line of stdout is one JSON
+   event. Types emitted today: `text`, `tool_use`, `step_start`,
+   `step_finish`, `reasoning`, `error`. Each carries a `part` envelope
+   with the actual payload. The driver logs every event for CI debug
+   surface and only extracts user-visible text from `text` events for
+   the auto-yes detector (`reasoning` is internal chain-of-thought; if
+   we keyed off it the detector would false-trigger on "yes" mentioned
+   inside thinking).
 
 Routing: OpenCode reads provider credentials from `DEEPSEEK_API_KEY` for
 the `deepseek` provider (the same env var the judge uses). The
 `--model deepseek/<model-id>` flag selects the model.
+
+Non-interactive permission rules: `opencode run` (without `--interactive`)
+creates the session with `permission: question, action: deny` baked in
+(see sst/opencode packages/opencode/src/cli/cmd/run.ts). The agent
+therefore cannot raise a TUI confirmation prompt — instead it follows
+the SKILL.md's `Reply yes to proceed` checkpoints by emitting that text
+and going idle. The driver keys off that text to send `yes` on the next
+turn.
 
 Logging policy is identical to claude_driver: every state transition,
 every event, every external call gets a line on stderr via
@@ -98,25 +115,77 @@ class SkillRun:
         f.write(json.dumps(event) + "\n")
 
 
-def drive_skill(
+def drive_command(
   workspace: Path,
-  initial_prompt: str,
+  command: str,
+  arguments: str = "",
   *,
   max_turns: int = DEFAULT_MAX_TURNS,
   per_turn_timeout: float = DEFAULT_PER_TURN_TIMEOUT_S,
   transcript_path: Path | None = None,
   model: str = DEFAULT_MODEL,
 ) -> SkillRun:
-  """Run one skill in `workspace` and auto-reply 'yes' until done.
+  """Invoke `opencode run --command <command> <arguments>` then auto-yes.
 
-  Each "turn" is a fresh `opencode run` subprocess. The first turn
-  carries the initial prompt; subsequent turns use `--continue` to
-  resume the same session and pass `yes` as the prompt. The loop ends
-  when the agent's final response no longer asks for confirmation, when
-  `max_turns` is hit, or when a subprocess returns non-zero.
+  First turn spawns `opencode run --command <command>` with the task as
+  the positional message. Subsequent turns spawn `opencode run --continue`
+  with `yes` as the message until the agent stops asking for confirmation,
+  the turn cap fires, or a subprocess exits non-zero.
   """
-  run = SkillRun(workspace=workspace, initial_prompt=initial_prompt)
-  _log_startup(workspace, initial_prompt, max_turns, per_turn_timeout, model)
+  prompt_label = f"--command {command} {_brief(arguments, 100)}"
+  return _drive_loop(
+    workspace,
+    prompt_label,
+    first_cmd=_build_cmd(model, command=command),
+    first_input=arguments,
+    max_turns=max_turns,
+    per_turn_timeout=per_turn_timeout,
+    transcript_path=transcript_path,
+    model=model,
+  )
+
+
+def drive_prompt(
+  workspace: Path,
+  prompt: str,
+  *,
+  max_turns: int = DEFAULT_MAX_TURNS,
+  per_turn_timeout: float = DEFAULT_PER_TURN_TIMEOUT_S,
+  transcript_path: Path | None = None,
+  model: str = DEFAULT_MODEL,
+) -> SkillRun:
+  """Send a raw prompt (no slash command) and auto-yes until done.
+
+  Used by the smoke test — `opencode run --format json` with a trivial
+  message. Same auto-yes loop semantics as `drive_command`; the only
+  difference is the first turn has no `--command` flag.
+  """
+  return _drive_loop(
+    workspace,
+    _brief(prompt, 100),
+    first_cmd=_build_cmd(model),
+    first_input=prompt,
+    max_turns=max_turns,
+    per_turn_timeout=per_turn_timeout,
+    transcript_path=transcript_path,
+    model=model,
+  )
+
+
+def _drive_loop(
+  workspace: Path,
+  prompt_label: str,
+  *,
+  first_cmd: list[str],
+  first_input: str,
+  max_turns: int,
+  per_turn_timeout: float,
+  transcript_path: Path | None,
+  model: str,
+) -> SkillRun:
+  """Shared per-turn loop used by both public entry points."""
+  run = SkillRun(workspace=workspace, initial_prompt=prompt_label)
+  _log_startup(workspace, prompt_label, max_turns, per_turn_timeout, model)
 
   if shutil.which("opencode") is None:
     log("driver", "opencode not on PATH — bailing")
@@ -125,19 +194,22 @@ def drive_skill(
     return run
 
   loop_start = time.time()
-  next_prompt = initial_prompt
-  use_continue = False
+  next_cmd = first_cmd
+  next_input = first_input
 
   try:
     for turn_idx in range(max_turns):
-      cmd = _build_cmd(model, use_continue)
-      log("driver", f"turn {turn_idx + 1}/{max_turns} spawn: {' '.join(cmd)}")
+      log(
+        "driver",
+        f"turn {turn_idx + 1}/{max_turns} spawn: {' '.join(next_cmd)} -- "
+        f"{_brief(next_input, 100)}",
+      )
       log("driver", f"cwd: {workspace}")
-      log("driver", f"prompt: {_brief(next_prompt, 200)}")
 
+      argv = [*next_cmd, next_input] if next_input else list(next_cmd)
       proc = subprocess.Popen(
-        cmd,
-        stdin=subprocess.PIPE,
+        argv,
+        stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         cwd=str(workspace),
@@ -145,16 +217,6 @@ def drive_skill(
         bufsize=1,
       )
       log("driver", f"spawned pid={proc.pid}")
-
-      # Hand the prompt over on stdin then close it — opencode does not
-      # accept a multi-message stdin stream, so the close is the signal
-      # that we are done sending input for this turn.
-      try:
-        if proc.stdin is not None:
-          proc.stdin.write(next_prompt)
-          proc.stdin.close()
-      except BrokenPipeError as e:
-        log("driver", f"stdin write failed (pipe closed early): {e}")
 
       out_q: queue.Queue[str | None] = queue.Queue()
       err_lines: list[str] = []
@@ -202,7 +264,12 @@ def drive_skill(
         if text:
           turn_text_chunks.append(text)
 
-      proc.wait(timeout=15)
+      try:
+        proc.wait(timeout=15)
+      except subprocess.TimeoutExpired:
+        log("driver", "opencode did not exit within 15s after stream end; killing")
+        proc.kill()
+        proc.wait(timeout=5)
       run.exit_code = proc.returncode
       run.stderr_tail = "\n".join(err_lines[-40:])
       run.turns += 1
@@ -232,8 +299,8 @@ def drive_skill(
         break
 
       log("driver", "confirmation prompt detected; queueing 'yes' for next turn")
-      next_prompt = "yes"
-      use_continue = True
+      next_cmd = _build_cmd(model, resume=True)
+      next_input = "yes"
       run.yes_replies += 1
     else:
       log("driver", f"hit max_turns={max_turns} loop cap")
@@ -253,102 +320,34 @@ def drive_skill(
   return run
 
 
-def resolve_skill_template(workspace: Path, skill_name: str) -> Path:
-  """Locate a SKILL.md inside `.opencode/commands/<skill_name>/`.
-
-  Checks project scope first (under the eval workspace), then user
-  scope (under `$HOME`), matching the project-then-user resolution rule
-  documented in the bundled SKILL.md files. Raises FileNotFoundError
-  with a clear message naming both candidates if neither exists — keeps
-  failure modes in CI logs unambiguous.
-
-  `skill_name` is the directory name under `.opencode/commands/`, e.g.
-  `x-plan` or `x-x`. The `.opencode/commands/<skill_name>/SKILL.md`
-  layout matches what `x-x init --agents opencode` writes; it mirrors
-  the shared SKILL.md open standard rather than OpenCode's flat-file
-  command convention. See constants.go:agentTargets[opencode] for why.
-  """
-  candidates = [
-    workspace / ".opencode" / "commands" / skill_name / "SKILL.md",
-    Path.home() / ".opencode" / "commands" / skill_name / "SKILL.md",
-  ]
-  for candidate in candidates:
-    if candidate.is_file():
-      return candidate
-  raise FileNotFoundError(
-    f"SKILL.md for '{skill_name}' not found at any of: "
-    + ", ".join(str(c) for c in candidates)
-  )
-
-
-def compose_skill_prompt(skill_md_path: Path, task: str) -> str:
-  """Build a prompt that inlines a SKILL.md template + task.
-
-  Workaround for anomalyco/opencode#7345 — `opencode run` does not
-  resolve slash commands today, so `/x-plan <task>` is passed verbatim
-  to the LLM and hallucinated as a missing command. Instead, read the
-  SKILL.md content off disk and concatenate it with the task. This
-  exercises the agent's behavior on the skill prompt without depending
-  on OpenCode's resolver.
-
-  The leading directive forces non-interactive execution. Empirical
-  observation: `deepseek/deepseek-v4-pro` driven through
-  `opencode run` tends to over-trigger the clarification path in
-  step 2 of `x-plan/SKILL.md` even though that step says "skip by
-  default". When clarification fires there is no operator to answer,
-  the turn ends without a plan file being written, and the auto-yes
-  loop can't help because the question isn't a `reply yes` prompt.
-  The directive below tells the agent it is in CI and must take the
-  default path through every "ask if ambiguous" branch.
-
-  Tests call this with a SKILL.md path under
-  `<workspace>/.opencode/commands/<skill>/SKILL.md` (the location
-  `x-x init --agents opencode` writes to).
-  """
-  if not skill_md_path.is_file():
-    raise FileNotFoundError(f"skill template not found: {skill_md_path}")
-  template = skill_md_path.read_text(encoding="utf-8")
-  return (
-    "You are running inside a non-interactive CI evaluation. There is "
-    "NO operator available to answer questions — anything you ask will "
-    "go unanswered and the run will end without producing the expected "
-    "deliverable. Wherever the SKILL TEMPLATE below offers a "
-    "clarification step (e.g. `x-plan` step 2: \"Clarify only when "
-    "structurally underspecified — skip by default\"), you MUST skip "
-    "that step and proceed directly to the planning / execution work, "
-    "making reasonable default choices for any underspecified detail. "
-    "Treat the user's task as fully specified for evaluation purposes; "
-    "do not ask `AskUserQuestion`-style questions or text-prompt "
-    "clarifications, and do not stop and wait. Follow the SKILL "
-    "TEMPLATE instructions verbatim otherwise.\n\n"
-    f"--- SKILL TEMPLATE ({skill_md_path.name}) ---\n"
-    f"{template}\n"
-    "--- END SKILL TEMPLATE ---\n\n"
-    f"User task: {task}"
-  )
-
-
-def _build_cmd(model: str, use_continue: bool) -> list[str]:
+def _build_cmd(
+  model: str,
+  *,
+  command: str | None = None,
+  resume: bool = False,
+) -> list[str]:
   cmd = [
     "opencode", "run",
     "--format", "json",
     "--model", model,
     "--dangerously-skip-permissions",
   ]
-  if use_continue:
+  if resume:
     cmd.append("--continue")
+  if command is not None:
+    cmd.extend(["--command", command])
   return cmd
 
 
 def _log_startup(
   workspace: Path,
-  initial_prompt: str,
+  prompt_label: str,
   max_turns: int,
   per_turn_timeout: float,
   model: str,
 ) -> None:
-  log("driver", f"drive_skill called: workspace={workspace}")
-  log("driver", f"initial_prompt: {_brief(initial_prompt, 200)}")
+  log("driver", f"drive called: workspace={workspace}")
+  log("driver", f"initial: {prompt_label}")
   log(
     "driver",
     f"max_turns={max_turns} per_turn_timeout={per_turn_timeout}s "
@@ -380,8 +379,6 @@ def _log_startup(
 def _parse_event(line: str) -> dict:
   """Parse one JSON-Lines event; fall back to a raw envelope on errors.
 
-  OpenCode's `--format json` wire format isn't fully documented; the
-  driver is forgiving so a single malformed line doesn't kill the run.
   Unparseable lines land in the transcript verbatim under a `_raw` key
   so post-hoc inspection can still see what came across the wire.
   """
@@ -402,90 +399,55 @@ def _summarize_event(event: dict) -> str:
     return _brief(event["_raw"], 200)
 
   etype = event.get("type")
-  if etype in ("text", "message", "assistant"):
-    extracted = _extract_text(event)
-    if extracted:
-      return f"text={_brief(extracted, 120)}"
-    # Extraction came back empty — dump the raw JSON so the wire shape
-    # is visible in CI logs instead of silently swallowing the content.
+  part = event.get("part") or {}
+
+  if etype == "text":
+    txt = part.get("text") if isinstance(part, dict) else ""
+    if isinstance(txt, str) and txt:
+      return f"text={_brief(txt, 160)}"
     return f"text_empty raw={_brief(json.dumps(event), 240)}"
 
-  if etype in ("tool_use", "tool", "tool_call"):
+  if etype == "tool_use":
+    tool = part.get("tool", "?") if isinstance(part, dict) else "?"
+    state = part.get("state", {}) if isinstance(part, dict) else {}
     return (
-      f"name={event.get('name') or event.get('tool', '?')} "
-      f"input={_brief(json.dumps(event.get('input', {})), 100)}"
+      f"tool={tool} status={state.get('status', '?')} "
+      f"input={_brief(json.dumps(state.get('input', {})), 100)}"
     )
+
+  if etype == "reasoning":
+    txt = part.get("text") if isinstance(part, dict) else ""
+    return f"reasoning={_brief(txt or '', 100)}"
 
   if etype in ("step_start", "step_finish"):
-    part = event.get("part") or {}
     return (
-      f"step_id={part.get('id', '?')[:24] if isinstance(part.get('id'), str) else '?'} "
-      f"reason={part.get('reason', '-')} "
-      f"messageID={part.get('messageID', '-')[:24] if isinstance(part.get('messageID'), str) else '-'}"
+      f"step_id={str(part.get('id', '?'))[:24]} "
+      f"messageID={str(part.get('messageID', '-'))[:24]}"
     )
 
-  if etype in ("error", "abort"):
-    return f"error={_brief(str(event.get('message') or event.get('error', '')), 200)}"
+  if etype == "error":
+    err = event.get("error") or {}
+    return f"error={_brief(json.dumps(err) if isinstance(err, dict) else str(err), 200)}"
 
   return _brief(json.dumps(event), 200)
 
 
 def _extract_text(event: dict) -> str:
-  """Pull the assistant-visible text from one event, if any.
+  """Pull user-visible assistant text from one event, if any.
 
-  OpenCode wraps event payloads in a `part` envelope; for a `text`
-  event the actual string lives at `event["part"]["text"]`. Earlier
-  iterations of this driver only checked top-level `text` / `content`
-  fields and so always returned empty for opencode's real wire format,
-  which silently broke the auto-yes detector (any clarification
-  prompt would slip through as `_asks_for_confirmation("")`).
-
-  Strategy: check the `part` envelope first, then fall through to the
-  flatter shapes some opencode versions / other backends may use.
+  Only `type: "text"` events count. `reasoning` is filtered out — it's
+  the model's chain-of-thought and including it would let the
+  auto-yes detector false-trigger on "yes" mentioned in thinking.
   """
   if "_raw" in event:
     return ""
-
-  # Primary: opencode's `part` envelope.
+  if event.get("type") != "text":
+    return ""
   part = event.get("part")
-  if isinstance(part, dict):
-    pt = part.get("text")
-    if isinstance(pt, str) and pt:
-      return pt
-    # Some opencode part shapes nest text under `content`.
-    pc = part.get("content")
-    if isinstance(pc, str) and pc:
-      return pc
-
-  etype = event.get("type")
-  if etype in ("text", "message"):
-    val = event.get("text") or event.get("content")
-    if isinstance(val, str):
-      return val
-    if isinstance(val, list):
-      return " ".join(str(v) for v in val if v is not None)
+  if not isinstance(part, dict):
     return ""
-
-  if etype == "assistant":
-    msg = event.get("message", {}) or {}
-    content = msg.get("content")
-    if isinstance(content, str):
-      return content
-    if isinstance(content, list):
-      out: list[str] = []
-      for block in content:
-        if isinstance(block, dict) and block.get("type") == "text":
-          out.append(str(block.get("text", "")))
-      return "\n".join(out)
-    return ""
-
-  # Some opencode event shapes put text at top level (e.g. `output`,
-  # `result`). Try those last so the structured cases above win.
-  for key in ("output", "result", "delta"):
-    val = event.get(key)
-    if isinstance(val, str) and val:
-      return val
-  return ""
+  txt = part.get("text")
+  return txt if isinstance(txt, str) else ""
 
 
 def _pump_to_queue(stream: IO[str], q: queue.Queue[str | None]) -> None:

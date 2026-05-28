@@ -3,18 +3,20 @@
 """End-to-end: drive OpenCode through /x-plan + /x-x for a TODO app task.
 
 Mirror of test_claude_todo.py, adapted for OpenCode's headless model.
-The key adaptation is that `opencode run` does not currently resolve
-slash commands (anomalyco/opencode#7345), so the prompt is built by
-INLINING the SKILL.md content via `compose_skill_prompt` rather than
-sending `/x-plan <task>` verbatim. That sidesteps the resolver gap and
-exercises the agent's behavior on the skill prompt directly.
+opencode resolves slash commands via `--command <name>` by reading the
+frontmatter `name:` field of SKILL.md files under
+`.opencode/commands/`, `.claude/skills/`, and `.agents/skills/`. The
+`x-x init --agents opencode` install writes
+`.opencode/commands/x-plan/SKILL.md` with `name: x-plan`, so
+`drive_command(workspace, "x-plan", TASK)` exercises the same skill
+the Claude tests exercise via `/x-plan TASK`.
 
 Flow per the user's spec:
-  1. The "user" (this test) invokes the x-plan skill prompt + TODO task.
-     Auto-reply 'yes' until the planner stops asking.
+  1. Invoke the x-plan skill with the TODO task. Auto-reply 'yes' until
+     the planner stops asking.
   2. PlanJudge scores the plan file that landed under .x-plans/.
-  3. The "user" invokes the x-x skill prompt. Auto-reply 'yes' until
-     the executor stops asking.
+  3. Invoke the x-x skill. Auto-reply 'yes' until the executor stops
+     asking.
   4. ArtifactJudge scores the files the executor produced.
 
 Both judges are DeepEval GEval metrics backed by DeepSeek. A test
@@ -27,12 +29,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from skills_evals.judges import ArtifactJudge, PlanJudge
-from skills_evals.opencode_driver import (
-  DEFAULT_MAX_TURNS,
-  compose_skill_prompt,
-  drive_skill,
-  resolve_skill_template,
-)
+from skills_evals.opencode_driver import DEFAULT_MAX_TURNS, drive_command
 
 TASK = "build me a single HTML and localStorage-based todo list app"
 
@@ -40,12 +37,11 @@ TASK = "build me a single HTML and localStorage-based todo list app"
 def test_opencode_builds_todo_app(workspace: Path, tmp_path: Path) -> None:
   transcripts = tmp_path / "transcripts"
 
-  # --- /x-plan (inlined SKILL.md content + task) ---
-  plan_template = resolve_skill_template(workspace, "x-plan")
-  plan_prompt = compose_skill_prompt(plan_template, TASK)
-  plan_run = drive_skill(
+  # --- /x-plan ---
+  plan_run = drive_command(
     workspace,
-    plan_prompt,
+    "x-plan",
+    TASK,
     transcript_path=transcripts / "x-plan.jsonl",
   )
   assert plan_run.exit_code == 0, (
@@ -69,16 +65,11 @@ def test_opencode_builds_todo_app(workspace: Path, tmp_path: Path) -> None:
     f"reason={plan_judgment.reason}"
   )
 
-  # --- /x-x (inlined SKILL.md content; no task — the executor reads
-  # the queue from .x-plans/) ---
-  exec_template = resolve_skill_template(workspace, "x-x")
-  exec_prompt = compose_skill_prompt(
-    exec_template,
-    "Execute the planning queue in .x-plans/ as described above.",
-  )
-  exec_run = drive_skill(
+  # --- /x-x ---
+  exec_run = drive_command(
     workspace,
-    exec_prompt,
+    "x-x",
+    "",
     transcript_path=transcripts / "x-x.jsonl",
   )
   assert exec_run.exit_code == 0, (

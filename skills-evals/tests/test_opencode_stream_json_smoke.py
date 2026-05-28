@@ -20,7 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from skills_evals.opencode_driver import drive_skill
+from skills_evals.opencode_driver import drive_prompt
 
 
 def test_opencode_smoke(tmp_path: Path) -> None:
@@ -30,7 +30,7 @@ def test_opencode_smoke(tmp_path: Path) -> None:
   workspace = tmp_path / "bare"
   workspace.mkdir()
 
-  run = drive_skill(
+  run = drive_prompt(
     workspace,
     "Respond with the single word: ok",
     max_turns=2,
@@ -46,13 +46,9 @@ def test_opencode_smoke(tmp_path: Path) -> None:
   )
   assert not run.timed_out, "smoke test timed out — wire format may be wrong"
 
-  # We don't pin a specific event shape (OpenCode's `--format json`
-  # protocol is sparsely documented), but the transcript must contain
-  # at least one non-empty event so we know parsing wasn't silently
-  # dropping the stream. The `_brief`-summarized event log on stderr
-  # is the primary debugging surface; this assertion just guards
-  # against a fully empty stream which would otherwise pass silently.
-  assert run.events_received > 0, (
-    "no events captured from opencode — wire format mismatch or "
-    "`--format json` not emitted. Check the driver stderr log."
+  text_events = [e for e in run.transcript if e.get("type") == "text"]
+  assert text_events, (
+    "no `type: text` events captured — `--format json` did not emit the "
+    "shape the driver expects. Types seen: "
+    f"{sorted({e.get('type') for e in run.transcript if isinstance(e, dict)})}"
   )

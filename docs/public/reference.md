@@ -34,7 +34,7 @@ Installs every bundled skill into the locations each agent looks for, then seeds
 
 Every prompt has a non-interactive flag twin — pass any subset to skip the matching prompt, or pass all five to drive `init` end-to-end without reading stdin at all (CI / scripted installs):
 
-- `--agents claude,codex,opencode` — comma-separated agent keys (repeatable). Skips the agent picker. Recognized keys: `claude` (Claude Code), `codex` (Codex CLI), `opencode` (OpenCode). OpenCode's TUI resolves slash commands from `.opencode/commands/` (project) or `~/.config/opencode/commands/` (user); `x-x init` writes the bundled SKILL.md tree to `.opencode/commands/` / `~/.opencode/commands/` matching the path layout used for Claude/Codex. Headless invocation via `opencode run` does not currently resolve `/x-plan`-style slash commands (anomalyco/opencode#7345); automated callers must inline the SKILL.md content into their prompts.
+- `--agents claude,codex,opencode` — comma-separated agent keys (repeatable). Skips the agent picker. Recognized keys: `claude` (Claude Code), `codex` (Codex CLI), `opencode` (OpenCode). OpenCode resolves slash commands from `.opencode/{command,commands}/**/*.md` (project) and `~/.config/opencode/commands/` (user), keyed off the file's frontmatter `name:`; `x-x init` writes the bundled SKILL.md tree to `.opencode/commands/<skill>/SKILL.md` / `~/.opencode/commands/<skill>/SKILL.md` so each skill registers as both a TUI slash command and an `opencode run --command <skill>` headless invocation (sst/opencode PR #2348).
 - `--scope project|user` — skips the scope prompt.
 - `--prefix-width N` — positive integer; seeds `prefix_width` in `_config.lock`.
 - `--max-plan-lines N` — positive integer; seeds `max_plan_lines` in `_config.lock`.
