@@ -44,14 +44,13 @@ readonly SKILL_MANIFEST_FILE="SKILL.md"           # skillManifestFile
 readonly OWNED_SKILLS="${SKILL_X_PLAN_DIR} ${SKILL_X_X_DIR}"
 
 # agentTargets in constants.go — index 0 = Claude Code, 1 = Codex CLI,
-# 2 = OpenCode, 3 = GitHub Copilot CLI (copilot added in this branch;
-# constants.go registration follows in a sibling commit). Copilot reuses
-# Codex's `.agents/skills` for both scopes (cross-agent open spec, install
-# is idempotent so the two rows co-exist on disk without conflict). The
-# agentTarget.userSkillsRel field exists for future agents whose project-
-# vs user-scope paths diverge; Copilot doesn't need it because the bundled
-# x-x skill content already documents `.agents/skills` as the canonical
-# "other agents" path.
+# 2 = OpenCode, 3 = GitHub Copilot CLI, 4 = Pi. Codex, Copilot, and Pi all
+# resolve skills from `.agents/skills` at both scopes (cross-agent open
+# spec, install is idempotent so the three rows co-exist on disk without
+# conflict). The agentTarget.userSkillsRel field exists for future agents
+# whose project- vs user-scope paths diverge; none of the registered
+# agents need it today because the bundled x-x skill content already
+# documents `.claude/skills` and `.agents/skills` as the canonical roots.
 readonly CLAUDE_SKILLS_REL=".claude/skills"            # agentTargets[0].skillsRel
 readonly CLAUDE_CONFIG_REL=".claude"                   # agentTargets[0].configRel
 readonly CODEX_SKILLS_REL=".agents/skills"             # agentTargets[1].skillsRel
@@ -60,6 +59,7 @@ readonly OPENCODE_SKILLS_REL=".opencode/commands"      # agentTargets[2].skillsR
 # OpenCode currently ships no per-agent config (configSrc / configRel are
 # empty), so no OPENCODE_CONFIG_REL mirror is needed.
 readonly COPILOT_SKILLS_REL=".agents/skills"           # agentTargets[3].skillsRel
+readonly PI_SKILLS_REL=".agents/skills"                # agentTargets[4].skillsRel
 # Parent of CODEX_SKILLS_REL — used by isolation cases that seed sibling
 # files alongside the Codex skills dir. Derived (not a Go constant) to
 # avoid drift if agentTargets[1].skillsRel ever moves.
@@ -640,6 +640,33 @@ assert_is_dir "copilot user-scope skills landed" \
   "${SANDBOX_HOME}/${COPILOT_SKILLS_REL}/${SKILL_X_X_DIR}"
 assert_absent "no install under project cwd" \
   "$PROJ_CP_USER/${COPILOT_SKILLS_REL}"
+
+case_start "x-x init --agents=pi installs Pi at project scope"
+reset_user_home
+PROJ_PI="$(fresh_project)"
+cd "$PROJ_PI"
+run_capture "" init --agents=pi --scope=project
+assert_eq "exit 0" "$RUN_RC" "0"
+# Pi's project skillsRel coincides with Codex's `.agents/skills` per
+# pi-mono's docs/skills.md (cross-agent open spec, walking up from cwd).
+# We assert the directory + each owned skill present.
+assert_is_dir "pi project skills installed" "$PROJ_PI/${PI_SKILLS_REL}/${SKILL_X_X_DIR}"
+assert_absent "claude NOT installed" "$PROJ_PI/${CLAUDE_SKILLS_REL}"
+
+case_start "x-x init --agents=pi --scope=user lands at ~/.agents/skills"
+PROJ_PI_USER="$(fresh_project)"
+cd "$PROJ_PI_USER"
+reset_user_home
+run_capture "" init --agents=pi --scope=user
+assert_eq "exit 0" "$RUN_RC" "0"
+# Pi at user scope reads `~/.agents/skills/` (one of two documented
+# global locations per pi-mono/packages/coding-agent/docs/skills.md,
+# alongside `~/.pi/agent/skills/`). Skills land under SANDBOX_HOME,
+# project cwd is left alone.
+assert_is_dir "pi user-scope skills landed" \
+  "${SANDBOX_HOME}/${PI_SKILLS_REL}/${SKILL_X_X_DIR}"
+assert_absent "no install under project cwd" \
+  "$PROJ_PI_USER/${PI_SKILLS_REL}"
 
 case_start "x-x init --agents=invalid rejects unknown agent"
 reset_user_home
