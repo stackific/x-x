@@ -2,6 +2,7 @@
 title: Add online feature serving for the churn prediction model
 status: valid
 systems: [feature-store]
+extended_by: [0077-add-feature-drift-detection-for-live-serving]
 created: 2026-01-27T08:07:00Z
 ---
 

@@ -2,11 +2,12 @@
 title: Add feature drift detection for live serving
 status: valid
 systems: [feature-store]
+extends: [0068-add-online-feature-serving-for-the-churn-prediction-model]
 created: 2026-03-06T19:03:08Z
 ---
 
 ## Goal
-Compare the live feature distribution against the training distribution and raise a drift alert when divergence exceeds a threshold.
+Compare the live feature distribution that 0068's serving path emits against the training distribution, and raise a drift alert when divergence exceeds a threshold.
 
 ## Approach
 - Compute distribution snapshots hourly.

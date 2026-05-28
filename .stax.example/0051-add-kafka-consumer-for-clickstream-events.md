@@ -2,6 +2,7 @@
 title: Add Kafka consumer for clickstream events
 status: valid
 systems: [ingest-pipeline]
+extended_by: [0055-add-backpressure-handling-for-traffic-spikes]
 created: 2025-11-20T15:22:02Z
 ---
 
