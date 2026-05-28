@@ -47,6 +47,10 @@ SMOKE_KILO_CONFIG = {
         "deepseek-v4-pro": {
           "name": "DeepSeek V4 Pro",
           "tool_call": True,
+          "reasoning": False,
+          "options": {
+            "thinking": {"type": "disabled"},
+          },
           "limit": {"context": 128000, "output": 8192},
         },
       },

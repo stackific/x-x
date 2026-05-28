@@ -90,6 +90,25 @@ KILOCODE_ENV_DEFAULTS = {
 # The model entry under `provider.openai-compatible.models` is REQUIRED
 # for `--model openai-compatible/deepseek-v4-pro` to resolve; without it
 # kilo rejects the run with a "model not found" error.
+#
+# `reasoning: false` and `options.thinking.type: disabled` together suppress
+# DeepSeek V4 thinking mode for this model. The combination matters because
+# Kilo's openai-compatible adapter strips `reasoning_content` from prior
+# assistant messages when building the next request's history (see
+# packages/opencode/src/provider/transform.ts:normalizeMessages — the
+# DeepSeek-specific branch only re-injects an empty reasoning marker, not
+# the original text). DeepSeek's API then either 400s with "The
+# reasoning_content in the thinking mode must be passed back to the API"
+# or, more often, silently stalls the SSE stream — surfacing as a mid-run
+# hang once the agent has done a few tool-call rounds (kilocode #10544,
+# anomalyco/opencode #24190). Disabling thinking at the API level via
+# `extra_body.thinking.type=disabled` means DeepSeek never emits
+# reasoning_content in the first place, so the stripping/hang vector is
+# closed entirely. This is the same workaround pattern the codex eval
+# pipeline applies (commit aa85cbb: `extra_body.thinking.type=disabled`
+# at the LiteLLM proxy layer); for Kilo we land it directly in the model
+# config because `options` is documented as the openai-compatible
+# provider's arbitrary-extras passthrough.
 KILOCODE_WORKSPACE_CONFIG = {
   "$schema": "https://app.kilo.ai/config.json",
   "model": "openai-compatible/deepseek-v4-pro",
@@ -103,6 +122,10 @@ KILOCODE_WORKSPACE_CONFIG = {
         "deepseek-v4-pro": {
           "name": "DeepSeek V4 Pro",
           "tool_call": True,
+          "reasoning": False,
+          "options": {
+            "thinking": {"type": "disabled"},
+          },
           "limit": {"context": 128000, "output": 8192},
         },
       },
