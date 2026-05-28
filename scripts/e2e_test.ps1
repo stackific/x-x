@@ -124,6 +124,13 @@ $Script:ProjectsRoot = Join-Path $Sandbox 'projects'
 New-Item -ItemType Directory -Force -Path $SandboxHome  | Out-Null
 New-Item -ItemType Directory -Force -Path $ProjectsRoot | Out-Null
 
+# Suppress anonymous-usage telemetry for the entire e2e run — same
+# rationale as the bash harness. DO_NOT_TRACK is industry-standard;
+# DISABLE_TELEMETRY is the project-specific belt-and-braces escape
+# hatch.
+$env:DO_NOT_TRACK     = '1'
+$env:DISABLE_TELEMETRY = '1'
+
 # Cleanup must tolerate read-only files (e.g. Go module cache the test might
 # have populated). attrib -r is best-effort; Remove-Item -Force always runs.
 function Invoke-Cleanup {

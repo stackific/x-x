@@ -128,6 +128,15 @@ mkdir -p "$SANDBOX_HOME"
 PROJECTS_ROOT="$SANDBOX/projects"
 mkdir -p "$PROJECTS_ROOT"
 
+# Suppress anonymous-usage telemetry for the entire e2e run. The CI
+# runner sets CI=true, which the telemetry layer would normally tag
+# events with — but we don't want test traffic mixed into the
+# production telemetry stream. DO_NOT_TRACK is the industry-standard
+# env that every reasonable telemetry layer honors; DISABLE_TELEMETRY
+# is the project-specific belt-and-braces escape hatch.
+export DO_NOT_TRACK=1
+export DISABLE_TELEMETRY=1
+
 # ---------- pretty + assertion helpers ----------
 
 PASS_COUNT=0

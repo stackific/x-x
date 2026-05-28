@@ -169,3 +169,16 @@ x-x plans slugify "My new plan"        # prints e.g. my-new-plan
 | `0`  | Success.                                                         |
 | `1`  | Runtime error (file I/O, missing source, etc.).                  |
 | `2`  | Bad invocation: unknown subcommand, missing/incompatible flag, or project-scope command run outside an x-x project (no `.x-plans/`). |
+
+## Telemetry
+
+`x-x` fires anonymous usage pings (event name, CLI version, OS, arch, CI flag, per-process random session id) at `https://stackific.com/x-x/t` so the project can see which subcommands are exercised and which agents users install. No file contents, no paths, no project identifiers, no persistent machine id — see `docs/internal/telemetry.md` for the full schema and privacy guarantees.
+
+Opt out by setting **either** of these env vars to any non-empty value:
+
+| Env var | Source |
+| --- | --- |
+| `DO_NOT_TRACK` | [consoledonottrack.com](https://consoledonottrack.com/) — industry-standard. |
+| `DISABLE_TELEMETRY` | Project-specific escape hatch. |
+
+Example: `DO_NOT_TRACK=1 x-x init ...` (or export it from your shell rc to disable for every invocation).

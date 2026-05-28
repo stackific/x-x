@@ -179,6 +179,27 @@ func runInit(args []string) {
 	// the same plan history. Phrased as a tip rather than auto-editing
 	// .gitignore so we never touch git config behind the user's back.
 	fmt.Printf("\nTip: commit %s/ to git so your team shares plan history.\n", plansDir)
+
+	// Anonymous-usage ping. Fires at the end of the happy path so a
+	// fatal error earlier in runInit (which exits via exitErr) doesn't
+	// produce a "completed init" event the install never actually
+	// reached. Opt-out via DO_NOT_TRACK / DISABLE_TELEMETRY; see
+	// docs/internal/telemetry.md for the full schema + privacy notes.
+	agentKeys := make([]string, len(cfg.agents))
+	for i, a := range cfg.agents {
+		agentKeys[i] = a.key
+	}
+	scopeLabel := "project"
+	if cfg.scope == scopeUser {
+		scopeLabel = "user"
+	}
+	track("init", telemetryEvent{
+		"scope":       scopeLabel,
+		"agents":      strings.Join(agentKeys, ","),
+		"agent_count": strconv.Itoa(len(cfg.agents)),
+		"skill_count": strconv.Itoa(len(skills)),
+	})
+	flushTelemetry()
 }
 
 // validateInitFlagsOrExit is the runInit-facing wrapper around
