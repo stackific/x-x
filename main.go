@@ -53,8 +53,9 @@ func main() {
 			// invoke it on their last step to materialize ~/.stax/agents/
 			// from the binary's embed. Modelled as a subcommand rather
 			// than a flag so it never collides with the bare-invocation
-			// browser-open path and so the install pipeline calls it by
-			// the same surface every other subcommand uses.
+			// server path (which blocks on the listener) and so the
+			// install pipeline calls it by the same surface every other
+			// subcommand uses.
 			runPostInstall(os.Args[2:])
 			return
 		default:
@@ -78,19 +79,22 @@ func main() {
 //	                    `awk 'NR==1 { print $NF }'` to seed
 //	                    ~/.stax/.config.json — DO NOT remove without
 //	                    coordinating an installer-script update).
-//	stax --no-browser  → user-facing opt-out for the bare-invocation
-//	                    browser launch. Seeds ~/.stax/agents/ on first
-//	                    run, then exits silently. Useful in CI or any
-//	                    scripted context where a browser pop is wrong.
-//	stax               → open https://google.com in the user's default
-//	                    browser, unless hasDesktop() reports no
-//	                    graphical session. Prints "Opening …" so the
-//	                    invocation isn't silently invisible.
+//	stax --no-browser  → start the local HTTP server but do NOT hand
+//	                    the URL off to the OS-default browser. Useful
+//	                    in CI / scripted contexts where popping a
+//	                    window is wrong; the server still runs and is
+//	                    reachable at http://127.0.0.1:7829.
+//	stax               → start a loopback HTTP server on
+//	                    127.0.0.1:7829 (see server.go for the routes),
+//	                    print the URL on stdout, and hand it off to
+//	                    the OS-default browser when hasDesktop()
+//	                    reports a graphical session. Blocks until
+//	                    SIGINT / SIGTERM.
 //
 // The installer hook (`stax post-install`) is a sibling SUBCOMMAND, not a
 // runDefault branch — it lives in runPostInstall so the install pipeline
 // calls a stable, name-conflict-free surface that can never accidentally
-// trigger the browser path.
+// trigger the server path.
 //
 // `ensureBundledAgents` runs first on every branch so the embedded skill
 // tree lands under ~/.stax/agents/ on the very first invocation of a
@@ -103,15 +107,27 @@ func runDefault(args []string) {
 	// that might happen to share a name.
 	fs := flag.NewFlagSet("stax", flag.ExitOnError)
 	versionFlag := fs.Bool("version", false, "print version and exit")
-	noBrowser := fs.Bool("no-browser", false, "do not open the default browser")
+	noBrowser := fs.Bool("no-browser", false, "start the local server but do not open the default browser")
+	// --cwd is the git `-C <path>` analog: when set, chdir to the given
+	// directory before starting the server. handleAPISystems reads
+	// .stax/_data_systems.yaml from cwd, so --cwd is the supported way
+	// for scripted callers (Claude Code sessions, CI installers) to
+	// point the server at a sibling project without an explicit cd.
+	cwdFlag := fs.String("cwd", "", "change to this directory before running (like git -C)")
 	// Setting printAbout as the FlagSet's Usage means `stax -h` shows the
 	// notice + usage block — one standard help output for the default
-	// path. Bare `stax` does NOT route through this anymore (it opens a
-	// browser); -h is the explicit "show me everything" surface.
+	// path. Bare `stax` does NOT route through this anymore (it starts
+	// the server); -h is the explicit "show me everything" surface.
 	fs.Usage = printAbout
 	// ExitOnError + ignoring Parse's return is intentional: Parse calls
 	// os.Exit on errors, so any non-nil return is unreachable.
 	_ = fs.Parse(args)
+
+	// Honor --cwd before any further work so ensureBundledAgents, the
+	// server's handleAPISystems reads of .stax/_data_systems.yaml, and
+	// any future cwd-sensitive logic all observe the directory the
+	// caller asked for.
+	applyCwdOrExit(*cwdFlag)
 
 	// Lazy first-run write of the bundled skill library. If ~/.stax/agents
 	// already exists this is a stat-only no-op; otherwise it writes the
@@ -123,38 +139,21 @@ func runDefault(args []string) {
 	}
 
 	// --version keeps the historical notice contract the installer
-	// scripts depend on. Print it and exit before any of the new
-	// branches can interfere.
+	// scripts depend on. Print it and exit before the server branch
+	// fires (which would otherwise block on the listener).
 	if *versionFlag {
 		printNotice()
 		return
 	}
 
-	// --no-browser is the user-facing opt-out: seed-and-exit silently.
-	if *noBrowser {
-		return
-	}
-
-	// Implicit no-op when there's no graphical session to receive the
-	// browser handoff (headless Linux: DISPLAY + WAYLAND_DISPLAY both
-	// empty). Tell the user why nothing happened so the silence doesn't
-	// read as a hang, and point at --no-browser for callers that want to
-	// suppress the diagnostic in scripted contexts.
-	if !hasDesktop() {
-		fmt.Fprintln(os.Stderr, "no desktop environment detected; not opening browser (pass --no-browser to silence)")
-		return
-	}
-
-	// Desktop session: hand the URL off to the OS-default browser and
-	// announce the action on stdout. Start failures (no `xdg-open`
-	// installed, broken `rundll32`, etc.) surface as a stderr error and
-	// a non-zero exit — better than silently doing nothing.
-	const url = "https://google.com"
-	if err := openBrowser(url); err != nil {
-		fmt.Fprintln(os.Stderr, "error opening browser:", err)
+	// Default path: launch the loopback HTTP server, optionally open a
+	// browser at it, and block until SIGINT / SIGTERM. runServer prints
+	// the listening URL on stdout itself — no need for an extra
+	// "Opening …" line here.
+	if err := runServer(os.Stdout, os.Stderr, !*noBrowser); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Opening %s in your browser…\n", url)
 }
 
 // runPostInstall is the `stax post-install` subcommand: the installer
@@ -220,8 +219,8 @@ func printAbout() {
 	// because the about banner is often the first thing a user sees and
 	// should be self-sufficient.
 	fmt.Println("Usage:")
-	fmt.Println("  stax                            Open https://google.com in the default browser (no-op without a desktop)")
-	fmt.Println("  stax --no-browser               Same as bare stax, but skip the browser launch")
+	fmt.Println("  stax                            Open the Stax web UI in the default browser")
+	fmt.Println("  stax --no-browser               Same as bare stax, but do not auto-open the browser")
 	fmt.Println("  stax post-install               Installer hook: seed ~/.stax/agents/ and exit silently")
 	fmt.Println("  stax init                       Install bundled agent skills + seed .stax/ (wizard or flag-driven)")
 	fmt.Println("  stax skills remove --user       Uninstall bundled stax skills from $HOME")
@@ -231,4 +230,7 @@ func printAbout() {
 	fmt.Println("  stax plans lint                 Validate every plan file against the project schema")
 	fmt.Println("  stax plans slugify \"<title>\"    Print the kebab-case slug for a plan title")
 	fmt.Println("  stax --version                  Print version")
+	fmt.Println()
+	fmt.Println("Common flag (every subcommand above):")
+	fmt.Println("  --cwd <path>                    Run as if invoked from <path> (like git -C); validates that the directory exists")
 }

@@ -75,14 +75,19 @@ func runPlansNextPrefix(args []string) {
 func planNextPrefix(args []string, staxDir string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("plans next-prefix", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	cwdFlag := fs.String("cwd", "", "change to this directory before running (like git -C)")
 	fs.Usage = func() {
-		_, _ = fmt.Fprintln(stderr, "Usage: stax plans next-prefix")
+		_, _ = fmt.Fprintln(stderr, "Usage: stax plans next-prefix [--cwd PATH]")
 	}
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() > 0 {
 		_, _ = fmt.Fprintf(stderr, "stax plans next-prefix takes no arguments (got %q)\n", fs.Arg(0))
+		return 2
+	}
+	if err := applyCwd(*cwdFlag); err != nil {
+		_, _ = fmt.Fprintln(stderr, "error:", err)
 		return 2
 	}
 	if err := checkProject(); err != nil {
@@ -179,17 +184,22 @@ func planList(args []string, staxDir string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	var statusFlag, systemFlag, keywordsFlag stringSliceFlag
 	orderFlag := fs.String("order", "desc", "sort by prefix: asc|desc (default desc = latest first)")
+	cwdFlag := fs.String("cwd", "", "change to this directory before running (like git -C)")
 	fs.Var(&statusFlag, "status", "keep only plans whose status matches (repeatable, comma-separated)")
 	fs.Var(&systemFlag, "system", "keep only plans whose systems contain this id (repeatable; OR semantics; matches the kebab `id:` from _data_systems.yaml)")
 	fs.Var(&keywordsFlag, "overflow-keywords", "case-insensitive substring(s) narrowing the output when the post-filter count exceeds plansListOverflowThreshold (repeatable; OR semantics; matched against plan body only)")
 	fs.Usage = func() {
-		_, _ = fmt.Fprintln(stderr, "Usage: stax plans list [--status NAME[,NAME...]] [--system ID] [--order asc|desc] [--overflow-keywords PATTERN[,PATTERN...]]")
+		_, _ = fmt.Fprintln(stderr, "Usage: stax plans list [--status NAME[,NAME...]] [--system ID] [--order asc|desc] [--overflow-keywords PATTERN[,PATTERN...]] [--cwd PATH]")
 	}
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() > 0 {
 		_, _ = fmt.Fprintf(stderr, "stax plans list takes no positional arguments (got %q)\n", fs.Arg(0))
+		return 2
+	}
+	if err := applyCwd(*cwdFlag); err != nil {
+		_, _ = fmt.Fprintln(stderr, "error:", err)
 		return 2
 	}
 	if err := checkProject(); err != nil {
@@ -614,14 +624,19 @@ func runPlansLint(args []string) {
 func planLint(args []string, staxDir string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("plans lint", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	cwdFlag := fs.String("cwd", "", "change to this directory before running (like git -C)")
 	fs.Usage = func() {
-		_, _ = fmt.Fprintln(stderr, "Usage: stax plans lint")
+		_, _ = fmt.Fprintln(stderr, "Usage: stax plans lint [--cwd PATH]")
 	}
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() > 0 {
 		_, _ = fmt.Fprintf(stderr, "stax plans lint takes no arguments (got %q)\n", fs.Arg(0))
+		return 2
+	}
+	if err := applyCwd(*cwdFlag); err != nil {
+		_, _ = fmt.Fprintln(stderr, "error:", err)
 		return 2
 	}
 	if err := checkProject(); err != nil {
@@ -1212,37 +1227,78 @@ func slugify(title string) string {
 	return strings.Trim(slugifySepRe.ReplaceAllString(strings.ToLower(title), "-"), "-")
 }
 
+// extractCwdFromHead consumes leading `--cwd <PATH>` / `--cwd=<PATH>`
+// pairs from args and returns the last value plus the remaining args.
+// Used by planSlugify because flag.Parse is unavailable to slugify
+// (its title positional may start with `-`). On a malformed `--cwd`
+// (no value after the bare form) it writes a usage error to stderr
+// and returns ok=false so the caller can exit 2 immediately. Multiple
+// occurrences keep the last value, mirroring flag.String's last-wins
+// semantics for the other plan subcommands.
+func extractCwdFromHead(args []string, stderr io.Writer) (cwd string, rest []string, ok bool) {
+	rest = args
+	for len(rest) > 0 {
+		switch {
+		case rest[0] == "--cwd":
+			if len(rest) < 2 {
+				_, _ = fmt.Fprintln(stderr, "stax plans slugify: --cwd requires a value")
+				return "", nil, false
+			}
+			cwd = rest[1]
+			rest = rest[2:]
+		case strings.HasPrefix(rest[0], "--cwd="):
+			cwd = strings.TrimPrefix(rest[0], "--cwd=")
+			rest = rest[1:]
+		default:
+			return cwd, rest, true
+		}
+	}
+	return cwd, rest, true
+}
+
 // runPlansSlugify takes a single positional argument (the title) and prints
 // its kebab-case slug to stdout. Exits 2 on missing/extra arguments or when
 // the title contains no characters that survive slugification. No project
 // check — slugify is a pure transform and is useful before `stax init`.
-// runPlansSlugify is the only subcommand that takes a single positional and
-// no flags. flag.Parse can't help here — the title may legitimately start
-// with `-` (e.g. "---draft note"), and flag.Parse would reject it as an
-// unknown flag. Instead we handle the three flag-like tokens we care
-// about manually: `-h`/`--help` print usage, `--` is a legacy separator
-// stripped if present, and everything else is treated as the title.
+// runPlansSlugify is the only subcommand that takes a single positional.
+// flag.Parse can't help here — the title may legitimately start with `-`
+// (e.g. "---draft note"), and flag.Parse would reject it as an unknown
+// flag. Instead we hand-parse the leading flag-like tokens we care about:
+// an optional `--cwd <PATH>` / `--cwd=<PATH>` pair (chdir before any
+// further work — kept for uniform flag parsing across every stax
+// subcommand even though slugify itself is cwd-independent), `-h`/`--help`
+// print usage, `--` is a legacy separator stripped if present, and
+// everything else is treated as the title.
 func runPlansSlugify(args []string) {
 	os.Exit(planSlugify(args, os.Stdout, os.Stderr))
 }
 
 // planSlugify is the testable body of runPlansSlugify. Exit-code
-// contract: 0 happy (or -h/--help), 2 usage error (missing/extra args
-// or unsluggable title). No staxDir argument because slugify is a pure
-// transform — useful before `stax init`, so it deliberately skips the
-// project marker check.
+// contract: 0 happy (or -h/--help), 2 usage error (missing/extra args,
+// bad --cwd, or unsluggable title). No staxDir argument because slugify
+// is a pure transform — useful before `stax init`, so it deliberately
+// skips the project marker check.
 func planSlugify(args []string, stdout, stderr io.Writer) int {
+	cwdPath, rest, ok := extractCwdFromHead(args, stderr)
+	if !ok {
+		return 2
+	}
+	args = rest
 	if len(args) >= 1 {
 		switch args[0] {
 		case "-h", "--help":
-			_, _ = fmt.Fprintln(stderr, `Usage: stax plans slugify "<title>"`)
+			_, _ = fmt.Fprintln(stderr, `Usage: stax plans slugify [--cwd PATH] "<title>"`)
 			return 0
 		case "--":
 			args = args[1:]
 		}
 	}
+	if err := applyCwd(cwdPath); err != nil {
+		_, _ = fmt.Fprintln(stderr, "error:", err)
+		return 2
+	}
 	if len(args) != 1 {
-		_, _ = fmt.Fprintln(stderr, `Usage: stax plans slugify "<title>"`)
+		_, _ = fmt.Fprintln(stderr, `Usage: stax plans slugify [--cwd PATH] "<title>"`)
 		_, _ = fmt.Fprintln(stderr, `stax plans slugify takes exactly one positional argument: the title (quote it)`)
 		return 2
 	}

@@ -167,11 +167,10 @@ ensure_on_path() {
 
 # Seed the bundled agents/ library from the binary's embed. `post-install`
 # is the dedicated installer subcommand: it triggers the lazy first-run
-# write to ~/.stax/agents/ and exits silently, NEVER opening a browser. We
-# must not use bare `stax` here — that branch opens https://google.com in
-# the user's default browser, which would pop a window mid-install. The
-# 24h update check (still bound to every invocation) handles refreshes
-# from then on.
+# write to ~/.stax/agents/ and exits silently. We must not use bare
+# `stax` here — that branch launches the loopback web server and blocks
+# on the listener, which would hang the installer. The hourly update
+# check (still bound to every invocation) handles refreshes from then on.
 info "Seeding ~/.stax/agents/ from binary"
 "${INSTALL_DIR}/${BINARY}" post-install >/dev/null
 

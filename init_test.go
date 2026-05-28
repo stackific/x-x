@@ -1680,3 +1680,110 @@ func TestValidateInitFlags_RejectsNonPositiveInts(t *testing.T) {
 		})
 	}
 }
+
+// ---------- applyCwd ----------
+
+// TestApplyCwd_EmptyIsNoop pins the "flag genuinely optional" contract:
+// callers that never pass --cwd see no chdir and no error. The current
+// working directory must be byte-identical before and after the call.
+func TestApplyCwd_EmptyIsNoop(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	before, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := applyCwd(""); err != nil {
+		t.Fatalf("expected nil for empty path, got %v", err)
+	}
+	after, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if before != after {
+		t.Fatalf("cwd changed: before=%q after=%q", before, after)
+	}
+}
+
+// TestApplyCwd_ChdirsIntoDirectory is the happy path: an existing
+// directory becomes the new process cwd. EvalSymlinks on both sides
+// because macOS resolves /var → /private/var under TMPDIR.
+func TestApplyCwd_ChdirsIntoDirectory(t *testing.T) {
+	starting := t.TempDir()
+	chdir(t, starting)
+	target := t.TempDir()
+	if err := applyCwd(target); err != nil {
+		t.Fatalf("applyCwd: %v", err)
+	}
+	got, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	gotResolved, _ := filepath.EvalSymlinks(got)
+	wantResolved, _ := filepath.EvalSymlinks(target)
+	if gotResolved != wantResolved {
+		t.Fatalf("cwd = %q, want %q", gotResolved, wantResolved)
+	}
+}
+
+// TestApplyCwd_RejectsMissingPath pins the strict-validation contract:
+// a path that does not exist returns an error mentioning the input,
+// rather than silently leaving cwd untouched. Callers route this through
+// stderr+exit.
+func TestApplyCwd_RejectsMissingPath(t *testing.T) {
+	chdir(t, t.TempDir())
+	missing := filepath.Join(t.TempDir(), "no-such-dir")
+	err := applyCwd(missing)
+	if err == nil {
+		t.Fatal("expected error for missing path")
+	}
+	if !strings.Contains(err.Error(), "--cwd") {
+		t.Fatalf("error %q must mention --cwd", err.Error())
+	}
+}
+
+// TestApplyCwd_RejectsFile rejects regular files — passing a file path
+// to --cwd is a usage mistake and must NOT chdir into the parent.
+func TestApplyCwd_RejectsFile(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	file := filepath.Join(dir, "not-a-dir")
+	if err := os.WriteFile(file, nil, 0o600); err != nil {
+		t.Fatalf("seed file: %v", err)
+	}
+	err := applyCwd(file)
+	if err == nil {
+		t.Fatal("expected error for regular file")
+	}
+	if !strings.Contains(err.Error(), "not a directory") {
+		t.Fatalf("error %q must mention 'not a directory'", err.Error())
+	}
+}
+
+// TestRunInit_CwdFlag_SeedsRequestedDirectory exercises the end-to-end
+// --cwd path: chdir to an "outer" temp dir, run `stax init --cwd OTHER`,
+// and assert the project scaffold lands under OTHER, not the outer dir.
+// This is the contract that makes scripted callers from elsewhere on the
+// filesystem (e.g. a Claude Code session whose pwd is the repo root)
+// able to initialize a sibling subproject without `cd`-ing first.
+func TestRunInit_CwdFlag_SeedsRequestedDirectory(t *testing.T) {
+	pinHome(t)
+	outer := t.TempDir()
+	chdir(t, outer)
+	target := t.TempDir()
+	runInit([]string{
+		"--cwd", target,
+		"--scope", "project",
+		"--agents", "claude",
+		"--prefix-width", "4",
+		"--max-plan-lines", "30",
+		"--review-per", reviewPerTask,
+	})
+	// Scaffold MUST be under --cwd target, not the outer cwd we started in.
+	if _, err := os.Stat(filepath.Join(target, staxDir, staxLockFile)); err != nil {
+		t.Fatalf("expected lock under --cwd target %s: %v", target, err)
+	}
+	if _, err := os.Stat(filepath.Join(outer, staxDir, staxLockFile)); !os.IsNotExist(err) {
+		t.Fatalf("outer dir was scaffolded; --cwd was ignored: err=%v", err)
+	}
+}

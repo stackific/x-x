@@ -62,9 +62,17 @@ func runInit(args []string) {
 	prefixWidthFlag := flags.Int("prefix-width", 0, "zero-padded width for plan prefixes (positive integer; default seeds the project default)")
 	maxPlanLinesFlag := flags.Int("max-plan-lines", 0, "line-count ceiling enforced by `stax plans lint` (positive integer; default seeds the project default)")
 	reviewPerFlag := flags.String("review-per", "", "task|plan — pause for review after every task or every plan")
+	// --cwd is the git `-C <path>` analog: chdir to <path> before doing
+	// anything else, so os.Getwd() below, the project-already-init guard,
+	// the .stax/ scaffold seed, and (under --scope project) every per-agent
+	// install root all resolve against <path> instead of the shell cwd.
+	// Empty (the default) is a no-op — applyCwd skips the chdir, leaving
+	// the existing behavior unchanged for callers who don't pass --cwd.
+	cwdFlag := flags.String("cwd", "", "change to this directory before running (like git -C)")
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage: stax init [--agents claude,codex] [--scope project|user]")
 		fmt.Fprintln(os.Stderr, "             [--prefix-width N] [--max-plan-lines N] [--review-per task|plan]")
+		fmt.Fprintln(os.Stderr, "             [--cwd PATH]")
 		fmt.Fprintln(os.Stderr, "  Installs the bundled agent skill library for Claude Code and Codex CLI.")
 	}
 	_ = flags.Parse(args)
@@ -76,6 +84,11 @@ func runInit(args []string) {
 	// that were actually set on the command line — exactly the set we want
 	// to check.
 	validateInitFlagsOrExit(flags, prefixWidthFlag, maxPlanLinesFlag, &agentsFlag, reviewPerFlag)
+
+	// Honor --cwd before any cwd-dependent call — os.Getwd, checkProject,
+	// scopeRootFor(scopeProject, cwd), and writePlansScaffold all expect
+	// to see the caller's target directory, not the shell's.
+	applyCwdOrExit(*cwdFlag)
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -1006,6 +1019,44 @@ func copyFile(src, dest string) (retErr error) {
 func exitErr(err error) {
 	fmt.Fprintln(os.Stderr, "error:", err)
 	os.Exit(1)
+}
+
+// applyCwd switches the process working directory to path so every
+// subsequent cwd-dependent call (os.Getwd, checkProject, requireProject,
+// the relative staxDir each plan subcommand passes through, and the
+// cwd-resolved installs in init / skills-remove) operates against the
+// caller-supplied directory instead of the shell's cwd. Empty path is a
+// no-op so the --cwd flag is genuinely optional. Returns a usage-style
+// error for missing or non-directory paths — callers route it through
+// exitErr (init / skills) or their own stderr+exit-2 pattern (plans).
+// Pulled into a helper so every subcommand that accepts --cwd shares one
+// validation + chdir code path: git's `-C <path>` semantics, applied
+// once, never re-implemented per subcommand.
+func applyCwd(path string) error {
+	if path == "" {
+		return nil
+	}
+	// #nosec G304,G703 -- path is the user-supplied --cwd flag value;
+	// the whole point of this helper is to stat-and-chdir into it.
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("--cwd %q: %w", path, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("--cwd %q is not a directory", path)
+	}
+	return os.Chdir(path)
+}
+
+// applyCwdOrExit is the runInit-/runSkillsRemove-facing wrapper that
+// collapses the "apply, then exit-on-failure" pair into one statement
+// at the call site. Mirrors validateInitFlagsOrExit's shape, and keeps
+// runInit's body under the linter's cyclomatic-complexity ceiling
+// (every additional if-err branch in runInit otherwise tips it over).
+func applyCwdOrExit(path string) {
+	if err := applyCwd(path); err != nil {
+		exitErr(err)
+	}
 }
 
 // notProjectBanner is the user-facing diagnostic shared by every project

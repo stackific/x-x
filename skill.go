@@ -77,29 +77,57 @@ func printSkillsUsage(w io.Writer) {
 //     deep-equality check and is preserved.
 //   - Non-JSON per-agent config files (none today). They have no
 //     subtraction path, so they are not consulted at all.
+//
+// validateSkillsRemoveFlagsOrExit enforces the three invariants that
+// would otherwise live inline at the top of runSkillsRemove:
+//
+//   - exactly one of --user / --project (never both, never neither);
+//   - --cwd is rejected under --user ($HOME is the wipe root either way,
+//     so combining them is a silent contradiction).
+//
+// Pulled into a helper so runSkillsRemove stays under the linter's
+// cyclomatic-complexity ceiling — mirrors validateInitFlagsOrExit's
+// shape. usageFn is the FlagSet's Usage callback so the "neither flag
+// passed" branch can defer to the registered usage text.
+func validateSkillsRemoveFlagsOrExit(userScope, projectScope bool, cwdValue string, usageFn func()) {
+	switch {
+	case userScope && projectScope:
+		fmt.Fprintln(os.Stderr, "error: --user and --project are mutually exclusive")
+		os.Exit(2)
+	case !userScope && !projectScope:
+		usageFn()
+		os.Exit(2)
+	}
+	if userScope && cwdValue != "" {
+		fmt.Fprintln(os.Stderr, "error: --cwd is only valid with --project")
+		os.Exit(2)
+	}
+}
+
 func runSkillsRemove(args []string) {
 	flags := flag.NewFlagSet("skills remove", flag.ExitOnError)
 	userScope := flags.Bool("user", false, "remove skills installed at user scope ($HOME)")
 	projectScope := flags.Bool("project", false, "remove skills installed at project scope (current directory)")
+	// --cwd is the git `-C <path>` analog and is scoped to --project
+	// only: it's the directory whose `.stax/_config.lock` requireProject
+	// keys off and whose per-agent install dirs we wipe. Under --user the
+	// wipe walks $HOME independently of cwd, so accepting --cwd there
+	// would invite a silent contradiction; the combination is rejected
+	// explicitly below.
+	cwdFlag := flags.String("cwd", "", "change to this directory before running (--project only; like git -C)")
 	flags.Usage = func() {
-		fmt.Fprintln(os.Stderr, "Usage: stax skills remove (--user | --project)")
+		fmt.Fprintln(os.Stderr, "Usage: stax skills remove --user")
+		fmt.Fprintln(os.Stderr, "       stax skills remove --project [--cwd PATH]")
 	}
 	_ = flags.Parse(args)
 
-	// Mirror init.go's two-choice model: exactly one scope, never both.
-	// We require an explicit flag rather than defaulting to a scope so a
-	// careless `stax skills remove` can't surprise the user by wiping the
-	// wrong set of files.
-	switch {
-	case *userScope && *projectScope:
-		fmt.Fprintln(os.Stderr, "error: --user and --project are mutually exclusive")
-		os.Exit(2)
-	case !*userScope && !*projectScope:
-		// Neither flag passed — print the usage and exit. The usage
-		// callback explains which flag to pick.
-		flags.Usage()
-		os.Exit(2)
-	}
+	validateSkillsRemoveFlagsOrExit(*userScope, *projectScope, *cwdFlag, flags.Usage)
+
+	// Honor --cwd before requireProject so the project-marker check
+	// observes the caller's intended directory, and before removeScopeRoot
+	// so the project-scope wipe targets <path>/... instead of the shell
+	// cwd.
+	applyCwdOrExit(*cwdFlag)
 
 	// Project scope is meaningful only inside a stax project — check
 	// before any work. User scope is global, so it never needs the check.

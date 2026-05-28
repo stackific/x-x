@@ -34,6 +34,15 @@ readonly STAX_SYSTEMS_FILE="_data_systems.yaml"    # staxSystemsFile
 readonly DEFAULT_PREFIX_WIDTH=4                    # defaultPrefixWidth
 readonly PLANS_LIST_OVERFLOW_THRESHOLD=20          # plansListOverflowThreshold
 
+# Local-server constants. Mirrors of serverListenAddr / serverDisplayURL
+# / apiHelloPath / apiSystemsPath in constants.go. The
+# TestE2EShellConstantsMatchGo drift check re-reads this block at
+# `go test` time and fails on byte-level divergence from the Go side.
+readonly STAX_SERVER_LISTEN_ADDR="127.0.0.1:7829"  # serverListenAddr
+readonly STAX_SERVER_DISPLAY_URL="http://${STAX_SERVER_LISTEN_ADDR}"  # serverDisplayURL
+readonly STAX_API_HELLO_PATH="/api/hello"          # apiHelloPath
+readonly STAX_API_SYSTEMS_PATH="/api/systems"      # apiSystemsPath
+
 # Bundled skill directory names (skill*Dir in constants.go).
 readonly SKILL_SCOPE_DIR="scope"                   # skillScopeDir
 readonly SKILL_SHIP_DIR="ship"                     # skillShipDir
@@ -211,6 +220,77 @@ fresh_project() {
   mktemp -d "$PROJECTS_ROOT/proj.XXXXXX"
 }
 
+# ---------- background-server helpers ----------
+#
+# Bare `stax` now starts a loopback HTTP server on 127.0.0.1:7829 and
+# blocks on SIGINT/SIGTERM. Tests that exercise the server need to:
+#   1. Spawn the binary in the background.
+#   2. Wait for the port to start listening.
+#   3. Curl the API endpoints.
+#   4. SIGTERM the process and reap it.
+#
+# bg_spawn_stax / bg_kill_stax wrap the spawn + reap, BG_PID carries the
+# pid between the two. Output is tee'd into BG_STDOUT / BG_STDERR for
+# post-mortem assertions on the server's stdout/stderr lines (e.g. the
+# "listening on …" banner).
+
+# bg_spawn_stax <args...>
+# Starts stax in the background with the given args, waits up to 5s for
+# the port to start listening, then returns. Sets BG_PID (process id),
+# BG_STDOUT (path to captured stdout), BG_STDERR (path to captured
+# stderr). The caller MUST eventually call bg_kill_stax.
+bg_spawn_stax() {
+  BG_STDOUT="$(mktemp)"
+  BG_STDERR="$(mktemp)"
+  "$BUILD_BIN" "$@" >"$BG_STDOUT" 2>"$BG_STDERR" </dev/null &
+  BG_PID=$!
+  # Poll up to 5s for the server to start listening. Curl's --max-time
+  # bounds each probe at 1s; a 50-iteration loop with sleep 0.1 gives a
+  # combined ~5s cap that covers the slowest realistic startup.
+  local i
+  for i in $(seq 1 50); do
+    if ! kill -0 "$BG_PID" 2>/dev/null; then
+      printf 'stax background process died before listening\n' >&2
+      printf '  stdout: %s\n' "$(cat "$BG_STDOUT")" >&2
+      printf '  stderr: %s\n' "$(cat "$BG_STDERR")" >&2
+      return 1
+    fi
+    if curl -fsS --max-time 1 "${STAX_SERVER_DISPLAY_URL}${STAX_API_HELLO_PATH}" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  printf 'stax server never started listening on %s\n' "$STAX_SERVER_DISPLAY_URL" >&2
+  printf '  stdout: %s\n' "$(cat "$BG_STDOUT")" >&2
+  printf '  stderr: %s\n' "$(cat "$BG_STDERR")" >&2
+  kill "$BG_PID" 2>/dev/null
+  wait "$BG_PID" 2>/dev/null
+  return 1
+}
+
+# bg_kill_stax — sends SIGTERM to the backgrounded stax, waits for it to
+# reap, and clears BG_PID / BG_STDOUT / BG_STDERR. Safe to call when no
+# server was spawned (no-op).
+bg_kill_stax() {
+  if [ -n "${BG_PID:-}" ]; then
+    kill "$BG_PID" 2>/dev/null
+    wait "$BG_PID" 2>/dev/null
+    BG_PID=""
+  fi
+  if [ -n "${BG_STDOUT:-}" ]; then
+    rm -f "$BG_STDOUT"
+    BG_STDOUT=""
+  fi
+  if [ -n "${BG_STDERR:-}" ]; then
+    rm -f "$BG_STDERR"
+    BG_STDERR=""
+  fi
+}
+
+# Make sure any leftover server process from a failing case is reaped on
+# exit. Layered on top of the existing sandbox cleanup trap.
+trap 'bg_kill_stax 2>/dev/null; chmod -R +w "$SANDBOX" 2>/dev/null; rm -rf "$SANDBOX" 2>/dev/null' EXIT
+
 # reset_user_home — wipe the configured-agent dirs and ~/${STAX_DIR}
 # between cases so the next case starts from a known state. Uses the
 # constants block so adding a new agentTarget only requires updating that
@@ -386,9 +466,9 @@ export USERPROFILE="$HOME"   # noop on POSIX, matters on Windows.
 # INSTALL.sh's last step invokes `stax post-install` to materialize
 # ~/.stax/agents/ from the binary's embed. The contract: silent on
 # stdout/stderr, exit 0, and the lazy-bootstrap of the agents tree
-# happens before exit. Bare `stax` is reserved for the browser-open
-# behavior and would pop a window mid-install — `post-install` is the
-# replacement entry point.
+# happens before exit. Bare `stax` is now reserved for the local-server
+# behavior and would block on the listener mid-install — `post-install`
+# is the replacement entry point.
 
 case_start "stax post-install seeds agents silently"
 reset_user_home
@@ -400,44 +480,76 @@ assert_is_dir "lazy-bootstrap agents dir" "$HOME/${STAX_AGENTS_DIR}"
 assert_is_dir "lazy-bootstrap skill ${SKILL_SHIP_DIR}" \
   "$HOME/${STAX_AGENTS_SKILLS_DIR}/${SKILL_SHIP_DIR}"
 
-# ---------- --no-browser (user-facing opt-out, identical effect) ----------
+# ---------- bare stax launches the loopback API server ----------
+#
+# Bare `stax` starts the loopback HTTP server on
+# ${STAX_SERVER_DISPLAY_URL} and blocks on SIGINT/SIGTERM. Spawn it in
+# the background, probe /api/hello + /api/systems, then SIGTERM the
+# process. --no-browser is the opt-out for the auto browser launch (the
+# server still starts); we use it here so the spawn cannot pop a window
+# on a dev workstation.
 
-case_start "stax --no-browser seeds agents silently"
+case_start "stax --no-browser starts the loopback API server"
 reset_user_home
-run_capture "" --no-browser
-assert_eq "exit 0" "$RUN_RC" "0"
-assert_eq "no stdout" "$RUN_OUT" ""
-assert_eq "no stderr" "$RUN_ERR" ""
+bg_spawn_stax --no-browser
+assert_eq "spawn succeeded" "$?" "0"
+# /api/hello carries the running version + a hello message — the
+# liveness probe the bg_spawn_stax helper already waited on succeeded,
+# so a redundant curl here lets us assert on the body shape.
+hello_body="$(curl -fsS --max-time 1 "${STAX_SERVER_DISPLAY_URL}${STAX_API_HELLO_PATH}")"
+assert_contains "hello message"  "$hello_body" '"message":"hello"'
+assert_contains "hello version"  "$hello_body" "\"version\":\"${E2E_VERSION}\""
+# stdout carries the listening banner — pin both the URL and the
+# Ctrl-C hint so a reshuffle of runServer's banner shows up here.
+listening_banner="$(cat "$BG_STDOUT")"
+assert_contains "listening banner"   "$listening_banner" "$STAX_SERVER_DISPLAY_URL"
+assert_contains "ctrl-c hint"        "$listening_banner" "Ctrl-C"
+# --no-browser suppresses the browser handoff. No browser-error noise
+# should hit stderr (the warning only fires when openBrowser is called
+# and fails); pin "no browser warning" so a future flip of the gate
+# is loud.
+err_text="$(cat "$BG_STDERR")"
+assert_not_contains "no browser warning" "$err_text" "could not open browser"
+bg_kill_stax
+# Lazy-bootstrap of the bundled agents tree still happens before the
+# server starts — the user typing `stax` for the first time gets the
+# embed materialized on disk same as any subcommand would do.
 assert_is_dir "lazy-bootstrap agents dir" "$HOME/${STAX_AGENTS_DIR}"
 
-# ---------- bare invocation on a headless box ----------
+# ---------- /api/systems with --cwd PATH ----------
 #
-# CI runs without a graphical session. With DISPLAY and WAYLAND_DISPLAY
-# both empty, hasDesktop() returns false and bare stax prints the
-# diagnostic instead of attempting the browser. Explicitly unset both
-# env vars so this case is deterministic regardless of how the runner
-# happens to be configured.
+# /api/systems reads .stax/_data_systems.yaml from the running stax's
+# cwd. --cwd is the documented knob for pointing the server at a sibling
+# project without an explicit cd. Seed a registry under PROJ, spawn the
+# server with --cwd PROJ, and assert the JSON carries the seeded entry.
 
-# hasDesktopFor in browser.go returns true unconditionally on darwin
-# and windows (the OS-level `open` / `rundll32` launcher works in any
-# session there), so the "no desktop → skip launch" branch is only
-# reachable on Linux. Skip the assertion on other platforms; CI
-# (ubuntu-latest) still exercises it on every PR.
-if [ "$(uname -s)" = "Linux" ]; then
-  case_start "stax (bare, headless) prints no-desktop diagnostic"
-  reset_user_home
-  saved_display="${DISPLAY-}"
-  saved_wayland="${WAYLAND_DISPLAY-}"
-  unset DISPLAY WAYLAND_DISPLAY
-  run_capture ""
-  [ -n "$saved_display" ] && export DISPLAY="$saved_display"
-  [ -n "$saved_wayland" ] && export WAYLAND_DISPLAY="$saved_wayland"
-  assert_eq "exit 0" "$RUN_RC" "0"
-  assert_eq "no stdout" "$RUN_OUT" ""
-  assert_contains "no-desktop diagnostic" "$RUN_ERR" "no desktop environment detected"
-  assert_contains "hint at --no-browser"  "$RUN_ERR" "--no-browser"
-  assert_is_dir "lazy-bootstrap agents dir" "$HOME/${STAX_AGENTS_DIR}"
-fi
+case_start "stax --cwd <PROJ> serves /api/systems for that project"
+reset_user_home
+PROJ_API="$(fresh_project)"
+mkdir -p "$PROJ_API/${STAX_DIR}"
+printf 'systems:\n  - id: auth\n    name: Auth Service\n' \
+  > "$PROJ_API/${STAX_DIR}/${STAX_SYSTEMS_FILE}"
+bg_spawn_stax --no-browser --cwd "$PROJ_API"
+assert_eq "spawn succeeded" "$?" "0"
+systems_body="$(curl -fsS --max-time 1 "${STAX_SERVER_DISPLAY_URL}${STAX_API_SYSTEMS_PATH}")"
+assert_contains "systems id"   "$systems_body" '"id":"auth"'
+assert_contains "systems name" "$systems_body" '"name":"Auth Service"'
+bg_kill_stax
+
+# ---------- /api/systems on a directory with no project ----------
+#
+# Missing .stax/_data_systems.yaml is a normal state (no project here
+# yet). /api/systems MUST answer 200 with an empty array so a UI can
+# render a friendly empty state rather than an error toast.
+
+case_start "stax --cwd <not-a-project> serves /api/systems as empty list"
+reset_user_home
+NOPROJ="$(fresh_project)"
+bg_spawn_stax --no-browser --cwd "$NOPROJ"
+assert_eq "spawn succeeded" "$?" "0"
+systems_body="$(curl -fsS --max-time 1 "${STAX_SERVER_DISPLAY_URL}${STAX_API_SYSTEMS_PATH}")"
+assert_contains "empty systems list" "$systems_body" '"systems":[]'
+bg_kill_stax
 
 # ---------- --version (still prints notice for installer parsing) ----------
 #
@@ -469,7 +581,6 @@ run_capture "" -h
 assert_eq "exit 0" "$RUN_RC" "0"
 combined="${RUN_OUT}${RUN_ERR}"
 assert_contains "usage header"        "$combined" "Usage:"
-assert_contains "browser url listed"  "$combined" "https://google.com"
 assert_contains "no-browser listed"   "$combined" "--no-browser"
 assert_contains "post-install listed" "$combined" "stax post-install"
 assert_contains "init listed"         "$combined" "stax init"
@@ -481,6 +592,13 @@ assert_contains "plan list"           "$combined" "stax plans list"
 assert_contains "plan lint"           "$combined" "stax plans lint"
 assert_contains "plan slugify"        "$combined" "stax plans slugify"
 assert_contains "version listed"      "$combined" "stax --version"
+assert_contains "cwd flag listed"     "$combined" "--cwd <path>"
+# Help text MUST NOT leak server internals — the HTTP routes and the
+# listen URL are implementation details behind the web UI, not user
+# surfaces.
+assert_not_contains "no api hello leak"   "$combined" "$STAX_API_HELLO_PATH"
+assert_not_contains "no api systems leak" "$combined" "$STAX_API_SYSTEMS_PATH"
+assert_not_contains "no listen url leak"  "$combined" "$STAX_SERVER_DISPLAY_URL"
 
 # ---------- bootstrap is no longer a callable subcommand ----------
 
@@ -1465,16 +1583,22 @@ assert_contains "tweaked command kept" "$TWEAKED_BODY" 'stax plans lint --verbos
 # first run survive subsequent bare invocations *until* the 24h refresh
 # fires (covered by the next case). Without a .config.json present,
 # maybeNotifyUpdate returns early and the refresh never runs.
+#
+# `--version` is the seed-and-exit driver these cases reach for now that
+# bare `stax` / `stax --no-browser` block on the loopback server.
+# --version fires ensureBundledAgents AND maybeNotifyUpdate but exits
+# cleanly after printing the notice — same code coverage, no need for
+# the bg_spawn_stax dance.
 
 case_start "lazy first-run write leaves foreign content under \$HOME/${STAX_AGENTS_DIR} alone"
 reset_user_home
-run_capture "" --no-browser
+run_capture "" --version
 assert_is_dir "agents dir exists" "$HOME/${STAX_AGENTS_DIR}"
 echo "USER" > "$HOME/${STAX_AGENTS_DIR}/USER-NOTE.md"
 mkdir -p "$HOME/${STAX_AGENTS_DIR}/my-private-skill"
 echo "USER" > "$HOME/${STAX_AGENTS_DIR}/my-private-skill/SKILL.md"
-# --no-browser with no .config.json → no update check → no refresh.
-run_capture "" --no-browser
+# --version with no .config.json → no update check → no refresh.
+run_capture "" --version
 assert_is_file "user file survives without 24h refresh" \
   "$HOME/${STAX_AGENTS_DIR}/USER-NOTE.md"
 assert_is_file "user skill survives without 24h refresh" \
@@ -1486,7 +1610,7 @@ case_start "24h update check rewrites bundled agents tree"
 reset_user_home
 PROJ_REF="$(fresh_project)"
 # 1) Lazy first-run write seeds the agents tree.
-run_capture "" --no-browser
+run_capture "" --version
 assert_is_dir "agents tree seeded" "$HOME/${STAX_AGENTS_DIR}"
 # 2) Install project skills so we can verify the refresh DOESN'T touch them.
 cd "$PROJ_REF"
@@ -1498,8 +1622,8 @@ echo "STALE" > "$HOME/${STAX_AGENTS_DIR}/STALE.md"
 #    binary's stamped version is recorded so no upgrade nudge fires.
 echo "{\"version\":\"${E2E_VERSION}\",\"last_checked\":0}" \
   > "$HOME/${STAX_DIR}/${STAX_CONFIG_FILE}"
-# 5) --no-browser fires the update check → writeBundledAgents(true).
-run_capture "" --no-browser
+# 5) --version fires the update check → writeBundledAgents(true).
+run_capture "" --version
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_absent "stale file wiped by 24h refresh" "$HOME/${STAX_AGENTS_DIR}/STALE.md"
 assert_is_dir "bundled skill present after refresh" \
@@ -1509,8 +1633,8 @@ assert_is_file "project-local file untouched by global refresh" \
   "$PROJ_REF/${CLAUDE_SKILLS_REL}/${SKILL_SHIP_DIR}/PROJECT-LOCAL"
 # 7) last_checked got bumped → a second back-to-back run does NOT refresh.
 echo "POST" > "$HOME/${STAX_AGENTS_DIR}/POST.md"
-run_capture "" --no-browser
-assert_is_file "post-check sentinel survives next --no-browser run" \
+run_capture "" --version
+assert_is_file "post-check sentinel survives next --version run" \
   "$HOME/${STAX_AGENTS_DIR}/POST.md"
 
 # ---------- isolation: init --scope user keeps foreign $HOME content ----------
@@ -1591,9 +1715,9 @@ assert_is_symlink "user-scope bundled still symlinked" "$HOME/${CLAUDE_SKILLS_RE
 case_start "skill remove --user is a silent no-op when nothing is installed"
 reset_user_home
 # Trigger the lazy first-run write of ~/${STAX_DIR}/agents/ via
-# --no-browser (bare stax would pop a window on a desktop session), then
-# wipe the install dirs so skill remove has nothing to do.
-run_capture "" --no-browser
+# --version (bare stax now blocks on the loopback server), then wipe
+# the install dirs so skill remove has nothing to do.
+run_capture "" --version
 rm -rf "$HOME/${CLAUDE_CONFIG_REL}" "$HOME/${CODEX_SKILLS_PARENT}" "$HOME/${CODEX_CONFIG_REL}" "$HOME/${OPENCODE_SKILLS_PARENT}"
 run_capture "" skills remove --user
 assert_eq "exit 0 on empty state" "$RUN_RC" "0"
@@ -1618,9 +1742,9 @@ assert_contains "summary line" "$RUN_OUT" "Removed 0"
 
 # ---------- idempotency: re-running has zero net effect ----------
 
-case_start "stax --no-browser is idempotent (no re-bootstrap)"
+case_start "stax --version is idempotent (no re-bootstrap)"
 reset_user_home
-run_capture "" --no-browser
+run_capture "" --version
 sentinel_path="$HOME/${STAX_AGENTS_SKILLS_DIR}/${SKILL_SHIP_DIR}/SKILL.md"
 # stat is non-portable: BSD/macOS uses `-f %m`, GNU/Linux uses `-c %Y`. The
 # prior `stat -f %m … || stat -c %Y …` form looked clever but broke on Linux
@@ -1637,7 +1761,7 @@ read_mtime() {
 }
 first_mtime="$(read_mtime "$sentinel_path")"
 sleep 1
-run_capture "" --no-browser
+run_capture "" --version
 second_mtime="$(read_mtime "$sentinel_path")"
 assert_eq "mtime unchanged across runs" "$first_mtime" "$second_mtime"
 
@@ -1695,9 +1819,9 @@ assert_is_dir "init materialized agents" "$HOME/${STAX_AGENTS_SKILLS_DIR}/${SKIL
 
 # ---------- stream discipline: stdout vs stderr ----------
 
-case_start "stax --no-browser writes nothing to stderr"
+case_start "stax --version writes nothing to stderr on a clean run"
 reset_user_home
-run_capture "" --no-browser
+run_capture "" --version
 [ -z "$RUN_ERR" ] && ok "stderr empty" || fail "stderr empty" "got: $RUN_ERR"
 
 case_start "init --scope project writes progress to stdout, not stderr"
@@ -1754,8 +1878,8 @@ printf '\n<!-- e2e sentinel: PROJECT-EDITED -->\n' >> "$sentinel_doc"
 # Backdate .config.json so the next stax invocation fires the 24h refresh.
 echo "{\"version\":\"${E2E_VERSION}\",\"last_checked\":0}" \
   > "$HOME/${STAX_DIR}/${STAX_CONFIG_FILE}"
-run_capture "" --no-browser
-assert_eq "--no-browser exit 0" "$RUN_RC" "0"
+run_capture "" --version
+assert_eq "--version exit 0" "$RUN_RC" "0"
 # Project copy must still contain the sentinel.
 project_body="$(cat "$sentinel_doc")"
 assert_contains "project sentinel survives refresh" "$project_body" "PROJECT-EDITED"

@@ -530,3 +530,47 @@ func assertHookUnmergeResult(t *testing.T, home string, target *agentTarget, fna
 		t.Fatalf("%s: surviving matcher = %q, want Bash", target.key, m)
 	}
 }
+
+// TestRunSkillsRemove_CwdFlag_TargetsRequestedProject exercises the
+// end-to-end --cwd path for the project-scope wipe: start in an "outer"
+// dir with no scaffold, point --cwd at a separately-seeded project, and
+// confirm the wipe lands inside the target (skill dir removed) — not in
+// the outer dir, which never had a scaffold. This is the contract that
+// lets scripted callers from elsewhere on the filesystem clean a sibling
+// project without `cd`-ing first.
+func TestRunSkillsRemove_CwdFlag_TargetsRequestedProject(t *testing.T) {
+	pinHome(t)
+	outer := t.TempDir()
+	chdir(t, outer)
+
+	target := t.TempDir()
+	seedProject(t, target)
+	// Drop one stax-owned skill inside the target project so the wipe has
+	// something to remove. Use the Claude skills dir — the registry row
+	// uses skillsRel both at project AND user scope.
+	claudeSkills := agentByKey("claude").skillsRel
+	skillPath := filepath.Join(target, claudeSkills, skillShipDir)
+	if err := os.MkdirAll(skillPath, 0o700); err != nil {
+		t.Fatalf("seed skill: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(skillPath, skillManifestFile), []byte("seed"), 0o600); err != nil {
+		t.Fatalf("seed manifest: %v", err)
+	}
+
+	runSkillsRemove([]string{"--project", "--cwd", target})
+
+	// Owned skill must be gone under target.
+	if _, err := os.Stat(skillPath); !os.IsNotExist(err) {
+		t.Fatalf("expected skill removed under --cwd target, stat err = %v", err)
+	}
+	// Outer dir never had a scaffold; it must remain untouched.
+	if _, err := os.Stat(filepath.Join(outer, claudeSkills)); !os.IsNotExist(err) {
+		t.Fatalf("outer dir was touched; --cwd was ignored: err=%v", err)
+	}
+}
+
+// Bad-path coverage for the skills-remove --cwd surface lives in the
+// applyCwd unit tests in init_test.go: runSkillsRemove routes a missing
+// or non-directory --cwd value through the shared applyCwd → exitErr
+// pair, and the unit tests there exercise both rejection branches
+// (missing path, regular file) directly without spinning a subprocess.

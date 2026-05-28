@@ -96,6 +96,15 @@ Set-Variable -Option Constant -Name OPENCODE_SKILLS_REL         -Value '.opencod
 Set-Variable -Option Constant -Name PI_SKILLS_REL               -Value '.agents\skills'
 Set-Variable -Option Constant -Name ZED_SKILLS_REL              -Value '.agents\skills'
 
+# Local-server constants — mirrors of serverListenAddr / serverDisplayURL
+# / apiHelloPath / apiSystemsPath in constants.go. Bare `stax` starts an
+# HTTP listener on serverListenAddr; the Windows e2e spawns it in the
+# background and probes these paths the same way the bash harness does.
+Set-Variable -Option Constant -Name STAX_SERVER_LISTEN_ADDR -Value '127.0.0.1:7829'
+Set-Variable -Option Constant -Name STAX_SERVER_DISPLAY_URL -Value 'http://127.0.0.1:7829'
+Set-Variable -Option Constant -Name STAX_API_HELLO_PATH     -Value '/api/hello'
+Set-Variable -Option Constant -Name STAX_API_SYSTEMS_PATH   -Value '/api/systems'
+
 # Bundled config filenames (not constants in Go; pinned here for assertions).
 Set-Variable -Option Constant -Name CLAUDE_SETTINGS_FILE -Value 'settings.json'
 Set-Variable -Option Constant -Name CODEX_HOOKS_FILE     -Value 'hooks.json'
@@ -381,6 +390,68 @@ function Invoke-XX {
 
 # ---------- project / home helpers ----------
 
+function Start-StaxServer {
+  param(
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$ExtraArgs = @()
+  )
+  # Bare `stax` blocks on the loopback HTTP server. Start it in the
+  # background, wait up to 5s for the port to start accepting requests
+  # (polled via /api/hello), then return the Process object so the
+  # caller can stop it. Captures stdout / stderr to per-process temp
+  # files for post-mortem assertions, and stashes their paths on the
+  # Process object for the caller to read.
+  $stdout = New-TemporaryFile
+  $stderr = New-TemporaryFile
+  $args = @($ExtraArgs)
+  $proc = Start-Process -FilePath $BuildBin -ArgumentList $args `
+    -NoNewWindow -PassThru `
+    -RedirectStandardOutput $stdout.FullName `
+    -RedirectStandardError  $stderr.FullName
+  Add-Member -InputObject $proc -NotePropertyName StaxStdout -NotePropertyValue $stdout.FullName -Force
+  Add-Member -InputObject $proc -NotePropertyName StaxStderr -NotePropertyValue $stderr.FullName -Force
+  $deadline = (Get-Date).AddSeconds(5)
+  while ((Get-Date) -lt $deadline) {
+    if ($proc.HasExited) {
+      $out = Get-Content -LiteralPath $stdout.FullName -Raw -ErrorAction SilentlyContinue
+      $err = Get-Content -LiteralPath $stderr.FullName -Raw -ErrorAction SilentlyContinue
+      throw "stax background process exited before listening (rc=$($proc.ExitCode))`nstdout: $out`nstderr: $err"
+    }
+    try {
+      $null = Invoke-WebRequest -Uri "$STAX_SERVER_DISPLAY_URL$STAX_API_HELLO_PATH" `
+        -TimeoutSec 1 -UseBasicParsing -ErrorAction Stop
+      return $proc
+    } catch {
+      Start-Sleep -Milliseconds 100
+    }
+  }
+  Stop-StaxServer -Process $proc
+  throw "stax server never started listening on $STAX_SERVER_DISPLAY_URL"
+}
+
+function Stop-StaxServer {
+  param(
+    [Parameter(Mandatory)][System.Diagnostics.Process]$Process
+  )
+  # SIGTERM-equivalent on Windows is Process.CloseMainWindow (graceful) or
+  # Kill (hard). The Go server's signal.Notify catches os.Interrupt — which
+  # the PowerShell `Stop-Process` (TerminateProcess under the hood) does
+  # NOT translate into. To exercise graceful shutdown reliably we'd need
+  # to attach to a console and send Ctrl-C; for the test we just hard-kill
+  # so the process always reaps. The handlers don't hold persistent state,
+  # so a kill is safe.
+  if (-not $Process.HasExited) {
+    try { $Process.Kill() } catch {}
+  }
+  $Process.WaitForExit()
+  if ($Process.PSObject.Properties.Match('StaxStdout').Count -gt 0) {
+    Remove-Item -LiteralPath $Process.StaxStdout -ErrorAction SilentlyContinue
+  }
+  if ($Process.PSObject.Properties.Match('StaxStderr').Count -gt 0) {
+    Remove-Item -LiteralPath $Process.StaxStderr -ErrorAction SilentlyContinue
+  }
+}
+
 function Reset-UserHome {
   if (Test-Path -LiteralPath $SandboxHome) {
     Get-ChildItem -Recurse -Force -LiteralPath $SandboxHome -ErrorAction SilentlyContinue |
@@ -534,25 +605,69 @@ Assert-IsFile  'stax SKILL.md'    (Join-Path $env:USERPROFILE (Join-Path $STAX_A
 Assert-IsFile  'scope SKILL.md' (Join-Path $env:USERPROFILE (Join-Path $STAX_AGENTS_SKILLS_DIR (Join-Path $SKILL_SCOPE_DIR $SKILL_MANIFEST_FILE)))
 Assert-NotExists 'embed README skipped from disk' (Join-Path $env:USERPROFILE (Join-Path $STAX_AGENTS_DIR 'README.md'))
 
-# Bare `stax` on Windows would attempt to open the OS-default browser via
-# `rundll32 url.dll,FileProtocolHandler https://google.com`. CI runners
-# don't want browser windows spawning mid-test, so every Windows e2e
-# case that previously exercised bare stax now uses --no-browser, which
-# branches to the same seed-and-exit path as `post-install`.
+# Bare `stax` on Windows now launches a loopback HTTP server on
+# 127.0.0.1:7829 instead of opening the OS-default browser. CI runners
+# don't want browser windows spawning mid-test, so cases that exercise
+# the server pass --no-browser (which keeps the server running but
+# suppresses the rundll32 handoff). For the idempotency / lazy-bootstrap
+# cases that don't care about the listener we use --version: it fires
+# ensureBundledAgents + maybeNotifyUpdate and exits cleanly.
 
-Start-Case 'stax --no-browser seeds agents silently'
+Start-Case 'stax --no-browser starts the loopback API server'
 Reset-UserHome
-Invoke-XX --no-browser
-Assert-Eq      'exit 0'    $RunRC 0
-Assert-Eq      'no stdout' $RunOut ''
-Assert-Eq      'no stderr' $RunErr ''
-Assert-IsDir   'agents tree present' (Join-Path $env:USERPROFILE $STAX_AGENTS_DIR)
+$srv = Start-StaxServer --no-browser
+try {
+  $resp = Invoke-WebRequest -Uri "$STAX_SERVER_DISPLAY_URL$STAX_API_HELLO_PATH" -TimeoutSec 1 -UseBasicParsing
+  Assert-Eq       'hello status 200' $resp.StatusCode 200
+  Assert-Contains 'hello message'    $resp.Content '"message":"hello"'
+  Assert-Contains 'hello version'    $resp.Content "`"version`":`"$E2E_VERSION`""
+  $banner = Get-Content -LiteralPath $srv.StaxStdout -Raw
+  Assert-Contains 'listening banner' $banner $STAX_SERVER_DISPLAY_URL
+  Assert-Contains 'ctrl-c hint'      $banner 'Ctrl-C'
+  $errOut = Get-Content -LiteralPath $srv.StaxStderr -Raw -ErrorAction SilentlyContinue
+  if ($null -eq $errOut) { $errOut = '' }
+  Assert-NotContains 'no browser warning' $errOut 'could not open browser'
+} finally {
+  Stop-StaxServer -Process $srv
+}
+Assert-IsDir 'lazy-bootstrap agents tree present' (Join-Path $env:USERPROFILE $STAX_AGENTS_DIR)
 
-Start-Case 'stax --no-browser is idempotent (second run does not re-bootstrap)'
+Start-Case 'stax --cwd <PROJ> serves /api/systems for that project'
+Reset-UserHome
+$projApi = New-FreshProject
+New-Item -ItemType Directory -Force -Path (Join-Path $projApi $STAX_DIR) | Out-Null
+$registry = "systems:`n  - id: auth`n    name: Auth Service`n"
+Set-Content -LiteralPath (Join-Path (Join-Path $projApi $STAX_DIR) $STAX_SYSTEMS_FILE) -Value $registry -Encoding ascii
+$srv = Start-StaxServer --no-browser --cwd $projApi
+try {
+  $resp = Invoke-WebRequest -Uri "$STAX_SERVER_DISPLAY_URL$STAX_API_SYSTEMS_PATH" -TimeoutSec 1 -UseBasicParsing
+  Assert-Eq       'systems status 200' $resp.StatusCode 200
+  Assert-Contains 'systems id'          $resp.Content '"id":"auth"'
+  Assert-Contains 'systems name'        $resp.Content '"name":"Auth Service"'
+} finally {
+  Stop-StaxServer -Process $srv
+}
+
+Start-Case 'stax --cwd <not-a-project> serves /api/systems as empty list'
+Reset-UserHome
+$noProjApi = New-FreshProject
+$srv = Start-StaxServer --no-browser --cwd $noProjApi
+try {
+  $resp = Invoke-WebRequest -Uri "$STAX_SERVER_DISPLAY_URL$STAX_API_SYSTEMS_PATH" -TimeoutSec 1 -UseBasicParsing
+  Assert-Eq       'systems status 200'  $resp.StatusCode 200
+  Assert-Contains 'empty systems list'  $resp.Content '"systems":[]'
+} finally {
+  Stop-StaxServer -Process $srv
+}
+
+Start-Case 'stax --version is idempotent (second run does not re-bootstrap)'
+Reset-UserHome
+Invoke-XX --version
+Assert-Eq    'first --version exit 0' $RunRC 0
 $sentinel = Join-Path $env:USERPROFILE (Join-Path $STAX_AGENTS_SKILLS_DIR (Join-Path $SKILL_SHIP_DIR $SKILL_MANIFEST_FILE))
 $firstMtime = (Get-Item -LiteralPath $sentinel).LastWriteTimeUtc
 Start-Sleep -Seconds 1
-Invoke-XX --no-browser
+Invoke-XX --version
 $secondMtime = (Get-Item -LiteralPath $sentinel).LastWriteTimeUtc
 Assert-Eq 'mtime unchanged across runs' $firstMtime $secondMtime
 
@@ -569,7 +684,6 @@ Start-Case 'stax -h prints the usage block'
 Invoke-XX -h
 Assert-Eq       'exit 0'                       $RunRC 0
 Assert-Contains 'usage header'                 $RunOut 'Usage:'
-Assert-Contains 'browser url listed'           $RunOut 'https://google.com'
 Assert-Contains 'no-browser listed'            $RunOut '--no-browser'
 Assert-Contains 'post-install listed'          $RunOut 'stax post-install'
 Assert-Contains 'init listed'                  $RunOut 'stax init'
@@ -579,6 +693,13 @@ Assert-Contains 'plans next-prefix listed'     $RunOut 'stax plans next-prefix'
 Assert-Contains 'plans list listed'            $RunOut 'stax plans list'
 Assert-Contains 'plans lint listed'            $RunOut 'stax plans lint'
 Assert-Contains 'plans slugify listed'         $RunOut 'stax plans slugify'
+Assert-Contains 'cwd flag listed'              $RunOut '--cwd <path>'
+# Help text MUST NOT leak server internals — the HTTP routes and the
+# listen URL are implementation details behind the web UI, not user
+# surfaces.
+Assert-NotContains 'no api hello leak'         $RunOut $STAX_API_HELLO_PATH
+Assert-NotContains 'no api systems leak'       $RunOut $STAX_API_SYSTEMS_PATH
+Assert-NotContains 'no listen url leak'        $RunOut $STAX_SERVER_DISPLAY_URL
 
 Start-Case 'unknown subcommand exits 2 with diagnostic'
 Invoke-XX frobnicate
@@ -3261,14 +3382,14 @@ Assert-Contains 'diagnostic' $RunErr 'no slug-able characters'
 
 # ---------- Windows-specific: idempotent re-bootstrap of ~/.stax/agents ----------
 
-Start-Case 'stax --no-browser repopulates ~/.stax/agents/ when manually deleted'
+Start-Case 'stax --version repopulates ~/.stax/agents/ when manually deleted'
 Reset-UserHome
-Invoke-XX --no-browser
+Invoke-XX --version
 Assert-Eq    'first run exit 0' $RunRC 0
 Assert-IsDir 'agents dir present' (Join-Path $env:USERPROFILE $STAX_AGENTS_DIR)
 Remove-Item -Recurse -Force -LiteralPath (Join-Path $env:USERPROFILE $STAX_AGENTS_DIR)
 Assert-NotExists 'agents dir manually deleted' (Join-Path $env:USERPROFILE $STAX_AGENTS_DIR)
-Invoke-XX --no-browser
+Invoke-XX --version
 Assert-Eq    'second run exit 0' $RunRC 0
 Assert-IsDir 'agents dir restored' (Join-Path $env:USERPROFILE $STAX_AGENTS_DIR)
 foreach ($skill in $OWNED_SKILLS) {
@@ -3402,25 +3523,28 @@ if ($wroteLong) {
   Write-Skip 'long-path file creation failed; LongPathsEnabled likely off (registry)'
 }
 
-# ---------- Windows-specific: --version and bare stax have DIFFERENT contracts ----------
+# ---------- Windows-specific: --version vs bare stax have DIFFERENT contracts ----------
 #
-# Until the browser-default landed, bare `stax` and `stax --version` shared
-# runDefault and produced identical notice output. They've since split:
-# --version still prints the installer-parseable notice, while bare stax
-# opens defaultBrowserURL (or, with --no-browser, exits silently). Pin
-# the new divergence so a future refactor that re-unifies them is caught.
+# `--version` is the seed-and-exit driver: prints the installer-parseable
+# notice on stdout and returns. Bare `stax` (and `stax --no-browser`)
+# launches the loopback HTTP server and blocks on the listener — the
+# captured stdout starts with the "listening on …" banner, not the
+# version notice. Pin the divergence so a future refactor that re-unifies
+# them is caught.
 
-Start-Case 'stax --version output differs from stax --no-browser'
+Start-Case 'stax --version differs from the bare-stax server banner'
 Reset-UserHome
-Invoke-XX --no-browser
-$silentOut = $RunOut
 Invoke-XX --version
-Assert-Contains '--version still prints notice'   $RunOut 'Stax by Stackific'
-Assert-Eq       '--no-browser stdout is empty'    $silentOut ''
-if ($RunOut -eq $silentOut) {
-  Write-Fail 'contracts diverge' '--version and --no-browser produced identical output; the split has regressed'
-} else {
-  Write-Pass 'contracts diverge'
+$versionOut = $RunOut
+$srv = Start-StaxServer --no-browser
+try {
+  $serverBanner = Get-Content -LiteralPath $srv.StaxStdout -Raw
+  Assert-Contains '--version prints notice'             $versionOut 'Stax by Stackific'
+  Assert-NotContains '--version is not the server banner' $versionOut $STAX_SERVER_DISPLAY_URL
+  Assert-Contains 'server prints listening banner'      $serverBanner $STAX_SERVER_DISPLAY_URL
+  Assert-NotContains 'server is not the version notice' $serverBanner 'Stax by Stackific'
+} finally {
+  Stop-StaxServer -Process $srv
 }
 
 # ==========================================================================

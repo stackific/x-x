@@ -473,3 +473,43 @@ const (
 	installShURL  = "https://stackific.com/stax/INSTALL.sh"
 	installPS1URL = "https://stackific.com/stax/INSTALL.ps1"
 )
+
+// Local-server settings — read by runServer / runDefault. The listen
+// address is pinned to the loopback interface so the server never
+// accepts connections from elsewhere on the network: this is a per-user
+// CLI assistant, not a shared service. Port 7829 is the documented
+// bare-stax port (advertised in docs/public/reference.md and the
+// `stax -h` panel) — colliding with an already-running stax server
+// fails the bind fast with a clear "address already in use" error.
+const (
+	// serverListenAddr is the host:port the bare-stax HTTP server binds.
+	// Loopback-only by design; never bind 0.0.0.0 here without a deliberate
+	// security review.
+	serverListenAddr = "127.0.0.1:7829"
+
+	// serverDisplayURL is the http:// URL printed to the user and handed
+	// off to the OS-default browser. Composed from serverListenAddr so a
+	// future port change is a one-line edit.
+	serverDisplayURL = "http://" + serverListenAddr
+
+	// serverReadHeaderTimeout caps how long the server will wait for a
+	// client's request headers. Short, fixed value because the server
+	// serves only its own narrow API (no slow-client uploads); a hung
+	// client must not pin a goroutine indefinitely.
+	serverReadHeaderTimeout = 5 * time.Second
+
+	// serverShutdownTimeout bounds the graceful-shutdown wait after
+	// SIGINT/SIGTERM. Five seconds is plenty for the in-flight handlers
+	// (a JSON encode and a YAML walk) to drain; longer would make
+	// Ctrl-C feel sluggish on a hung handler.
+	serverShutdownTimeout = 5 * time.Second
+)
+
+// API path constants. Surfaced as named constants so the handler
+// registration (server.go) and the e2e probes (scripts/e2e_test.sh)
+// can both reference one source of truth — renaming an endpoint is
+// then a one-line edit here plus the mirror in the shell harness.
+const (
+	apiHelloPath   = "/api/hello"
+	apiSystemsPath = "/api/systems"
+)
