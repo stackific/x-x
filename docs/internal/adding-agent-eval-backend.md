@@ -17,13 +17,19 @@ section below maps to something already shipped there.
   `manual-claude-judge-user-scope.yml` (user scope). They share the
   same pytest scenarios and differ only in the `X_X_INSTALL_SCOPE`
   env var.
-- Four pytest scenarios under `skills-evals/tests/`:
-  - `test_stream_json_smoke.py` — format-check on the protocol (runs first)
+- Four pytest scenarios under `skills-evals/tests/` per agent. The
+  filename pattern is `test_<agent>_<scenario>.py`; the conftest's
+  `pytest_collection_modifyitems` reads `X_X_AGENT_KEY` (default
+  `claude`) and deselects every file that doesn't match the active
+  agent, so a session runs exactly one backend's collection without
+  cross-contamination. Claude's set today:
+  - `test_claude_stream_json_smoke.py` — shape-check on the wire (runs first)
   - `test_claude_plan_extends.py` — bidirectional `extends:` /
     `extended_by:` link mechanic, planner only
   - `test_claude_reminders_supersedes_todo.py` — full e2e with
     supersedes mechanic + artifact verification
   - `test_claude_todo.py` — original single-plan baseline
+  OpenCode ships the same four scenarios under `test_opencode_*.py`.
 - Two DeepEval `GEval` judges backed by DeepSeek-flash:
   `PlanJudge` (plan-file validity) and `ArtifactJudge` (produced
   artifact correctness).

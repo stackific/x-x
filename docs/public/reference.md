@@ -24,17 +24,17 @@ Running `x-x` with no arguments prints the about banner and command list. Use on
 
 Installs every bundled skill into the locations each agent looks for, then seeds the project's `.x-plans/` scaffold. Five questions run in order; when stdin is a terminal with arrow-key select / multiselect and Shift+Tab back-navigation, so you can revise an earlier answer before submitting the final group. When stdin is piped or redirected, the same questions fall back to line-by-line prompts (which the CI test harness exercises).
 
-1. **Which agents?** Multi-select over every registered agent (Claude Code, Codex CLI today). Blank line / no toggle accepts the default (all agents).
+1. **Which agents?** Multi-select over every registered agent (Claude Code, Codex CLI, OpenCode today). Blank line / no toggle accepts the default (all agents).
 2. **Which scope?** Decides where the bundled SKILLS land. Either way, `.x-plans/` is seeded in the current working directory — that's how the project marker check (`./.x-plans/_config.lock`) recognizes the directory as an x-x project.
-   - **This project only** — skills under the current working directory (`.claude/skills/`, `.agents/skills/`).
-   - **All my projects (user scope)** — skills under `$HOME` (`~/.claude/skills/`, `~/.agents/skills/`).
+   - **This project only** — skills under the current working directory (`.claude/skills/`, `.agents/skills/`, `.opencode/commands/`).
+   - **All my projects (user scope)** — skills under `$HOME` (`~/.claude/skills/`, `~/.agents/skills/`, `~/.opencode/commands/`).
 3. **Prefix width for plan files** — zero-padded width for plan filenames (e.g. width `4` → `0001-foo.md`). Default: `4`.
 4. **Maximum lines per plan** — cap enforced by `x-x plans lint`. Keeps AI agents on a short leash: forces them to split sprawling work into smaller, reviewable plans. Default: `30`.
 5. **Pause for review after every…** — `task` reviews each EARS criterion as the planner finishes it (tight loop, more interruptions); `plan` reviews only at plan boundaries (looser loop, larger diffs). Default: `task`.
 
 Every prompt has a non-interactive flag twin — pass any subset to skip the matching prompt, or pass all five to drive `init` end-to-end without reading stdin at all (CI / scripted installs):
 
-- `--agents claude,codex` — comma-separated agent keys (repeatable). Skips the agent picker.
+- `--agents claude,codex,opencode` — comma-separated agent keys (repeatable). Skips the agent picker. Recognized keys: `claude` (Claude Code), `codex` (Codex CLI), `opencode` (OpenCode). OpenCode resolves slash commands from `.opencode/{command,commands}/**/*.md` (project) and `~/.config/opencode/commands/` (user), keyed off the file's frontmatter `name:`; `x-x init` writes the bundled SKILL.md tree to `.opencode/commands/<skill>/SKILL.md` / `~/.opencode/commands/<skill>/SKILL.md` so each skill registers as both a TUI slash command and an `opencode run --command <skill>` headless invocation (sst/opencode PR #2348).
 - `--scope project|user` — skips the scope prompt.
 - `--prefix-width N` — positive integer; seeds `prefix_width` in `_config.lock`.
 - `--max-plan-lines N` — positive integer; seeds `max_plan_lines` in `_config.lock`.

@@ -48,10 +48,16 @@ readonly CLAUDE_SKILLS_REL=".claude/skills"       # agentTargets[0].skillsRel
 readonly CLAUDE_CONFIG_REL=".claude"              # agentTargets[0].configRel
 readonly CODEX_SKILLS_REL=".agents/skills"        # agentTargets[1].skillsRel
 readonly CODEX_CONFIG_REL=".codex"                # agentTargets[1].configRel
+readonly OPENCODE_SKILLS_REL=".opencode/commands" # agentTargets[2].skillsRel
+# OpenCode currently ships no per-agent config (configSrc / configRel are
+# empty), so no OPENCODE_CONFIG_REL mirror is needed.
 # Parent of CODEX_SKILLS_REL — used by isolation cases that seed sibling
 # files alongside the Codex skills dir. Derived (not a Go constant) to
 # avoid drift if agentTargets[1].skillsRel ever moves.
 readonly CODEX_SKILLS_PARENT="${CODEX_SKILLS_REL%/*}"
+# Parent of OPENCODE_SKILLS_REL — used by reset_user_home to wipe the
+# whole .opencode/ tree between cases. Derived for the same drift reason.
+readonly OPENCODE_SKILLS_PARENT="${OPENCODE_SKILLS_REL%/*}"
 
 # Bundle-provided config filenames (agents/<configSrc>/* in the embed). Not
 # named in constants.go (the embed tree is the source) but pinned here
@@ -165,6 +171,7 @@ reset_user_home() {
   rm -rf "$HOME/${CLAUDE_CONFIG_REL}" \
          "$HOME/${CODEX_CONFIG_REL}" \
          "$HOME/${CODEX_SKILLS_PARENT}" \
+         "$HOME/${OPENCODE_SKILLS_PARENT}" \
          "$HOME/${XX_HOME_DIR}"
 }
 
@@ -579,6 +586,26 @@ run_capture "" init --agents=claude,codex --scope=project
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_is_dir "claude installed" "$PROJ_AB/${CLAUDE_SKILLS_REL}/${SKILL_X_X_DIR}"
 assert_is_dir "codex installed"  "$PROJ_AB/${CODEX_SKILLS_REL}/${SKILL_X_X_DIR}"
+
+case_start "x-x init --agents=opencode installs only OpenCode"
+reset_user_home
+PROJ_AO="$(fresh_project)"
+cd "$PROJ_AO"
+run_capture "" init --agents=opencode --scope=project
+assert_eq "exit 0" "$RUN_RC" "0"
+assert_is_dir "opencode installed" "$PROJ_AO/${OPENCODE_SKILLS_REL}/${SKILL_X_X_DIR}"
+assert_absent "claude NOT installed" "$PROJ_AO/${CLAUDE_SKILLS_REL}"
+assert_absent "codex NOT installed"  "$PROJ_AO/${CODEX_SKILLS_REL}"
+
+case_start "x-x init --agents=claude,codex,opencode (all three)"
+reset_user_home
+PROJ_AT="$(fresh_project)"
+cd "$PROJ_AT"
+run_capture "" init --agents=claude,codex,opencode --scope=project
+assert_eq "exit 0" "$RUN_RC" "0"
+assert_is_dir "claude installed"   "$PROJ_AT/${CLAUDE_SKILLS_REL}/${SKILL_X_X_DIR}"
+assert_is_dir "codex installed"    "$PROJ_AT/${CODEX_SKILLS_REL}/${SKILL_X_X_DIR}"
+assert_is_dir "opencode installed" "$PROJ_AT/${OPENCODE_SKILLS_REL}/${SKILL_X_X_DIR}"
 
 case_start "x-x init --agents=invalid rejects unknown agent"
 reset_user_home
@@ -1203,7 +1230,7 @@ reset_user_home
 # Trigger the lazy first-run write of ~/${XX_HOME_DIR}/agents/ via bare
 # x-x, then wipe the install dirs so skill remove has nothing to do.
 run_capture "" >/dev/null
-rm -rf "$HOME/${CLAUDE_CONFIG_REL}" "$HOME/${CODEX_SKILLS_PARENT}" "$HOME/${CODEX_CONFIG_REL}"
+rm -rf "$HOME/${CLAUDE_CONFIG_REL}" "$HOME/${CODEX_SKILLS_PARENT}" "$HOME/${CODEX_CONFIG_REL}" "$HOME/${OPENCODE_SKILLS_PARENT}"
 run_capture "" skills remove --user
 assert_eq "exit 0 on empty state" "$RUN_RC" "0"
 assert_contains "summary line" "$RUN_OUT" "Removed 0"

@@ -120,6 +120,18 @@ var agentTargets = []agentTarget{
 	// config.toml, etc.) still lives under .codex/ — see Codex docs:
 	// https://developers.openai.com/codex/hooks for the lookup order.
 	{"codex", "Codex CLI", ".agents/skills", "codex", ".codex"},
+	// OpenCode resolves slash commands from `.opencode/{command,commands}/**/*.md`
+	// at project scope and `~/.config/opencode/commands/` at user scope.
+	// The lookup keys off the file's frontmatter `name:` (the path-derived
+	// fallback is used only when frontmatter omits `name:`), so an x-x
+	// install at `.opencode/commands/x-plan/SKILL.md` with `name: x-plan`
+	// registers a command callable as both `/x-plan` in the TUI and
+	// `opencode run --command x-plan ...` from the CLI (sst/opencode
+	// PR #2348). The bundled tree shape (`<command>/SKILL.md` rather than
+	// flat `<command>.md`) matches Claude/Codex for parity across agents.
+	// No per-agent config is bundled for OpenCode yet (auth + provider
+	// routing live outside the install scope, in `~/.local/share/opencode/`).
+	{"opencode", "OpenCode", ".opencode/commands", "", ""},
 }
 
 // skillsSubdir is the directory inside ~/.x-x/agents/ that holds the
