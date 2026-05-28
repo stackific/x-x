@@ -258,6 +258,21 @@ details.surface-variant a[target="_blank"] {
   }
 }
 
+// -- Honor the [hidden] attribute over class-based display -------
+// BeerCSS sets `display: flex` on `.row` and similar layout
+// classes, which beats the user-agent stylesheet's
+// `[hidden] { display: none }` whenever both apply (matching
+// specificity, but class-based wins because it comes later).
+// Restore the expected behavior with !important so any element
+// carrying the `hidden` attribute is collapsed regardless of which
+// layout class it also wears — used by the /scope page's
+// `#scope-superseded-by-row`, which is `class="row … " hidden` and
+// must stay collapsed on plans that aren't actually superseded.
+
+[hidden] {
+  display: none !important;
+}
+
 // -- Screen-reader only ------------------------------------------
 
 .sr-only {
