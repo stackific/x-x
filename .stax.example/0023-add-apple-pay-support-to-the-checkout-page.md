@@ -1,6 +1,6 @@
 ---
 title: Add Apple Pay support to the checkout page
-status: valid
+status: deprecated
 systems: [billing]
 created: 2025-08-22T11:00:58Z
 ---

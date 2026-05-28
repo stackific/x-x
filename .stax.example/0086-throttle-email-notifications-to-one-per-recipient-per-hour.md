@@ -1,7 +1,8 @@
 ---
 title: Throttle email notifications to one per recipient per hour
-status: valid
+status: superseded
 systems: [notification-bus]
+superseded_by: [0089-add-quiet-hours-per-recipient-based-on-timezone]
 created: 2026-04-25T14:56:15Z
 ---
 
