@@ -1,6 +1,7 @@
 import { api } from "../shared/api";
 import { $, tpl } from "../shared/dom";
 import { relativeTime } from "../shared/relative-time";
+import { applyStatusClass } from "../shared/status";
 
 type Stats = { version: string; systems: number; scopes: number };
 
@@ -46,7 +47,9 @@ function renderLatestScopes(host: HTMLElement, scopes: Scope[]): void {
     if (card) card.href = `/scope?id=${encodeURIComponent(s.slug)}`;
     $('[data-slot="title"]', node).textContent = s.title || s.slug;
     $('[data-slot="created"]', node).textContent = relativeTime(s.created);
-    $('[data-slot="status"]', node).textContent = s.status;
+    const statusEl = $<HTMLSpanElement>('[data-slot="status"]', node);
+    statusEl.textContent = s.status;
+    applyStatusClass(statusEl, s.status);
     renderSystems($<HTMLDivElement>('[data-slot="systems"]', node), s.systems);
     frag.appendChild(node);
   }

@@ -1,6 +1,7 @@
 import { api } from "../shared/api";
 import { $, tpl } from "../shared/dom";
 import { relativeTime } from "../shared/relative-time";
+import { applyStatusClass } from "../shared/status";
 
 // Mirrors the Go-side scopeListItem in server.go: one row per plan in
 // the project's .stax/ tree. systems carries the kebab-case ids the
@@ -57,6 +58,7 @@ function renderList(host: HTMLElement, scopes: Scope[]): void {
     const statusEl = $<HTMLSpanElement>('[data-slot="status"]', node);
     if (s.status) {
       statusEl.textContent = s.status;
+      applyStatusClass(statusEl, s.status);
     } else {
       statusEl.hidden = true;
     }

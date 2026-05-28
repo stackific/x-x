@@ -2,6 +2,7 @@ import { api } from "../shared/api";
 import { $, tpl } from "../shared/dom";
 import { qs as getQs } from "../shared/qs";
 import { relativeTime } from "../shared/relative-time";
+import { applyStatusClass } from "../shared/status";
 
 type Plan = {
   slug: string;
@@ -49,7 +50,9 @@ export async function system(): Promise<void> {
       const a = node.querySelector<HTMLAnchorElement>("a");
       if (a) a.href = `/scope?id=${encodeURIComponent(p.slug)}`;
       $('[data-slot="title"]', node).textContent = p.title;
-      $('[data-slot="status"]', node).textContent = p.status;
+      const statusEl = $<HTMLSpanElement>('[data-slot="status"]', node);
+      statusEl.textContent = p.status;
+      applyStatusClass(statusEl, p.status);
       $('[data-slot="created"]', node).textContent = relativeTime(p.created);
       frag.appendChild(node);
     }

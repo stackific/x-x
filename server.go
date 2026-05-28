@@ -163,25 +163,36 @@ type scopesListResponse struct {
 	Scopes []scopeListItem `json:"scopes"`
 }
 
+// scopeRelation is one row in the supersedes / supersededBy arrays on
+// the scopeDetail response. We surface both the slug (so the UI can
+// build a /scope?id=<slug> deep-link) AND the linked plan's title so
+// the rendered chip shows human text instead of a kebab filename.
+// title is read from the predecessor / successor plan's frontmatter
+// when readPlanRelations enriches the slug list — empty when the
+// linked file is missing or has no parseable title.
+type scopeRelation struct {
+	Slug  string `json:"slug"`
+	Title string `json:"title"`
+}
+
 // scopeDetail is the /api/scope?id=<slug> body: every frontmatter field
 // the detail view needs plus the markdown body pre-rendered to HTML
 // server-side (so the browser doesn't need its own markdown library).
 // systems carries the kebab-case ids exactly as parsed from
 // frontmatter, so the UI can compose /system?id=<id> links without
 // having to re-parse anything. supersedes / supersededBy mirror the
-// frontmatter relationship arrays — supersededBy is what the user
-// needs to see on a `status: superseded` plan ("you are looking at a
-// retired plan; the current one is over here"), and supersedes is
-// the matching forward-pointer for the successor view.
+// frontmatter relationship arrays as {slug, title} pairs — each
+// linked plan's title is read from its own frontmatter so the UI can
+// render human-readable chips instead of bare slugs.
 type scopeDetail struct {
-	Slug         string   `json:"slug"`
-	Title        string   `json:"title"`
-	Status       string   `json:"status"`
-	Created      string   `json:"created"`
-	Systems      []string `json:"systems"`
-	Supersedes   []string `json:"supersedes"`
-	SupersededBy []string `json:"supersededBy"`
-	HTML         string   `json:"html"`
+	Slug         string          `json:"slug"`
+	Title        string          `json:"title"`
+	Status       string          `json:"status"`
+	Created      string          `json:"created"`
+	Systems      []string        `json:"systems"`
+	Supersedes   []scopeRelation `json:"supersedes"`
+	SupersededBy []scopeRelation `json:"supersededBy"`
+	HTML         string          `json:"html"`
 }
 
 // forceH6Headings is a goldmark AST transformer that pins every
@@ -526,7 +537,7 @@ func readScopeDetail(staxDir, slug string) (scopeDetail, bool) {
 		return scopeDetail{}, false
 	}
 	title, created := readPlanTitleAndCreated(planPath)
-	supersedes, supersededBy := readPlanRelations(planPath)
+	supersedes, supersededBy := readPlanRelations(staxDir, planPath)
 	var buf bytes.Buffer
 	if err := markdownRenderer.Convert([]byte(body), &buf); err != nil {
 		return scopeDetail{}, false
@@ -544,14 +555,14 @@ func readScopeDetail(staxDir, slug string) (scopeDetail, bool) {
 }
 
 // readPlanRelations extracts the inline `supersedes:` and
-// `superseded_by:` arrays from a plan's frontmatter. Both are optional
-// — a plan that's neither replaced anything nor been replaced returns
-// (nil, nil). The pair is read together because the /scope detail view
-// surfaces both sides of the relationship: predecessors (supersedes)
-// for context on what the current plan replaced, and successors
-// (supersededBy) so a reader on a retired plan can jump to the live
-// one.
-func readPlanRelations(planPath string) (supersedes, supersededBy []string) {
+// `superseded_by:` arrays from a plan's frontmatter, then resolves
+// each entry to a {slug, title} pair by reading the linked plan's
+// own frontmatter. Both relations are optional — a plan that's
+// neither replaced anything nor been replaced returns (nil, nil).
+// Per-entry title-lookup failures degrade gracefully: an unreadable
+// linked plan falls back to slug-as-title so the chip still has
+// something to render.
+func readPlanRelations(staxDir, planPath string) (supersedes, supersededBy []scopeRelation) {
 	if !isSafePlanPath(planPath) {
 		return nil, nil
 	}
@@ -569,12 +580,36 @@ func readPlanRelations(planPath string) (supersedes, supersededBy []string) {
 	}
 	fm := body[3 : 3+end]
 	if m := planSupersedesRe.FindStringSubmatch(fm); m != nil {
-		supersedes = parseInlineSystems(m[1])
+		supersedes = enrichRelationSlugs(staxDir, parseInlineSystems(m[1]))
 	}
 	if m := planSupersededByRe.FindStringSubmatch(fm); m != nil {
-		supersededBy = parseInlineSystems(m[1])
+		supersededBy = enrichRelationSlugs(staxDir, parseInlineSystems(m[1]))
 	}
 	return supersedes, supersededBy
+}
+
+// enrichRelationSlugs turns each raw slug into a {slug, title} pair by
+// reading the linked plan's frontmatter title. Slugs that don't match
+// planSlugRe are rejected up front so a malformed frontmatter array
+// can't push a tainted path through to the linked-plan reader.
+// Linked plans whose file is missing or whose title is empty fall
+// back to slug-as-title — the UI still gets a renderable chip.
+func enrichRelationSlugs(staxDir string, slugs []string) []scopeRelation {
+	if len(slugs) == 0 {
+		return nil
+	}
+	out := make([]scopeRelation, 0, len(slugs))
+	for _, slug := range slugs {
+		if !planSlugRe.MatchString(slug) {
+			continue
+		}
+		title, _ := readPlanTitleAndCreated(filepath.Join(staxDir, slug+planFileExt))
+		if title == "" {
+			title = slug
+		}
+		out = append(out, scopeRelation{Slug: slug, Title: title})
+	}
+	return out
 }
 
 // readSystemsForAPI is the testable body of handleAPISystems: takes
