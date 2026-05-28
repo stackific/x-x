@@ -132,13 +132,6 @@ body {
   font-size: var(--body-font-size);
 }
 
-// Route inline SVG text through the global font (Geist Variable).
-// Essay SVGs hard-code `font-family="system-ui, sans-serif"`, which beats
-// CSS without !important. Exclude monospace usages (intentional code labels).
-svg text:not([font-family*="monospace"]) {
-  font-family: var(--font) !important;
-}
-
 // -- Container ---------------------------------------------------
 
 .container {
@@ -218,23 +211,6 @@ footer nav .grid > div {
     }
   }
 }
-
-// -- Essay metadata (chips + date) on detail page ---------------
-
-.essay-meta {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-s);
-}
-
-@media (min-width: 993px) {
-  .essay-meta {
-    flex-direction: row;
-    align-items: center;
-  }
-}
-
 
 // -- Reference links (suppress BeerCSS external-link icon) --------
 

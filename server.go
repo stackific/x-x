@@ -200,6 +200,7 @@ type scopeDetail struct {
 	Systems      []string        `json:"systems"`
 	Supersedes   []scopeRelation `json:"supersedes"`
 	SupersededBy []scopeRelation `json:"supersededBy"`
+	HasOpenTasks bool            `json:"hasOpenTasks"`
 	HTML         string          `json:"html"`
 }
 
@@ -303,6 +304,15 @@ func handleFrontend(w http.ResponseWriter, r *http.Request) {
 	// Exact-file match (the common case for `/bundle.js`, asset files,
 	// `/index.html` if requested explicitly).
 	if info, err := fs.Stat(frontendFS, p); err == nil && !info.IsDir() {
+		// Long-lived cache on /assets/*.woff2: BeerCSS's Material Symbols
+		// font sits behind a stable URL the build doesn't fingerprint, so
+		// without this header every page navigation triggers a 304
+		// revalidation round trip just to learn the bytes haven't moved.
+		// Narrowed to .woff2 so SVGs and any future asset that might
+		// churn between releases keep default revalidation.
+		if strings.HasPrefix(r.URL.Path, frontendAssetsURLPrefix) && strings.HasSuffix(r.URL.Path, woff2Ext) {
+			w.Header().Set("Cache-Control", assetImmutableCacheControl)
+		}
 		frontendFileServer.ServeHTTP(w, r)
 		return
 	}
@@ -662,6 +672,7 @@ func readScopeDetail(staxDir, slug string) (scopeDetail, bool) {
 		Systems:      append([]string(nil), row.systems...),
 		Supersedes:   supersedes,
 		SupersededBy: supersededBy,
+		HasOpenTasks: strings.Contains(body, "- [ ]"),
 		HTML:         buf.String(),
 	}, true
 }

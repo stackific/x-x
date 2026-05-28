@@ -2,7 +2,6 @@ import "beercss/dist/cdn/beer.min.css";
 import "material-dynamic-colors";
 import "./styles/app.scss";
 
-import { essay } from "./pages/essay";
 import { home } from "./pages/home";
 import { scope } from "./pages/scope";
 import { scopes } from "./pages/scopes";
@@ -20,7 +19,6 @@ const pages: Record<string, () => void | Promise<void>> = {
   system,
   scopes,
   scope,
-  essay,
 };
 
 function start(): void {

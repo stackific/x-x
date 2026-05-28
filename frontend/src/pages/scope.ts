@@ -20,6 +20,7 @@ type ScopeDetail = {
   systems: string[];
   supersedes: ScopeRelation[] | null;
   supersededBy: ScopeRelation[] | null;
+  hasOpenTasks: boolean;
   html: string;
 };
 
@@ -56,6 +57,7 @@ function toggleRelationRow(rowID: string, listID: string, rels: ScopeRelation[] 
 
 export async function scope(): Promise<void> {
   const id = getQs("id");
+  const iconEl = $<HTMLElement>("#scope-icon");
   const titleEl = $<HTMLHeadingElement>("#scope-title");
   const statusEl = $<HTMLSpanElement>("#scope-status");
   const createdEl = $<HTMLSpanElement>("#scope-created");
@@ -76,6 +78,7 @@ export async function scope(): Promise<void> {
     statusEl.textContent = data.status;
     applyStatusClass(statusEl, data.status);
     statusEl.hidden = false;
+    if (data.hasOpenTasks) iconEl.classList.add("primary-text");
     createdEl.textContent = relativeTime(data.created);
 
     systemsEl.replaceChildren();

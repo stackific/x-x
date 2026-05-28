@@ -406,6 +406,54 @@ func TestHandleAPISystems_DetailUnknownID(t *testing.T) {
 	}
 }
 
+// TestReadScopeDetail_HasOpenTasks pins the open-task signal that the
+// `/scope?id=` page uses to tint the title flag icon `primary-text`,
+// matching the per-row icon convention on `/scopes`. A `- [ ]` marker
+// anywhere in the markdown body flips the flag; a body without it
+// reports false. Mirrors how readPlanForAPI populates the same field
+// on planDetail rows (server.go:428).
+func TestReadScopeDetail_HasOpenTasks(t *testing.T) {
+	dir := t.TempDir()
+	staxPath := seedDetailFixture(t, dir,
+		"systems:\n  - id: auth\n    name: Auth Service\n",
+		map[string]string{
+			"0001-open.md": "---\n" +
+				"title: Has open task\n" +
+				"status: valid\n" +
+				"systems: [auth]\n" +
+				"created: 2026-01-10T12:00:00Z\n" +
+				"---\n\n" +
+				"## Tasks\n- [ ] Outstanding work.\n",
+			"0002-closed.md": "---\n" +
+				"title: All done\n" +
+				"status: valid\n" +
+				"systems: [auth]\n" +
+				"created: 2026-01-11T12:00:00Z\n" +
+				"---\n\n" +
+				"## Tasks\n- [x] Already shipped.\n",
+		},
+	)
+
+	cases := []struct {
+		slug string
+		want bool
+	}{
+		{"0001-open", true},
+		{"0002-closed", false},
+	}
+	for _, c := range cases {
+		t.Run(c.slug, func(t *testing.T) {
+			got, ok := readScopeDetail(staxPath, c.slug)
+			if !ok {
+				t.Fatalf("readScopeDetail(%q) returned false", c.slug)
+			}
+			if got.HasOpenTasks != c.want {
+				t.Fatalf("hasOpenTasks = %v, want %v", got.HasOpenTasks, c.want)
+			}
+		})
+	}
+}
+
 // TestNewServerMux_ServesEmbeddedFrontend exercises the catch-all
 // static handler: a GET on `/index.html` reads
 // `frontend/dist/index.html` from the embed and returns it. Pins the
@@ -443,7 +491,7 @@ func TestNewServerMux_ServesEmbeddedFrontend(t *testing.T) {
 func TestNewServerMux_CleanURLs(t *testing.T) {
 	srv := httptest.NewServer(newServerMux())
 	t.Cleanup(srv.Close)
-	for _, page := range []string{"/systems", "/system", "/search", "/scopes", "/scope", "/essay"} {
+	for _, page := range []string{"/systems", "/system", "/search", "/scopes", "/scope"} {
 		t.Run(page, func(t *testing.T) {
 			res, err := http.Get(srv.URL + page) // #nosec G107 -- srv.URL is httptest.
 			if err != nil {
@@ -503,6 +551,44 @@ func TestMarkdownRenderer_PinsHeadingsToH6(t *testing.T) {
 		if strings.Contains(html, banned) {
 			t.Fatalf("rendered HTML must not carry %s, got: %s", banned, html)
 		}
+	}
+}
+
+// TestHandleFrontend_WOFF2HasImmutableCacheControl pins the long-lived
+// caching contract for embedded font assets. Material Symbols
+// Outlined sits behind a stable filename the build doesn't fingerprint,
+// so its response must carry `public, max-age=31536000, immutable` to
+// avoid a 304 revalidation round trip on every page navigation. The
+// negative twin proves the header is narrowed — a request for the
+// fingerprint-free HTML root must NOT inherit the long-lived cache, so
+// content changes between releases still propagate.
+func TestHandleFrontend_WOFF2HasImmutableCacheControl(t *testing.T) {
+	srv := httptest.NewServer(newServerMux())
+	t.Cleanup(srv.Close)
+
+	cases := []struct {
+		name    string
+		path    string
+		wantHdr string
+	}{
+		{"woff2 gets immutable", frontendAssetsURLPrefix + "material-symbols-outlined" + woff2Ext, assetImmutableCacheControl},
+		{"html stays default", "/index.html", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			res, err := http.Get(srv.URL + c.path) // #nosec G107 -- srv.URL is httptest.
+			if err != nil {
+				t.Fatalf("GET %s: %v", c.path, err)
+			}
+			defer func() { _ = res.Body.Close() }()
+			if res.StatusCode != http.StatusOK {
+				t.Fatalf("status = %d, want 200 (%s must exist in the embed)", res.StatusCode, c.path)
+			}
+			got := res.Header.Get("Cache-Control")
+			if got != c.wantHdr {
+				t.Fatalf("Cache-Control = %q, want %q", got, c.wantHdr)
+			}
+		})
 	}
 }
 

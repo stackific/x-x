@@ -1,4 +1,11 @@
-import { existsSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig, type PluginOption } from "vite";
@@ -6,7 +13,7 @@ import handlebars from "vite-plugin-handlebars";
 
 const root = dirname(fileURLToPath(import.meta.url));
 
-const pages = ["index", "search", "systems", "system", "scopes", "scope", "essay", "404"] as const;
+const pages = ["index", "search", "systems", "system", "scopes", "scope", "404"] as const;
 
 // Rename the deduplicated entry chunk (Vite/Rollup emits `bundleN.js` when
 // multiple HTML entries all request the same `bundle.js` name) back to
@@ -26,6 +33,41 @@ const renameBundle = (): PluginOption => ({
       if (!f.endsWith(".html")) continue;
       const p = resolve(dist, f);
       writeFileSync(p, readFileSync(p, "utf8").split(target).join(final));
+    }
+  },
+});
+
+// BeerCSS ships @font-face declarations for four Material Symbols variants
+// (Outlined, Rounded, Sharp, Subset). Only Outlined is ever rendered — it's
+// the `--font-icon` default and the only family the `i` selector resolves
+// to — so the other three woff2 files Vite emits (~1.4 MB total) are
+// downloaded by Vite into dist/assets/ but never fetched by a browser at
+// runtime. This plugin removes them: strip the dead @font-face blocks from
+// bundle.css so the CDN fallback URLs aren't left referencing a missing
+// file, then delete the orphan woff2 files from dist/assets/. Build-only.
+const dropUnusedSymbolFonts = (): PluginOption => ({
+  name: "stax-drop-unused-symbol-fonts",
+  apply: "build",
+  closeBundle() {
+    const dist = resolve(root, "dist");
+    if (!existsSync(dist)) return;
+    const unusedVariants = ["Rounded", "Sharp", "Subset"] as const;
+
+    const cssPath = resolve(dist, "bundle.css");
+    if (existsSync(cssPath)) {
+      let css = readFileSync(cssPath, "utf8");
+      for (const variant of unusedVariants) {
+        // @font-face blocks have no nested braces, so [^}]* is safe.
+        const block = new RegExp(`@font-face\\{[^}]*Material Symbols ${variant}[^}]*\\}`, "g");
+        css = css.replace(block, "");
+      }
+      writeFileSync(cssPath, css);
+    }
+
+    for (const variant of unusedVariants) {
+      const file = `material-symbols-${variant.toLowerCase()}.woff2`;
+      const p = resolve(dist, "assets", file);
+      if (existsSync(p)) unlinkSync(p);
     }
   },
 });
@@ -65,6 +107,7 @@ export default defineConfig({
       partialDirectory: resolve(root, "partials"),
     }),
     renameBundle(),
+    dropUnusedSymbolFonts(),
   ],
   server: {
     proxy: {

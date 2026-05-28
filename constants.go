@@ -542,3 +542,25 @@ const (
 	apiScopePath   = "/api/scope"
 	apiSearchPath  = "/api/search"
 )
+
+// frontendAssetsURLPrefix is the URL prefix Vite emits non-hashed assets
+// under (vite.config.ts assetFileNames). The handleFrontend cache-control
+// middleware narrows its long-lived Cache-Control header to this subtree
+// so churnier files at the dist root (bundle.css, bundle.js, *.html)
+// keep their default revalidation behavior.
+const frontendAssetsURLPrefix = "/assets/"
+
+// woff2Ext is the font extension that gets the year-long immutable
+// Cache-Control header. Narrowed from "everything under /assets/" so an
+// SVG or future asset that does change between releases isn't pinned in
+// the browser cache.
+const woff2Ext = ".woff2"
+
+// assetImmutableCacheControl is the Cache-Control header the embedded
+// server attaches to /assets/*.woff2 responses: a year-long public
+// cache with the `immutable` token so warm navigations don't even
+// revalidate. Material Symbols glyphs change rarely; a stale font
+// renders stale icons (visually harmless), so trading freshness for
+// the elimination of the per-navigation If-Modified-Since round trip
+// is the right call.
+const assetImmutableCacheControl = "public, max-age=31536000, immutable"
