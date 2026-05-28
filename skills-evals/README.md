@@ -1,13 +1,13 @@
 # skills-evals
 
-End-to-end evaluations of the `x-x` planner (`/x-plan`) + executor (`/x-x`)
+End-to-end evaluations of the `stax` planner (`/scope`) + executor (`/ship`)
 skills against Claude Code. Each test:
 
 1. Spawns `claude` in stream-json mode against DeepSeek.
-2. Invokes `/x-plan <task>` and auto-replies `yes` to every confirmation
+2. Invokes `/scope <task>` and auto-replies `yes` to every confirmation
    prompt until the planner stops asking.
 3. Scores the produced plan file with a DeepEval `GEval` judge.
-4. Invokes `/x-x`, auto-replies `yes` until the executor stops asking.
+4. Invokes `/ship`, auto-replies `yes` until the executor stops asking.
 5. Scores the produced artifacts with a second `GEval` judge.
 
 Managed with [uv](https://docs.astral.sh/uv/) and built on
@@ -25,7 +25,7 @@ skills-evals/
 │   └── judges/
 │       ├── base.py                      # Judge ABC + Judgment dataclass
 │       ├── plan_judge.py                # GEval on the plan file
-│       └── artifact_judge.py            # GEval on /x-x's produced files
+│       └── artifact_judge.py            # GEval on /ship's produced files
 └── tests/
     ├── conftest.py                      # .env load + DeepSeek/Anthropic routing + workspace fixture
     └── test_claude_todo.py              # the TODO-app scenario
@@ -33,7 +33,7 @@ skills-evals/
 
 ## Prerequisites
 
-- `x-x` on PATH (`go install .` from repo root).
+- `stax` on PATH (`go install .` from repo root).
 - `claude` on PATH (`npm install -g @anthropic-ai/claude-code`).
 - A DeepSeek API key. Put it in `skills-evals/.env`:
   ```
@@ -71,8 +71,8 @@ forever.
 ## Adding a scenario
 
 Drop another `tests/test_<agent>_<name>.py` mirroring `test_claude_todo.py`:
-hardcode the task, call `drive_skill(workspace, "/x-plan <task>")`,
-assert `PlanJudge`, call `drive_skill(workspace, "/x-x")`, assert
+hardcode the task, call `drive_skill(workspace, "/scope <task>")`,
+assert `PlanJudge`, call `drive_skill(workspace, "/ship")`, assert
 `ArtifactJudge`. The `workspace` fixture already initializes a throwaway
 project. New backends get their own driver — the
 DeepEval judges are agent-agnostic and can be reused as-is.

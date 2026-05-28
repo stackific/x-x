@@ -12,7 +12,7 @@ JSON, suitable for downstream tooling.
 Multi-turn shape — cline exits when "the turn finishes" (cline 2026 docs
 at docs.cline.bot/cli/cli-reference), where a turn ends when the agent
 emits an `ask`-typed event (typically a "completion_result" subtype) or
-runs out of work. The x-x and x-plan SKILL templates intersperse human
+runs out of work. The ship and scope SKILL templates intersperse human
 "Reply yes to proceed" gates inside one logical session, and a literal
 read of those gates would have cline emit the question and exit, leaving
 downstream gates unhandled. The CI directive appended in
@@ -35,7 +35,7 @@ into, and the prompt argument lands in front of the LLM verbatim. So
 `drive_skill` inlines the SKILL.md body the same way the opencode driver
 did before opencode's `--command` resolver landed (sst/opencode#2348):
 read `<workspace>/.cline/skills/<skill>/SKILL.md`, concatenate with the
-user task + CI directive, and pass as one prompt. `x-x init --agents
+user task + CI directive, and pass as one prompt. `stax init --agents
 cline` (now a first-class entry in agentTargets in constants.go) is
 what writes the SKILL.md files where this helper reads them, at
 `.cline/skills/` per docs.cline.bot/customization/overview (2026).
@@ -123,12 +123,12 @@ SKILL_REL = Path(".cline") / "skills"
 def _resolve_skill_path(workspace: Path, skill: str) -> Path:
   """Return the SKILL.md path under either project or user scope.
 
-  `x-x init --scope project --agents cline` writes the bundled tree to
+  `stax init --scope project --agents cline` writes the bundled tree to
   `<workspace>/.cline/skills/<skill>/SKILL.md`. `--scope user` writes
   the same tree under `$HOME/.cline/skills/<skill>/SKILL.md`. Both are
   cline's native discovery paths per docs.cline.bot/customization/
   overview (2026); we probe project first (workflow default) then fall
-  back to $HOME so X_X_INSTALL_SCOPE=user resolves the same templates.
+  back to $HOME so STAX_INSTALL_SCOPE=user resolves the same templates.
   """
   candidates = [
     workspace / SKILL_REL / skill / "SKILL.md",
@@ -139,7 +139,7 @@ def _resolve_skill_path(workspace: Path, skill: str) -> Path:
       return path
   raise FileNotFoundError(
     f"SKILL template not found at any of: {[str(p) for p in candidates]} "
-    f"— did `x-x init --agents cline` run (in the workspace fixture) "
+    f"— did `stax init --agents cline` run (in the workspace fixture) "
     f"before drive_skill was called?"
   )
 
@@ -151,7 +151,7 @@ def compose_skill_prompt(workspace: Path, skill: str, arguments: str) -> str:
   `--yolo` headless mode does not resolve slash commands from disk
   (`.clinerules/workflows/` is a TUI/extension surface only), so the
   SKILL.md body is read off disk and prepended to the user task.
-  `x-x init --agents cline` is what placed the SKILL.md files at
+  `stax init --agents cline` is what placed the SKILL.md files at
   `.cline/skills/<skill>/SKILL.md`; the helper above probes both
   project- and user-scope install locations so a single driver
   implementation serves both workflows.
@@ -211,7 +211,7 @@ def drive_skill(
   per_turn_timeout: float = DEFAULT_PER_TURN_TIMEOUT_S,
   transcript_path: Path | None = None,
 ) -> SkillRun:
-  """Invoke a skill (x-plan / x-x) by inlining SKILL.md into the prompt."""
+  """Invoke a skill (scope / ship) by inlining SKILL.md into the prompt."""
   prompt = compose_skill_prompt(workspace, skill, arguments)
   return _drive_loop(
     workspace,

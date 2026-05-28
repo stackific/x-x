@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Stackific Inc.
-"""DeepEval judge that scores the plan file produced by /x-plan.
+"""DeepEval judge that scores the plan file produced by /scope.
 
-Runs after /x-plan finishes and before /x-x is invoked. Looks only at
-`<workspace>/.x-plans/*.md` (the plan files), not at any produced code.
+Runs after /scope finishes and before /ship is invoked. Looks only at
+`<workspace>/.stax/*.md` (the plan files), not at any produced code.
 Backed by DeepEval's GEval — the rubric is a list of evaluation_steps the
 judge LLM scores independently.
 """
@@ -22,11 +22,11 @@ from ..workspace import collect_plan_files
 from .base import Judge, Judgment
 
 INPUT_TEMPLATE = """\
-The user asked an x-x planner agent to:
+The user asked a scope planner agent to:
 
 {task}
 
-The planner wrote the following plan file(s) under .x-plans/. Each file
+The planner wrote the following plan file(s) under .stax/. Each file
 begins with `--- <relative-path> ---` then YAML frontmatter then markdown
 body.
 """

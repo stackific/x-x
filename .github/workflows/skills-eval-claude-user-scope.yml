@@ -2,13 +2,13 @@ name: skills eval / claude code (user scope)
 
 # Manually-triggered experiment from the agent-eval lineage. The loop:
 #
-#   1. Install Claude Code (npm) on the runner; install x-x to PATH.
+#   1. Install Claude Code (npm) on the runner; install stax to PATH.
 #   2. Sync the uv-managed skills-evals project (deepeval, openai, pytest,
 #      python-dotenv).
 #   3. Run `uv run pytest`. The tests:
 #        a. Spawn `claude` in stream-json mode against DeepSeek
 #           (ANTHROPIC_BASE_URL etc. routed through env).
-#        b. Drive `/x-plan` and `/x-x` with an auto-yes loop
+#        b. Drive `/scope` and `/ship` with an auto-yes loop
 #           (skills-evals/src/skills_evals/claude_driver.py) because
 #           `claude -p` is otherwise one-shot and the skills prompt for
 #           confirmation mid-run.
@@ -35,13 +35,13 @@ jobs:
     timeout-minutes: 60
 
     env:
-      # Identical to skills-eval-claude.yml EXCEPT for X_X_INSTALL_SCOPE.
+      # Identical to skills-eval-claude.yml EXCEPT for STAX_INSTALL_SCOPE.
       # This workflow installs skills at user scope (~/.claude/skills/)
       # rather than project scope (<workspace>/.claude/skills/) so we
-      # exercise that branch of `x-x init`. The pytest fixture
-      # (skills-evals/tests/conftest.py) reads X_X_INSTALL_SCOPE and
-      # passes it to `x-x init --scope <value>`.
-      X_X_INSTALL_SCOPE: user
+      # exercise that branch of `stax init`. The pytest fixture
+      # (skills-evals/tests/conftest.py) reads STAX_INSTALL_SCOPE and
+      # passes it to `stax init --scope <value>`.
+      STAX_INSTALL_SCOPE: user
 
       # Claude Code routing for DeepSeek's Anthropic-compatible endpoint.
       # Documented in docs/internal/manually-triggered-workflows.md. The
@@ -66,12 +66,12 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # `go install .` lands a release-flavored x-x in $(go env GOPATH)/bin.
+      # `go install .` lands a release-flavored stax in $(go env GOPATH)/bin.
       # The setup-go action puts that directory on PATH.
-      - name: install x-x to PATH
+      - name: install stax to PATH
         run: |
           go install .
-          x-x --version
+          stax --version
 
       - uses: actions/setup-node@v6
         with:

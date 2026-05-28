@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Stackific Inc.
-"""End-to-end: drive OpenCode through two x-plan calls that exercise
+"""End-to-end: drive OpenCode through two scope calls that exercise
 the extends mechanic.
 
 Mirror of test_claude_plan_extends.py adapted for the OpenCode headless
-path. Each x-plan invocation is `opencode run --command x-plan <task>`;
+path. Each scope invocation is `opencode run --command scope <task>`;
 opencode's command resolver finds the SKILL.md by frontmatter `name:`.
 
-Per agents/skills/x-plan/SKILL.md step 2a + step 3, when a new plan
+Per agents/skills/scope/SKILL.md step 2a + step 3, when a new plan
 "extends" a predecessor (rather than supersedes it):
   - the new plan's frontmatter gets `extends: [<predecessor-slug>]`
   - the predecessor's frontmatter gets `extended_by: [<new-slug>]`
@@ -15,7 +15,7 @@ Per agents/skills/x-plan/SKILL.md step 2a + step 3, when a new plan
     a state change — unlike supersedes)
 
 This test asserts both sides of that bidirectional link without
-running /x-x (extends does not cause any execution-time state change).
+running /ship (extends does not cause any execution-time state change).
 """
 
 from __future__ import annotations
@@ -39,16 +39,16 @@ def test_opencode_plan_extends(workspace: Path, tmp_path: Path) -> None:
   # --- Plan A: the base todo app ---
   a_run = drive_command(
     workspace,
-    "x-plan",
+    "scope",
     BASE_TASK,
-    transcript_path=transcripts / "x-plan-a.jsonl",
+    transcript_path=transcripts / "scope-a.jsonl",
   )
   assert a_run.exit_code == 0, (
-    f"opencode exited {a_run.exit_code} during /x-plan A; "
+    f"opencode exited {a_run.exit_code} during /scope A; "
     f"timed_out={a_run.timed_out}; stderr:\n{a_run.stderr_tail}"
   )
   assert a_run.completed, (
-    f"/x-plan A did not complete cleanly: turns={a_run.turns} "
+    f"/scope A did not complete cleanly: turns={a_run.turns} "
     f"yes_replies={a_run.yes_replies} timed_out={a_run.timed_out}"
   )
   assert a_run.turns < DEFAULT_MAX_TURNS
@@ -56,16 +56,16 @@ def test_opencode_plan_extends(workspace: Path, tmp_path: Path) -> None:
   # --- Plan B: extension of plan A ---
   b_run = drive_command(
     workspace,
-    "x-plan",
+    "scope",
     EXTENSION_TASK,
-    transcript_path=transcripts / "x-plan-b.jsonl",
+    transcript_path=transcripts / "scope-b.jsonl",
   )
   assert b_run.exit_code == 0, (
-    f"opencode exited {b_run.exit_code} during /x-plan B; "
+    f"opencode exited {b_run.exit_code} during /scope B; "
     f"timed_out={b_run.timed_out}; stderr:\n{b_run.stderr_tail}"
   )
   assert b_run.completed, (
-    f"/x-plan B did not complete cleanly: turns={b_run.turns} "
+    f"/scope B did not complete cleanly: turns={b_run.turns} "
     f"yes_replies={b_run.yes_replies} timed_out={b_run.timed_out}"
   )
   assert b_run.turns < DEFAULT_MAX_TURNS

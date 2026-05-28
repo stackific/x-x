@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-// TestPrintSkillsUsage guards the `x-x skills` help surface — the two
+// TestPrintSkillsUsage guards the `stax skills` help surface — the two
 // remove flags must both appear, so adding a third without updating the
 // help block fails here.
 func TestPrintSkillsUsage(t *testing.T) {
@@ -20,7 +20,7 @@ func TestPrintSkillsUsage(t *testing.T) {
 	printSkillsUsage(&buf)
 	out := buf.String()
 	for _, want := range []string{
-		"Usage: x-x skills <subcommand>",
+		"Usage: stax skills <subcommand>",
 		"remove --user",
 		"remove --project",
 	} {
@@ -114,10 +114,10 @@ func TestRemoveIfEmpty_MissingDir(t *testing.T) {
 // are sacred.
 func TestRemoveOurSkillsIn_OnlyRemovesAllowlist(t *testing.T) {
 	skillsDir := t.TempDir()
-	// One x-x-owned skill (skillXXDir), one user-authored fixture. Real
+	// One stax-owned skill (skillShipDir), one user-authored fixture. Real
 	// dirs on disk to mirror how installSkill lays things out.
 	const userFixture = "my-skill"
-	for _, name := range []string{skillXXDir, userFixture} {
+	for _, name := range []string{skillShipDir, userFixture} {
 		p := filepath.Join(skillsDir, name)
 		if err := os.MkdirAll(p, 0o700); err != nil {
 			t.Fatalf("mkdir %s: %v", name, err)
@@ -126,7 +126,7 @@ func TestRemoveOurSkillsIn_OnlyRemovesAllowlist(t *testing.T) {
 			t.Fatalf("seed file in %s: %v", name, err)
 		}
 	}
-	owned := map[string]bool{skillXXDir: true}
+	owned := map[string]bool{skillShipDir: true}
 	removed, skipped := removeOurSkillsIn(skillsDir, "test-agent", owned)
 	if removed != 1 {
 		t.Fatalf("removed = %d, want 1", removed)
@@ -134,8 +134,8 @@ func TestRemoveOurSkillsIn_OnlyRemovesAllowlist(t *testing.T) {
 	if skipped != 0 {
 		t.Fatalf("skipped = %d, want 0", skipped)
 	}
-	if _, err := os.Stat(filepath.Join(skillsDir, skillXXDir)); !os.IsNotExist(err) {
-		t.Fatalf("%s should be removed, err=%v", skillXXDir, err)
+	if _, err := os.Stat(filepath.Join(skillsDir, skillShipDir)); !os.IsNotExist(err) {
+		t.Fatalf("%s should be removed, err=%v", skillShipDir, err)
 	}
 	if _, err := os.Stat(filepath.Join(skillsDir, userFixture)); err != nil {
 		t.Fatalf("user skill must survive: %v", err)
@@ -147,10 +147,10 @@ func TestRemoveOurSkillsIn_OnlyRemovesAllowlist(t *testing.T) {
 // the empty-parent cleanup pass.
 func TestRemoveOurSkillsIn_RemovesEmptyParent(t *testing.T) {
 	parent := filepath.Join(t.TempDir(), skillsSubdir)
-	if err := os.MkdirAll(filepath.Join(parent, skillXXDir), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(parent, skillShipDir), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	owned := map[string]bool{skillXXDir: true}
+	owned := map[string]bool{skillShipDir: true}
 	removeOurSkillsIn(parent, "test", owned)
 	// Parent had only the owned dir; after removal it should be cleared too.
 	if _, err := os.Stat(parent); !os.IsNotExist(err) {
@@ -162,7 +162,7 @@ func TestRemoveOurSkillsIn_RemovesEmptyParent(t *testing.T) {
 // an install at this scope" reality: running skill remove against a
 // scope that was never init'd must be a clean no-op, not an error.
 func TestRemoveOurSkillsIn_MissingDirIsSilent(t *testing.T) {
-	owned := map[string]bool{skillXXDir: true}
+	owned := map[string]bool{skillShipDir: true}
 	removed, skipped := removeOurSkillsIn(filepath.Join(t.TempDir(), "nope"), "t", owned)
 	if removed != 0 || skipped != 0 {
 		t.Fatalf("missing dir should be a silent no-op, got removed=%d skipped=%d", removed, skipped)
@@ -180,7 +180,7 @@ func hookFixtureJSON(t *testing.T) (bundle, user string) {
 	bundle = `{
   "hooks": {
     "PostToolUse": [
-      {"matcher": "Write|Edit", "hooks": [{"type": "command", "command": "x-x plans lint"}]}
+      {"matcher": "Write|Edit", "hooks": [{"type": "command", "command": "stax plans lint"}]}
     ]
   }
 }
@@ -189,7 +189,7 @@ func hookFixtureJSON(t *testing.T) (bundle, user string) {
   "fastMode": true,
   "hooks": {
     "PostToolUse": [
-      {"matcher": "Write|Edit", "hooks": [{"type": "command", "command": "x-x plans lint"}]},
+      {"matcher": "Write|Edit", "hooks": [{"type": "command", "command": "stax plans lint"}]},
       {"matcher": "Bash",       "hooks": [{"type": "command", "command": "my-tool"}]}
     ],
     "UserPromptSubmit": [
@@ -243,8 +243,8 @@ func TestSubtractHooks_DropsDeepEqualRecord(t *testing.T) {
 // command string fails deep-equality with the bundle, and must therefore
 // survive the un-merge untouched. The unit of ownership is the leaf record.
 func TestSubtractHooks_PreservesUserTweakedVariant(t *testing.T) {
-	bundle := decodeJSON(t, `{"hooks":{"PostToolUse":[{"matcher":"Write|Edit","hooks":[{"type":"command","command":"x-x plans lint"}]}]}}`).(map[string]any)[configHooksKey]
-	user := decodeJSON(t, `{"hooks":{"PostToolUse":[{"matcher":"Write|Edit","hooks":[{"type":"command","command":"x-x plans lint --verbose"}]}]}}`).(map[string]any)[configHooksKey]
+	bundle := decodeJSON(t, `{"hooks":{"PostToolUse":[{"matcher":"Write|Edit","hooks":[{"type":"command","command":"stax plans lint"}]}]}}`).(map[string]any)[configHooksKey]
+	user := decodeJSON(t, `{"hooks":{"PostToolUse":[{"matcher":"Write|Edit","hooks":[{"type":"command","command":"stax plans lint --verbose"}]}]}}`).(map[string]any)[configHooksKey]
 
 	got, changed := subtractHooks(user, bundle)
 	if changed {
@@ -287,7 +287,7 @@ func TestSubtractHooks_NoOpWhenNotMap(t *testing.T) {
 // driven by the bundled keys (no fabrication of empty arrays in user when
 // it lacks an event key the bundle ships).
 func TestSubtractHooks_BundledEventKeyMissingInUser(t *testing.T) {
-	bundle := decodeJSON(t, `{"hooks":{"Stop":[{"matcher":"","hooks":[{"type":"command","command":"x-x plans lint"}]}]}}`).(map[string]any)[configHooksKey]
+	bundle := decodeJSON(t, `{"hooks":{"Stop":[{"matcher":"","hooks":[{"type":"command","command":"stax plans lint"}]}]}}`).(map[string]any)[configHooksKey]
 	user := decodeJSON(t, `{"hooks":{"PostToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"mine"}]}]}}`).(map[string]any)[configHooksKey]
 
 	got, changed := subtractHooks(user, bundle)
@@ -443,7 +443,7 @@ func TestRunSkillRemove_EndToEnd_UserScope(t *testing.T) {
 	// with one bundled + one user fixture.
 	const userFixture = "user-skill"
 	for _, target := range agentTargets {
-		for _, name := range []string{skillXXDir, userFixture} {
+		for _, name := range []string{skillShipDir, userFixture} {
 			if err := os.MkdirAll(filepath.Join(home, target.skillsRel, name), 0o700); err != nil {
 				t.Fatalf("seed: %v", err)
 			}
@@ -451,8 +451,8 @@ func TestRunSkillRemove_EndToEnd_UserScope(t *testing.T) {
 	}
 	runSkillsRemove([]string{"--user"})
 	for _, target := range agentTargets {
-		if _, err := os.Stat(filepath.Join(home, target.skillsRel, skillXXDir)); !os.IsNotExist(err) {
-			t.Fatalf("%s/%s should be removed, err=%v", target.skillsRel, skillXXDir, err)
+		if _, err := os.Stat(filepath.Join(home, target.skillsRel, skillShipDir)); !os.IsNotExist(err) {
+			t.Fatalf("%s/%s should be removed, err=%v", target.skillsRel, skillShipDir, err)
 		}
 		if _, err := os.Stat(filepath.Join(home, target.skillsRel, userFixture)); err != nil {
 			t.Fatalf("%s/%s must survive: %v", target.skillsRel, userFixture, err)
@@ -462,7 +462,7 @@ func TestRunSkillRemove_EndToEnd_UserScope(t *testing.T) {
 
 // TestRunSkillRemove_EndToEnd_HookUnmerge exercises the hook un-merge
 // through the full --user CLI: seeds a bundled config JSON under
-// ~/.x-x/agents/<agent>/ and a user JSON with a deep-equal record + a
+// ~/.stax/agents/<agent>/ and a user JSON with a deep-equal record + a
 // hand-written sibling under the same event key. After remove, the
 // deep-equal record must be gone and the user's sibling must survive.
 // Iterates agentTargets so a future third agent gets exercised
@@ -490,7 +490,7 @@ func TestRunSkillRemove_EndToEnd_HookUnmerge(t *testing.T) {
 func seedHookFixture(t *testing.T, home string, target *agentTarget, fname string) {
 	t.Helper()
 	bundleRaw, userRaw := hookFixtureJSON(t)
-	bundleDir := filepath.Join(home, xxHomeDir, agentsEmbedRoot, target.configSrc)
+	bundleDir := filepath.Join(home, staxDir, agentsEmbedRoot, target.configSrc)
 	userDir := filepath.Join(home, target.configRel)
 	for _, d := range []string{bundleDir, userDir} {
 		if err := os.MkdirAll(d, 0o700); err != nil {

@@ -25,7 +25,7 @@ import (
 var embeddedAgents embed.FS
 
 // agentsTarget returns the absolute path of the materialized agents
-// directory under the user's home (~/.x-x/agents). Centralized here so every
+// directory under the user's home (~/.stax/agents). Centralized here so every
 // caller in the program agrees on the location — change this one function
 // to relocate (e.g. honor an env-var override).
 func agentsTarget() (string, error) {
@@ -37,12 +37,12 @@ func agentsTarget() (string, error) {
 		// error rather than guess at a fallback path.
 		return "", fmt.Errorf("locate home directory: %w", err)
 	}
-	return filepath.Join(home, xxHomeDir, agentsEmbedRoot), nil
+	return filepath.Join(home, staxDir, agentsEmbedRoot), nil
 }
 
-// ensureBundledAgents guarantees ~/.x-x/agents/ exists, writing it from the
+// ensureBundledAgents guarantees ~/.stax/agents/ exists, writing it from the
 // binary's embedded FS when absent. Lazy bootstrap — never refreshes an
-// existing directory. The first invocation of any `x-x` command runs this
+// existing directory. The first invocation of any `stax` command runs this
 // so a freshly-installed binary self-seeds without an explicit setup step.
 // The opportunistic 24h update check (maybeNotifyUpdate) handles refreshing
 // the tree on subsequent runs.
@@ -63,7 +63,7 @@ func ensureBundledAgents() error {
 }
 
 // writeBundledAgents writes the binary's embedded agents/ tree to disk at
-// ~/.x-x/agents/. When overwrite is true any existing tree is removed first
+// ~/.stax/agents/. When overwrite is true any existing tree is removed first
 // so the result is byte-identical to the binary's embed (this is what the
 // 24h update-check refresh wants). When overwrite is false the function
 // only creates what's missing.
@@ -80,7 +80,7 @@ func writeBundledAgents(overwrite bool) error {
 			return fmt.Errorf("remove %s: %w", target, err)
 		}
 	}
-	// Create the *parent* (~/.x-x) — the walk below creates `target`
+	// Create the *parent* (~/.stax) — the walk below creates `target`
 	// itself when it visits the embed root. MkdirAll is idempotent.
 	// 0o700 is honored on POSIX; Windows ignores it and the dir inherits
 	// the user-profile ACL, which is already user-restrictive by default.
@@ -101,7 +101,7 @@ func writeBundledAgents(overwrite bool) error {
 			return walkErr
 		}
 		// Translate embed-relative path "agents/foo/bar" → "<target>/foo/bar".
-		// We strip the agentsEmbedRoot prefix so that ~/.x-x/agents/ is the
+		// We strip the agentsEmbedRoot prefix so that ~/.stax/agents/ is the
 		// new root, mirroring the on-disk layout of the source tree.
 		rel, err := filepath.Rel(agentsEmbedRoot, srcPath)
 		if err != nil {
@@ -109,7 +109,7 @@ func writeBundledAgents(overwrite bool) error {
 		}
 		// Skip repo-only metadata that doesn't belong in the user's
 		// on-disk tree. agents/README.md is for contributors browsing the
-		// repo on GitHub — shipping it to ~/.x-x/agents/README.md just
+		// repo on GitHub — shipping it to ~/.stax/agents/README.md just
 		// confuses end users and clutters their home.
 		if !d.IsDir() && skipFromEmbed[rel] {
 			return nil

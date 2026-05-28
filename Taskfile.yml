@@ -46,7 +46,7 @@ tasks:
         for platform in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
           GOOS="${platform%/*}"
           GOARCH="${platform#*/}"
-          output="bin/x-x-${GOOS}-${GOARCH}"
+          output="bin/stax-${GOOS}-${GOARCH}"
           [ "$GOOS" = "windows" ] && output="${output}.exe"
           echo "Building ${output}..."
           CGO_ENABLED=0 GOOS=$GOOS GOARCH=$GOARCH go build -ldflags "-s -w" -o "$output" .
@@ -64,6 +64,6 @@ tasks:
       - go test -race -count=1 ./...
 
   test:e2e:
-    desc: Run only the end-to-end CLI tests (builds x-x, drives every command)
+    desc: Run only the end-to-end CLI tests (builds stax, drives every command)
     cmds:
       - ./scripts/e2e_test.sh

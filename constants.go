@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 Stackific Inc.
 
-// Package main is the entire x-x CLI. Everything lives in a single package
+// Package main is the entire stax CLI. Everything lives in a single package
 // because the binary is small enough that splitting into internal/* would
 // add ceremony without buying abstraction. Per-feature files (main.go,
 // init.go, agents.go, etc.) group functions by responsibility, and this
@@ -30,40 +30,42 @@ var Version = "dev"
 const productTagline = "An evidence-based, spec-driven agent skillset with enterprise accuracy at startup speed.\n"
 
 // On-disk path components. Every path literal in the codebase MUST be
-// composed from these constants — no inline string fragments like ".x-x"
+// composed from these constants — no inline string fragments like ".stax"
 // or "_config.lock" inside Go source. AGENTS.md codifies this as a hard
 // rule; new path elements live here first, then get referenced elsewhere.
 const (
-	// xxHomeDir is the per-user state directory under $HOME. Holds the
-	// materialized embed (xxHomeDir/agentsEmbedRoot/) and the update-check
-	// config (xxHomeDir/xxConfigFile).
-	xxHomeDir = ".x-x"
+	// staxDir is the directory name used at BOTH scopes:
+	//   - User scope: $HOME/<staxDir>/ holds the materialized embed
+	//     (<staxDir>/agentsEmbedRoot/) and the update-check config
+	//     (<staxDir>/staxConfigFile).
+	//   - Project scope: <cwd>/<staxDir>/ holds the plan-tooling scaffold
+	//     (staxLockFile, staxSystemsFile, *.md plan files).
+	// The two scopes share the directory NAME but never the content — the
+	// user-scope tree is binary-owned, the project-scope tree is user-owned.
+	staxDir = ".stax"
 
-	// xxConfigFile is the JSON file inside xxHomeDir that records the
-	// installed version + last-update-check epoch. Written by the
-	// installer scripts and rewritten by maybeNotifyUpdate.
-	xxConfigFile = ".config.json"
+	// staxConfigFile is the JSON file inside the user-scope staxDir that
+	// records the installed version + last-update-check epoch. Written by
+	// the installer scripts and rewritten by maybeNotifyUpdate.
+	staxConfigFile = ".config.json"
 
 	// agentsEmbedRoot is the directory name inside the embeddedAgents FS
-	// AND the on-disk subdirectory name under xxHomeDir. The dual role is
-	// intentional — one constant keeps embed source and disk destination
-	// aligned. Must match the path in the `//go:embed all:agents`
+	// AND the on-disk subdirectory name under the user-scope staxDir. The
+	// dual role is intentional — one constant keeps embed source and disk
+	// destination aligned. Must match the path in the `//go:embed all:agents`
 	// directive in agents.go.
 	agentsEmbedRoot = "agents"
 
-	// plansDir is the per-project directory that holds plan files and the
-	// plan-tooling scaffold. Lives at <cwd>/<plansDir>.
-	plansDir = ".x-plans"
+	// staxLockFile pins the plan-tooling defaults inside the project-scope
+	// staxDir. Treated as a lock file (Cargo.lock, package-lock.json
+	// semantics): init writes it once and never refreshes it on
+	// subsequent runs.
+	staxLockFile = "_config.lock"
 
-	// plansConfigLockFile pins the plan-tooling defaults inside plansDir.
-	// Treated as a lock file (Cargo.lock, package-lock.json semantics):
-	// init writes it once and never refreshes it on subsequent runs.
-	plansConfigLockFile = "_config.lock"
-
-	// plansSystemsFile is the system registry inside plansDir — populated
-	// by the user as they add EARS systems. init seeds it as a zero-byte
-	// placeholder if absent.
-	plansSystemsFile = "_data_systems.yaml"
+	// staxSystemsFile is the system registry inside the project-scope
+	// staxDir — populated by the user as they add EARS systems. init seeds
+	// it as a zero-byte placeholder if absent.
+	staxSystemsFile = "_data_systems.yaml"
 
 	// planFileExt is the on-disk extension every plan file carries. Pulled
 	// out as a constant so plan.go's filename-format regexes, glob, and
@@ -72,7 +74,7 @@ const (
 	planFileExt = ".md"
 )
 
-// agentTarget describes one downstream destination managed by `x-x init`.
+// agentTarget describes one downstream destination managed by `stax init`.
 // The CLI walks agentTargets and installs the bundled skill library into
 // each row's skillsRel directory, plus optional per-agent config files
 // from each row's configSrc subtree. Adding a future agent = appending a
@@ -94,9 +96,9 @@ const (
 //	                empty the install/remove code falls back to skillsRel
 //	                in both scopes. When set, project scope still uses
 //	                skillsRel and user scope uses this field.
-//	configSrc     — subdir under ~/.x-x/agents/ holding agent-specific files
-//	                (e.g. "claude" for agents/claude/settings.json). Empty
-//	                means this agent has no per-agent config to install.
+//	configSrc     — subdir under ~/<staxDir>/agents/ holding agent-specific
+//	                files (e.g. "claude" for agents/claude/settings.json).
+//	                Empty means this agent has no per-agent config to install.
 //	configRel     — destination for the configSrc files, relative to scope root
 //	                (e.g. ".claude" so that agents/claude/settings.json lands
 //	                at <root>/.claude/settings.json).
@@ -138,7 +140,7 @@ func agentByKey(key string) *agentTarget {
 	return nil
 }
 
-// agentTargets is the registry consulted by `x-x init` and `x-x skills
+// agentTargets is the registry consulted by `stax init` and `stax skills
 // remove`. Rows are ordered alphabetically by display name (case-
 // insensitive) so the interactive picker reads as an ordered list at
 // every scope. Add a new agent by inserting a row at its alphabetical
@@ -198,7 +200,7 @@ var agentTargets = []agentTarget{
 	// land files Continue never discovers; the install must use
 	// `.continue/skills` exclusively. Skills-only — Continue's
 	// settings live at `~/.continue/config.yaml` and are user-owned
-	// end-to-end, outside the x-x install scope.
+	// end-to-end, outside the stax install scope.
 	{"continue", "Continue", ".continue/skills", "", "", ""},
 	// Cursor reads skills from `.agents/skills/` at workspace scope
 	// (the cross-agent open spec path, shared with Codex/Copilot/Pi/
@@ -209,7 +211,7 @@ var agentTargets = []agentTarget{
 	// is skills-only; Cursor's settings (`~/.cursor/settings.json`,
 	// MCP config, the cursor-agent hosted backend auth via
 	// CURSOR_API_KEY) are all user-owned end-to-end and outside the
-	// x-x install scope.
+	// stax install scope.
 	{"cursor", "Cursor", ".agents/skills", ".cursor/skills", "", ""},
 	// GitHub Copilot CLI reads skills from `.agents/skills/`, `.claude/skills/`,
 	// or `.github/skills/` at project scope, and `~/.copilot/skills/` or
@@ -217,7 +219,7 @@ var agentTargets = []agentTarget{
 	// docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills).
 	// We use `.agents/skills` at BOTH scopes — the cross-agent open spec
 	// path. Reasons:
-	//   1. agents/skills/x-plan/SKILL.md and agents/skills/x-x/SKILL.md
+	//   1. agents/skills/scope/SKILL.md and agents/skills/ship/SKILL.md
 	//      define `<skills_root>` as exactly `.claude/skills/` (Claude) or
 	//      `.agents/skills/` (other agents). The agent's path-resolution
 	//      logic globs that exact list — `.copilot/skills` is not in it.
@@ -236,7 +238,7 @@ var agentTargets = []agentTarget{
 	// NOT a documented Kilo lookup, so installing there would land
 	// files Kilo never discovers. Symmetric across scopes — no
 	// userSkillsRel override needed. Skills-only; Kilo's settings live
-	// in `~/.kilocode/` end-to-end and are user-owned outside the x-x
+	// in `~/.kilocode/` end-to-end and are user-owned outside the stax
 	// install scope.
 	{"kilo", "Kilo Code", ".kilocode/skills", "", "", ""},
 	// omp (oh-my-pi, omp.sh / can1357/oh-my-pi) is a TS coding agent
@@ -270,15 +272,15 @@ var agentTargets = []agentTarget{
 	// Skills-only — omp's user settings live at `~/.omp/config.yml`
 	// (interactive Settings → Memory tab) and its model registry at
 	// `~/.omp/agent/models.yml`. Both are user-owned end-to-end and
-	// outside the x-x install scope.
+	// outside the stax install scope.
 	{"omp", "Oh My Pi", ".agents/skills", "", "", ""},
 	// OpenCode resolves slash commands from `.opencode/{command,commands}/**/*.md`
 	// at project scope and `~/.config/opencode/commands/` at user scope.
 	// The lookup keys off the file's frontmatter `name:` (the path-derived
-	// fallback is used only when frontmatter omits `name:`), so an x-x
-	// install at `.opencode/commands/x-plan/SKILL.md` with `name: x-plan`
-	// registers a command callable as both `/x-plan` in the TUI and
-	// `opencode run --command x-plan ...` from the CLI (sst/opencode
+	// fallback is used only when frontmatter omits `name:`), so a stax
+	// install at `.opencode/commands/scope/SKILL.md` with `name: scope`
+	// registers a command callable as both `/scope` in the TUI and
+	// `opencode run --command scope ...` from the CLI (sst/opencode
 	// PR #2348). The bundled tree shape (`<command>/SKILL.md` rather than
 	// flat `<command>.md`) matches Claude/Codex for parity across agents.
 	// No per-agent config is bundled for OpenCode yet (auth + provider
@@ -293,12 +295,12 @@ var agentTargets = []agentTarget{
 	// so a single install reaches every "agents-standard" tool on the
 	// machine. Pi's CLI command parser resolves `/skill:<name>` in print
 	// mode by reading SKILL.md frontmatter `name:`, so the bundled
-	// `x-plan` and `x-x` skills register as `/skill:x-plan` and
-	// `/skill:x-x` in both interactive (`pi`) and headless (`pi -p`)
+	// `scope` and `ship` skills register as `/skill:scope` and
+	// `/skill:ship` in both interactive (`pi`) and headless (`pi -p`)
 	// invocations without any per-agent config file. configSrc/configRel
 	// stay empty — no pi-specific config bundled today; pi looks for
 	// `~/.pi/agent/AGENTS.md` and `~/.pi/agent/settings.json` if a user
-	// adds them, which is outside the scope of x-x's install.
+	// adds them, which is outside the scope of stax's install.
 	{"pi", "Pi", ".agents/skills", "", "", ""},
 	// Zed (zed.dev) reads skills from `.agents/skills/` at workspace
 	// scope and from `~/.agents/skills/` at global scope — Zed
@@ -312,11 +314,11 @@ var agentTargets = []agentTarget{
 	// settings live at `~/.config/zed/settings.json` (Linux/macOS
 	// XDG), `%APPDATA%\Zed\settings.json` (Windows), or
 	// `$FLATPAK_XDG_CONFIG_HOME/zed/settings.json` (Flatpak), all
-	// user-owned end-to-end and outside the x-x install scope.
+	// user-owned end-to-end and outside the stax install scope.
 	{"zed", "Zed", ".agents/skills", "", "", ""},
 }
 
-// skillsSubdir is the directory inside ~/.x-x/agents/ that holds the
+// skillsSubdir is the directory inside ~/<staxDir>/agents/ that holds the
 // cross-agent skill library — one subdirectory per skill. Pulled out as
 // a constant because init.go and the on-disk write path both depend on it.
 const skillsSubdir = "skills"
@@ -336,34 +338,34 @@ const configJSONExt = ".json"
 
 // configHooksKey is the top-level JSON property inside every bundled
 // per-agent config file (`agents/claude/settings.json`,
-// `agents/codex/hooks.json`) under which x-x's shipped hook records
-// live. The files themselves are user-owned end-to-end; what x-x owns
+// `agents/codex/hooks.json`) under which stax's shipped hook records
+// live. The files themselves are user-owned end-to-end; what stax owns
 // are individual leaf records inside the arrays nested under this key.
 //
-// `x-x skills remove` consults this constant to scope its un-merge:
+// `stax skills remove` consults this constant to scope its un-merge:
 // only entries underneath this property are candidates for subtraction,
 // and even then only when they deep-equal a record in the currently
 // bundled file. Renaming the key in a future config schema = update
 // this constant + the matching property in `agents/<agent>/*.json`.
 const configHooksKey = "hooks"
 
-// Plan-tooling defaults pinned into .x-plans/_config.lock by
-// writePlansScaffold during `x-x init`. The `x-x plans` subcommands read
+// Plan-tooling defaults pinned into <staxDir>/<staxLockFile> by
+// writePlansScaffold during `stax init`. The `stax plans` subcommands read
 // these values from the lock file at runtime; the binary is the standard
 // source for new projects while existing projects keep whatever they
-// pinned on their first `x-x init`. Bump these numbers to change behavior
+// pinned on their first `stax init`. Bump these numbers to change behavior
 // going forward without disturbing prior installs.
 const (
 	// defaultPrefixWidth is the zero-padded width of plan-file numeric
 	// prefixes (e.g. width 4 → "0001-foo.md"). Bump to widen prefixes.
 	defaultPrefixWidth = 4
 
-	// defaultMaxPlanLines is the line-count ceiling `x-x plans lint`
+	// defaultMaxPlanLines is the line-count ceiling `stax plans lint`
 	// enforces on a single plan file (frontmatter + body, inclusive).
 	defaultMaxPlanLines = 30
 
 	// plansListOverflowThreshold is the row count above which
-	// `x-x plans list` activates the optional `--overflow-keywords` narrow.
+	// `stax plans list` activates the optional `--overflow-keywords` narrow.
 	// At or below this count every matching plan is returned regardless
 	// of whether keywords were supplied. Tuned for LLM consumption — a
 	// list this short fits comfortably in context without narrowing.
@@ -388,7 +390,7 @@ const (
 // agentsEmbedRoot) that writeBundledAgents must NOT copy onto the user's
 // machine. The directive `//go:embed all:agents` pulls in everything under
 // agents/, but a handful of those files are repo-only metadata (READMEs
-// for contributors browsing GitHub) that have no business in ~/.x-x/agents.
+// for contributors browsing GitHub) that have no business in ~/<staxDir>/agents.
 var skipFromEmbed = map[string]bool{
 	"README.md": true,
 }
@@ -400,8 +402,8 @@ var skipFromEmbed = map[string]bool{
 // embedded markdown/json content. Non-Go consumers (scripts/e2e_test.sh,
 // docs/public/reference.md) still hold literal strings; keep them in sync.
 const (
-	skillXPlanDir = "x-plan"
-	skillXXDir    = "x-x"
+	skillScopeDir = "scope"
+	skillShipDir  = "ship"
 )
 
 // skillManifestFile is the manifest filename every bundled skill ships
@@ -412,7 +414,7 @@ const (
 const skillManifestFile = "SKILL.md"
 
 // ownedSkills is the standard, exhaustive list of skill directory names
-// the binary ships and is allowed to delete. `x-x skills remove` uses this
+// the binary ships and is allowed to delete. `stax skills remove` uses this
 // as a strict allowlist — a folder named anything else under .claude/skills
 // or .agents/skills is the user's, never ours, and is always left alone.
 //
@@ -421,22 +423,22 @@ const skillManifestFile = "SKILL.md"
 // appending it here. The embed.FS-driven install pulls in whatever is on
 // disk; this list is the matching allowlist for removal.
 var ownedSkills = []string{
-	skillXPlanDir,
-	skillXXDir,
+	skillScopeDir,
+	skillShipDir,
 }
 
 // ownedFiles is the exhaustive list of files (relative to the install scope
-// root) that `x-x init` may have written. None of them carry a marker, and
+// root) that `stax init` may have written. None of them carry a marker, and
 // each `init` run leaves them alone if they already exist — so removal must
 // be conservative (today: not automated). Recorded here so the inventory
-// of "what x-x touches on disk" lives in one place, even though no code
+// of "what stax touches on disk" lives in one place, even though no code
 // path currently iterates it (hence the nolint below).
 //
-//nolint:unused // documentation registry; will be surfaced in `x-x skills remove` UX.
+//nolint:unused // documentation registry; will be surfaced in `stax skills remove` UX.
 var ownedFiles = []string{
 	// Plan-tooling scaffold seeded by writePlansScaffold (project scope only).
-	plansDir + "/" + plansSystemsFile,
-	plansDir + "/" + plansConfigLockFile,
+	staxDir + "/" + staxSystemsFile,
+	staxDir + "/" + staxLockFile,
 	// Per-agent config files copied from agents/<agent>/ by installAgentConfig.
 	// Empty-target-only writes: an existing file is preserved.
 	agentByKey("claude").configRel + "/settings.json",
@@ -463,11 +465,11 @@ const (
 
 	// releasesAPIURL is the unauthenticated endpoint that returns the
 	// most recent release's metadata. Only the `tag_name` field is read.
-	releasesAPIURL = "https://api.github.com/repos/stackific/x-x/releases/latest"
+	releasesAPIURL = "https://api.github.com/repos/stackific/stax/releases/latest"
 
 	// installShURL / installPS1URL are the standard install-script URLs
 	// surfaced to the user in the "update available" nudge. The README
 	// and docs/public/getting-started.md should match these strings.
-	installShURL  = "https://stackific.com/x-x/INSTALL.sh"
-	installPS1URL = "https://stackific.com/x-x/INSTALL.ps1"
+	installShURL  = "https://stackific.com/stax/INSTALL.sh"
+	installPS1URL = "https://stackific.com/stax/INSTALL.ps1"
 )

@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-// TestPrintPlansUsage guards the `x-x plans` help surface — every
+// TestPrintPlansUsage guards the `stax plans` help surface — every
 // subcommand row must appear, so adding a new one without updating
 // printPlansUsage fails the test.
 func TestPrintPlansUsage(t *testing.T) {
@@ -20,7 +20,7 @@ func TestPrintPlansUsage(t *testing.T) {
 	printPlansUsage(&buf)
 	out := buf.String()
 	for _, want := range []string{
-		"Usage: x-x plans <subcommand>",
+		"Usage: stax plans <subcommand>",
 		"next-prefix",
 		"list",
 		"lint",
@@ -47,7 +47,7 @@ func TestLoadPrefixWidth_MissingLockReturnsDefault(t *testing.T) {
 // the lock file (per-project pin).
 func TestLoadPrefixWidth_ValidLock(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, plansConfigLockFile),
+	if err := os.WriteFile(filepath.Join(dir, staxLockFile),
 		[]byte(`{"prefix_width":7}`), 0o600); err != nil {
 		t.Fatalf("seed lock: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestLoadPrefixWidth_ValidLock(t *testing.T) {
 // Fail gracefully to the default, don't surface the parse error.
 func TestLoadPrefixWidth_MalformedJSONReturnsDefault(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, plansConfigLockFile),
+	if err := os.WriteFile(filepath.Join(dir, staxLockFile),
 		[]byte(`{not json`), 0o600); err != nil {
 		t.Fatalf("seed lock: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestLoadPrefixWidth_MalformedJSONReturnsDefault(t *testing.T) {
 // with empty prefix, which next-prefix can't render sensibly.
 func TestLoadPrefixWidth_NonPositiveReturnsDefault(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, plansConfigLockFile),
+	if err := os.WriteFile(filepath.Join(dir, staxLockFile),
 		[]byte(`{"prefix_width":0}`), 0o600); err != nil {
 		t.Fatalf("seed lock: %v", err)
 	}
@@ -85,9 +85,9 @@ func TestLoadPrefixWidth_NonPositiveReturnsDefault(t *testing.T) {
 	}
 }
 
-// TestScanHighestPrefix_MissingDirReturnsZero: missing plansDir is
+// TestScanHighestPrefix_MissingDirReturnsZero: missing staxDir is
 // treated as "no plans yet" → scan returns 0 → next-prefix returns 1.
-// This is what makes `x-x plans next-prefix` safe on a fresh project.
+// This is what makes `stax plans next-prefix` safe on a fresh project.
 func TestScanHighestPrefix_MissingDirReturnsZero(t *testing.T) {
 	if got := scanHighestPrefix(filepath.Join(t.TempDir(), "absent"), 5); got != 0 {
 		t.Fatalf("got %d, want 0", got)
@@ -127,7 +127,7 @@ func TestScanHighestPrefix_IgnoresNonNumericPrefixes(t *testing.T) {
 	for _, name := range []string{
 		"00002-foo" + planFileExt,
 		"README" + planFileExt,
-		plansConfigLockFile,
+		staxLockFile,
 		"123-too-short" + planFileExt,
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), nil, 0o600); err != nil {
@@ -368,7 +368,7 @@ func TestParsePlan_RejectsBlockSystems(t *testing.T) {
 	}
 }
 
-// TestListPlans_MissingDirIsEmpty: missing plansDir → empty slice, no
+// TestListPlans_MissingDirIsEmpty: missing staxDir → empty slice, no
 // error. The CLI check (requireProject) catches genuine missing-project
 // states, so the inner helper just needs graceful no-data behavior.
 func TestListPlans_MissingDirIsEmpty(t *testing.T) {
@@ -722,7 +722,7 @@ func TestLoadMaxPlanLines_MissingLockReturnsDefault(t *testing.T) {
 
 func TestLoadMaxPlanLines_ValidLock(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, plansConfigLockFile),
+	if err := os.WriteFile(filepath.Join(dir, staxLockFile),
 		[]byte(`{"max_plan_lines":17}`), 0o600); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -733,7 +733,7 @@ func TestLoadMaxPlanLines_ValidLock(t *testing.T) {
 
 func TestLoadMaxPlanLines_NonPositiveReturnsDefault(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, plansConfigLockFile),
+	if err := os.WriteFile(filepath.Join(dir, staxLockFile),
 		[]byte(`{"max_plan_lines":0}`), 0o600); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
@@ -780,7 +780,7 @@ func TestParseRegistry_MissingFileReturnsEmpty(t *testing.T) {
 // ignored. Both lookup directions are populated symmetrically.
 func TestParseRegistry_HappyPath(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, plansSystemsFile)
+	path := filepath.Join(dir, staxSystemsFile)
 	body := `# top comment
 systems:
   - id: auth-service
@@ -815,7 +815,7 @@ other:
 // here. Whole entries on either side of the bad one must still land.
 func TestParseRegistry_SkipsPartialEntries(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, plansSystemsFile)
+	path := filepath.Join(dir, staxSystemsFile)
 	body := `systems:
   - id: complete-one
     name: Complete One
@@ -845,11 +845,11 @@ func TestParseRegistry_SkipsPartialEntries(t *testing.T) {
 // TestParseRegistry_MultilineEntries pins that an item's `id:` and
 // `name:` can live on the same line as `- ` or on indented continuation
 // lines — both forms appear in the wild because the documented example
-// (now in x-plan/SKILL.md Appendix C) shows the continuation form, but
+// (now in scope/SKILL.md Appendix C) shows the continuation form, but
 // a hand-edit may collapse onto one line.
 func TestParseRegistry_MultilineEntries(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, plansSystemsFile)
+	path := filepath.Join(dir, staxSystemsFile)
 	body := `systems:
   - id: same-line
     name: Same Line
@@ -893,10 +893,10 @@ const (
 // duplicated as `fixturePlanName` across call sites — AGENTS.md hard rule.
 var fixturePlanName = "00001-foo" + planFileExt
 
-// fixtureRegistryPath is the .x-plans/_data_systems.yaml path passed to
+// fixtureRegistryPath is the .stax/_data_systems.yaml path passed to
 // lintPlanFile as its `registryPath` arg. Composed from the constants so
-// a rename of plansDir or plansSystemsFile lands in exactly one place.
-var fixtureRegistryPath = filepath.Join(plansDir, plansSystemsFile)
+// a rename of staxDir or staxSystemsFile lands in exactly one place.
+var fixtureRegistryPath = filepath.Join(staxDir, staxSystemsFile)
 
 // newRegistry builds a `registry` value from alternating id, name args:
 // `newRegistry("auth-service", "Auth Service", "billing-service",
@@ -1100,7 +1100,7 @@ func containsSubstr(findings []string, substr string) bool {
 
 // ---------- plan slugify ----------
 
-// TestSlugify covers the kebab-case transformation used by `x-x plans
+// TestSlugify covers the kebab-case transformation used by `stax plans
 // slugify` and by lintFilenameMatchesTitle. Both surfaces share the same
 // function, so any future change to the algorithm is caught here once.
 func TestSlugify(t *testing.T) {
@@ -1983,7 +1983,7 @@ func TestSetRegistryField(t *testing.T) {
 // against captured stdout/stderr buffers so the full flow — flag-set
 // parsing, project marker check, output format, exit code — is unit-covered.
 
-// freshProjectAndChdir seeds an initialized .x-plans/ scaffold inside a
+// freshProjectAndChdir seeds an initialized .stax/ scaffold inside a
 // temp dir, chdirs into it, and returns the dir. Shared between the four
 // entry-point test groups so each test stays short.
 func freshProjectAndChdir(t *testing.T) string {
@@ -2012,11 +2012,11 @@ func seedListPlan(t *testing.T, dir, name, status, system, body string) string {
 
 func TestPlanNextPrefix_Happy(t *testing.T) {
 	dir := freshProjectAndChdir(t)
-	plans := filepath.Join(dir, plansDir)
+	plans := filepath.Join(dir, staxDir)
 	seedListPlan(t, plans, "0001-a.md", "valid", "auth", "x")
 	seedListPlan(t, plans, "0003-c.md", "valid", "auth", "x")
 	var out, errb bytes.Buffer
-	if rc := planNextPrefix(nil, plansDir, &out, &errb); rc != 0 {
+	if rc := planNextPrefix(nil, staxDir, &out, &errb); rc != 0 {
 		t.Fatalf("rc=%d stderr=%q", rc, errb.String())
 	}
 	if out.String() != "0004\n" {
@@ -2027,11 +2027,11 @@ func TestPlanNextPrefix_Happy(t *testing.T) {
 func TestPlanNextPrefix_NotProject(t *testing.T) {
 	chdir(t, t.TempDir())
 	var out, errb bytes.Buffer
-	rc := planNextPrefix(nil, plansDir, &out, &errb)
+	rc := planNextPrefix(nil, staxDir, &out, &errb)
 	if rc != 2 {
 		t.Fatalf("rc=%d, want 2", rc)
 	}
-	if !strings.Contains(errb.String(), "not an x-x project") {
+	if !strings.Contains(errb.String(), "not a stax project") {
 		t.Fatalf("missing banner in stderr: %q", errb.String())
 	}
 }
@@ -2039,7 +2039,7 @@ func TestPlanNextPrefix_NotProject(t *testing.T) {
 func TestPlanNextPrefix_StrayArg(t *testing.T) {
 	freshProjectAndChdir(t)
 	var out, errb bytes.Buffer
-	rc := planNextPrefix([]string{"unexpected"}, plansDir, &out, &errb)
+	rc := planNextPrefix([]string{"unexpected"}, staxDir, &out, &errb)
 	if rc != 2 {
 		t.Fatalf("rc=%d, want 2", rc)
 	}
@@ -2051,12 +2051,12 @@ func TestPlanNextPrefix_StrayArg(t *testing.T) {
 func TestPlanNextPrefix_RespectsPrefixWidth(t *testing.T) {
 	dir := freshProjectAndChdir(t)
 	// Overwrite the seed-empty lock with a width=6 pin.
-	lock := filepath.Join(dir, plansDir, plansConfigLockFile)
+	lock := filepath.Join(dir, staxDir, staxLockFile)
 	if err := os.WriteFile(lock, []byte(`{"prefix_width":6}`), 0o600); err != nil {
 		t.Fatalf("write lock: %v", err)
 	}
 	var out, errb bytes.Buffer
-	if rc := planNextPrefix(nil, plansDir, &out, &errb); rc != 0 {
+	if rc := planNextPrefix(nil, staxDir, &out, &errb); rc != 0 {
 		t.Fatalf("rc=%d stderr=%q", rc, errb.String())
 	}
 	if out.String() != "000001\n" {
@@ -2068,11 +2068,11 @@ func TestPlanNextPrefix_RespectsPrefixWidth(t *testing.T) {
 
 func TestPlanList_HappyPath(t *testing.T) {
 	dir := freshProjectAndChdir(t)
-	plans := filepath.Join(dir, plansDir)
+	plans := filepath.Join(dir, staxDir)
 	seedListPlan(t, plans, "0001-a.md", "valid", "auth", "x")
 	seedListPlan(t, plans, "0002-b.md", "deprecated", "billing", "x")
 	var out, errb bytes.Buffer
-	if rc := planList(nil, plansDir, &out, &errb); rc != 0 {
+	if rc := planList(nil, staxDir, &out, &errb); rc != 0 {
 		t.Fatalf("rc=%d stderr=%q", rc, errb.String())
 	}
 	// Default --order=desc → 0002 before 0001.
@@ -2085,11 +2085,11 @@ func TestPlanList_HappyPath(t *testing.T) {
 func TestPlanList_NotProject(t *testing.T) {
 	chdir(t, t.TempDir())
 	var out, errb bytes.Buffer
-	rc := planList(nil, plansDir, &out, &errb)
+	rc := planList(nil, staxDir, &out, &errb)
 	if rc != 2 {
 		t.Fatalf("rc=%d, want 2", rc)
 	}
-	if !strings.Contains(errb.String(), "not an x-x project") {
+	if !strings.Contains(errb.String(), "not a stax project") {
 		t.Fatalf("missing banner: %q", errb.String())
 	}
 }
@@ -2097,7 +2097,7 @@ func TestPlanList_NotProject(t *testing.T) {
 func TestPlanList_StrayArg(t *testing.T) {
 	freshProjectAndChdir(t)
 	var out, errb bytes.Buffer
-	rc := planList([]string{"unexpected"}, plansDir, &out, &errb)
+	rc := planList([]string{"unexpected"}, staxDir, &out, &errb)
 	if rc != 2 {
 		t.Fatalf("rc=%d, want 2", rc)
 	}
@@ -2109,7 +2109,7 @@ func TestPlanList_StrayArg(t *testing.T) {
 func TestPlanList_BadOrder(t *testing.T) {
 	freshProjectAndChdir(t)
 	var out, errb bytes.Buffer
-	rc := planList([]string{"--order", "garbage"}, plansDir, &out, &errb)
+	rc := planList([]string{"--order", "garbage"}, staxDir, &out, &errb)
 	if rc != 2 {
 		t.Fatalf("rc=%d, want 2", rc)
 	}
@@ -2120,12 +2120,12 @@ func TestPlanList_BadOrder(t *testing.T) {
 
 func TestPlanList_StatusFilter(t *testing.T) {
 	dir := freshProjectAndChdir(t)
-	plans := filepath.Join(dir, plansDir)
+	plans := filepath.Join(dir, staxDir)
 	seedListPlan(t, plans, "0001-a.md", "valid", "auth", "x")
 	seedListPlan(t, plans, "0002-b.md", "deprecated", "auth", "x")
 	seedListPlan(t, plans, "0003-c.md", "valid", "auth", "x")
 	var out, errb bytes.Buffer
-	if rc := planList([]string{"--status", "valid"}, plansDir, &out, &errb); rc != 0 {
+	if rc := planList([]string{"--status", "valid"}, staxDir, &out, &errb); rc != 0 {
 		t.Fatalf("rc=%d stderr=%q", rc, errb.String())
 	}
 	// Default desc: 0003 then 0001, deprecated 0002 dropped.
@@ -2139,9 +2139,9 @@ func TestPlanList_StatusFilter(t *testing.T) {
 
 func TestPlanLint_AllPass(t *testing.T) {
 	dir := freshProjectAndChdir(t)
-	plans := filepath.Join(dir, plansDir)
+	plans := filepath.Join(dir, staxDir)
 	// Registry with one system so the EARS-subject check resolves cleanly.
-	if err := os.WriteFile(filepath.Join(plans, plansSystemsFile),
+	if err := os.WriteFile(filepath.Join(plans, staxSystemsFile),
 		[]byte("systems:\n  - id: auth\n    name: Auth Service\n"), 0o600); err != nil {
 		t.Fatalf("write registry: %v", err)
 	}
@@ -2150,7 +2150,7 @@ func TestPlanLint_AllPass(t *testing.T) {
 		t.Fatalf("write plan: %v", err)
 	}
 	var out, errb bytes.Buffer
-	if rc := planLint(nil, plansDir, &out, &errb); rc != 0 {
+	if rc := planLint(nil, staxDir, &out, &errb); rc != 0 {
 		t.Fatalf("rc=%d stdout=%q stderr=%q", rc, out.String(), errb.String())
 	}
 	if !strings.Contains(out.String(), "0001-a.md: ok") {
@@ -2163,14 +2163,14 @@ func TestPlanLint_AllPass(t *testing.T) {
 
 func TestPlanLint_OneFail(t *testing.T) {
 	dir := freshProjectAndChdir(t)
-	plans := filepath.Join(dir, plansDir)
+	plans := filepath.Join(dir, staxDir)
 	// Plan without frontmatter → splitFrontmatter stops; lintPlanFile
 	// returns ≥1 finding.
 	if err := os.WriteFile(filepath.Join(plans, "0001-broken.md"), []byte("no frontmatter\n"), 0o600); err != nil {
 		t.Fatalf("write plan: %v", err)
 	}
 	var out, errb bytes.Buffer
-	if rc := planLint(nil, plansDir, &out, &errb); rc != 1 {
+	if rc := planLint(nil, staxDir, &out, &errb); rc != 1 {
 		t.Fatalf("rc=%d, want 1", rc)
 	}
 	if !strings.Contains(out.String(), "0001-broken.md:") {
@@ -2184,7 +2184,7 @@ func TestPlanLint_OneFail(t *testing.T) {
 func TestPlanLint_EmptyProject(t *testing.T) {
 	freshProjectAndChdir(t)
 	var out, errb bytes.Buffer
-	if rc := planLint(nil, plansDir, &out, &errb); rc != 0 {
+	if rc := planLint(nil, staxDir, &out, &errb); rc != 0 {
 		t.Fatalf("rc=%d, want 0 on empty project", rc)
 	}
 	if !strings.Contains(errb.String(), "0 ok, 0 failed") {
@@ -2195,11 +2195,11 @@ func TestPlanLint_EmptyProject(t *testing.T) {
 func TestPlanLint_NotProject(t *testing.T) {
 	chdir(t, t.TempDir())
 	var out, errb bytes.Buffer
-	rc := planLint(nil, plansDir, &out, &errb)
+	rc := planLint(nil, staxDir, &out, &errb)
 	if rc != 2 {
 		t.Fatalf("rc=%d, want 2", rc)
 	}
-	if !strings.Contains(errb.String(), "not an x-x project") {
+	if !strings.Contains(errb.String(), "not a stax project") {
 		t.Fatalf("missing banner: %q", errb.String())
 	}
 }
@@ -2207,7 +2207,7 @@ func TestPlanLint_NotProject(t *testing.T) {
 func TestPlanLint_StrayArg(t *testing.T) {
 	freshProjectAndChdir(t)
 	var out, errb bytes.Buffer
-	rc := planLint([]string{"unexpected"}, plansDir, &out, &errb)
+	rc := planLint([]string{"unexpected"}, staxDir, &out, &errb)
 	if rc != 2 {
 		t.Fatalf("rc=%d, want 2", rc)
 	}

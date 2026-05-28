@@ -1,14 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Stackific Inc.
 #
-# UNINSTALL.ps1 — Remove an x-x installation on Windows.
+# UNINSTALL.ps1 — Remove a stax installation on Windows.
 #
 # Usage:
-#   irm https://raw.githubusercontent.com/stackific/x-x/main/scripts/UNINSTALL.ps1 | iex
-#   $env:INSTALL_DIR = 'C:\tools\x-x'; irm https://raw.githubusercontent.com/stackific/x-x/main/scripts/UNINSTALL.ps1 | iex
+#   irm https://raw.githubusercontent.com/stackific/stax/main/scripts/UNINSTALL.ps1 | iex
+#   $env:INSTALL_DIR = 'C:\tools\stax'; irm https://raw.githubusercontent.com/stackific/stax/main/scripts/UNINSTALL.ps1 | iex
 #
 # Environment overrides:
-#   INSTALL_DIR  Directory the binary was installed into (default: $HOME\.x-x).
+#   INSTALL_DIR  Directory the binary was installed into (default: $HOME\.stax).
 #                Must match whatever was passed to INSTALL.ps1; otherwise the
 #                binary is left in place.
 
@@ -18,9 +18,9 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$binary     = 'x-x'
-$installDir = if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { Join-Path $HOME '.x-x' }
-$configDir  = Join-Path $HOME '.x-x'
+$binary     = 'stax'
+$installDir = if ($env:INSTALL_DIR) { $env:INSTALL_DIR } else { Join-Path $HOME '.stax' }
+$configDir  = Join-Path $HOME '.stax'
 
 function Info($msg) { Write-Host "==> $msg" }
 function Warn($msg) { Write-Warning $msg }
@@ -31,12 +31,12 @@ function Warn($msg) { Write-Warning $msg }
 # warn and keep going so the user still gets a partial cleanup.
 $dest = Join-Path $installDir "$binary.exe"
 if (Test-Path -LiteralPath $dest) {
-  Info "Removing x-x-managed user-scope skills"
+  Info "Removing stax-managed user-scope skills"
   try {
     & $dest skills remove --user
-    if ($LASTEXITCODE -ne 0) { Warn "x-x skills remove --user exited $LASTEXITCODE; continuing" }
+    if ($LASTEXITCODE -ne 0) { Warn "stax skills remove --user exited $LASTEXITCODE; continuing" }
   } catch {
-    Warn "x-x skills remove --user failed: $_; continuing"
+    Warn "stax skills remove --user failed: $_; continuing"
   }
 } else {
   Warn "$dest not found; skipping user-scope skill cleanup"
@@ -50,7 +50,7 @@ if (Test-Path -LiteralPath $dest) {
   Warn "$dest not found; skipping"
 }
 
-# 3. Remove $HOME\.x-x\ (.config.json + agents/ cache + the binary if installed there).
+# 3. Remove $HOME\.stax\ (.config.json + agents/ cache + the binary if installed there).
 # Guard against catastrophic INSTALL_DIR / HOME values.
 $forbidden = @($HOME, [System.IO.Path]::GetPathRoot($HOME), '', $null)
 if (Test-Path -LiteralPath $configDir) {
@@ -83,7 +83,7 @@ if ($userPath) {
   Info "User PATH is empty; skipping"
 }
 
-# Patch the current session too so a subsequent `x-x` in this shell fails
+# Patch the current session too so a subsequent `stax` in this shell fails
 # fast instead of resolving to a now-missing binary.
 $sessionEntries = $env:Path -split ';' | Where-Object { $_ -and ($_ -ne $installDir) }
 $env:Path = ($sessionEntries -join ';')

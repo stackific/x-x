@@ -11,8 +11,8 @@ import (
 	"time"
 )
 
-// TestConfigPath confirms configPath composes $HOME + xxHomeDir +
-// xxConfigFile — the three constants are the contract; any inline
+// TestConfigPath confirms configPath composes $HOME + staxDir +
+// staxConfigFile — the three constants are the contract; any inline
 // fragment that bypasses them would silently break test isolation.
 func TestConfigPath(t *testing.T) {
 	home := pinHome(t)
@@ -20,7 +20,7 @@ func TestConfigPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("configPath: %v", err)
 	}
-	want := filepath.Join(home, xxHomeDir, xxConfigFile)
+	want := filepath.Join(home, staxDir, staxConfigFile)
 	if got != want {
 		t.Fatalf("configPath = %q, want %q", got, want)
 	}
@@ -116,7 +116,7 @@ func TestMaybeNotifyUpdate_SilentWhenConfigMissing(t *testing.T) {
 func TestMaybeNotifyUpdate_SkipsWhenRecent(t *testing.T) {
 	home := pinHome(t)
 	// Seed a fresh config to short-circuit the network round-trip.
-	if err := os.MkdirAll(filepath.Join(home, xxHomeDir), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Join(home, staxDir), 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	p, _ := configPath()

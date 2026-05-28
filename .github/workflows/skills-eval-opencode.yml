@@ -2,16 +2,16 @@ name: skills eval / opencode
 
 # Manually-triggered experiment from the agent-eval lineage. The loop:
 #
-#   1. Install OpenCode on the runner; install x-x to PATH.
+#   1. Install OpenCode on the runner; install stax to PATH.
 #   2. Sync the uv-managed skills-evals project (deepeval, openai, pytest,
 #      python-dotenv).
 #   3. Run `uv run pytest`. The tests:
 #        a. Spawn `opencode run --format json --model deepseek/...` per
 #           turn (single-shot subprocesses; resume with --continue).
-#        b. Drive the x-plan / x-x skill prompts via the inlined-SKILL.md
+#        b. Drive the scope / stax skill prompts via the inlined-SKILL.md
 #           workaround in skills_evals.opencode_driver.compose_skill_prompt.
 #           This sidesteps anomalyco/opencode#7345 — `opencode run` does
-#           not currently resolve slash commands, so a literal `/x-plan ...`
+#           not currently resolve slash commands, so a literal `/scope ...`
 #           string would be passed to the LLM and hallucinated as a
 #           missing command. The driver reads the SKILL.md off disk and
 #           concatenates it with the task.
@@ -38,11 +38,11 @@ jobs:
     timeout-minutes: 60
 
     env:
-      # X_X_AGENT_KEY tells the skills-evals conftest which backend's
+      # STAX_AGENT_KEY tells the skills-evals conftest which backend's
       # tests to collect, which binary to require on PATH, and which
-      # `--agents <key>` value to pass to `x-x init`. Default is
+      # `--agents <key>` value to pass to `stax init`. Default is
       # "claude"; this workflow runs the OpenCode set.
-      X_X_AGENT_KEY: opencode
+      STAX_AGENT_KEY: opencode
 
       # OpenCode reads provider credentials via Models.dev. For the
       # `deepseek` provider, DEEPSEEK_API_KEY is the routing key — no
@@ -59,12 +59,12 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # `go install .` lands a release-flavored x-x in $(go env GOPATH)/bin.
+      # `go install .` lands a release-flavored stax in $(go env GOPATH)/bin.
       # The setup-go action puts that directory on PATH.
-      - name: install x-x to PATH
+      - name: install stax to PATH
         run: |
           go install .
-          x-x --version
+          stax --version
 
       - uses: actions/setup-node@v6
         with:

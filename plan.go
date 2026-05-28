@@ -18,7 +18,7 @@ import (
 	"strings"
 )
 
-// runPlans dispatches `x-x plans <subcommand>`. Future plan-tooling commands
+// runPlans dispatches `stax plans <subcommand>`. Future plan-tooling commands
 // (e.g. `lint`) can be added here without restructuring, the same way
 // `runSkills` is structured.
 func runPlans(args []string) {
@@ -42,12 +42,12 @@ func runPlans(args []string) {
 	}
 }
 
-// printPlansUsage writes the `x-x plans` help block to w. Mirrors the
+// printPlansUsage writes the `stax plans` help block to w. Mirrors the
 // printSkillsUsage structure (one-line subcommand summaries) so the two help
 // surfaces stay visually aligned; both ride on a writer parameter rather
 // than os.Stderr directly so future `--help` paths can redirect to stdout.
 func printPlansUsage(w io.Writer) {
-	_, _ = fmt.Fprintln(w, "Usage: x-x plans <subcommand>")
+	_, _ = fmt.Fprintln(w, "Usage: stax plans <subcommand>")
 	_, _ = fmt.Fprintln(w, "  next-prefix   Print the next unused zero-padded plan prefix")
 	_, _ = fmt.Fprintln(w, "  list          List plans with slug, status, and declared systems")
 	_, _ = fmt.Fprintln(w, "  lint          Validate every plan file against the project schema")
@@ -55,15 +55,15 @@ func printPlansUsage(w io.Writer) {
 }
 
 // runPlansNextPrefix prints the next available zero-padded plan prefix in
-// plansDir (the standard ".x-plans" under cwd). Takes no arguments — the
-// directory is not user-configurable; plansDir is the single source of truth.
+// staxDir (the standard ".stax" under cwd). Takes no arguments — the
+// directory is not user-configurable; staxDir is the single source of truth.
 //
-// Prefix width is read from <plansDir>/<plansConfigLockFile> (JSON), falling
+// Prefix width is read from <staxDir>/<staxLockFile> (JSON), falling
 // back to defaultPrefixWidth when the lock file is missing or malformed.
-// Missing plansDir is treated as empty (next prefix = 1), so the command is
-// safe to run before `x-x init` has seeded the scaffold.
+// Missing staxDir is treated as empty (next prefix = 1), so the command is
+// safe to run before `stax init` has seeded the scaffold.
 func runPlansNextPrefix(args []string) {
-	os.Exit(planNextPrefix(args, plansDir, os.Stdout, os.Stderr))
+	os.Exit(planNextPrefix(args, staxDir, os.Stdout, os.Stderr))
 }
 
 // planNextPrefix is the testable body of runPlansNextPrefix: flag-set
@@ -72,25 +72,25 @@ func runPlansNextPrefix(args []string) {
 // not-a-project). Pulled out so unit tests can drive the full flow
 // (argument rejection, project-marker-check banner, zero-pad format) without
 // shelling out a subprocess.
-func planNextPrefix(args []string, plansDir string, stdout, stderr io.Writer) int {
+func planNextPrefix(args []string, staxDir string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("plans next-prefix", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
-		_, _ = fmt.Fprintln(stderr, "Usage: x-x plans next-prefix")
+		_, _ = fmt.Fprintln(stderr, "Usage: stax plans next-prefix")
 	}
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() > 0 {
-		_, _ = fmt.Fprintf(stderr, "x-x plans next-prefix takes no arguments (got %q)\n", fs.Arg(0))
+		_, _ = fmt.Fprintf(stderr, "stax plans next-prefix takes no arguments (got %q)\n", fs.Arg(0))
 		return 2
 	}
 	if err := checkProject(); err != nil {
 		_, _ = fmt.Fprintln(stderr, notProjectBanner)
 		return 2
 	}
-	width := loadPrefixWidth(plansDir)
-	next := scanHighestPrefix(plansDir, width) + 1
+	width := loadPrefixWidth(staxDir)
+	next := scanHighestPrefix(staxDir, width) + 1
 	_, _ = fmt.Fprintf(stdout, "%0*d\n", width, next)
 	// Anonymous-usage ping on the success path.
 	track("plans_next_prefix", telemetryEvent{
@@ -100,11 +100,11 @@ func planNextPrefix(args []string, plansDir string, stdout, stderr io.Writer) in
 	return 0
 }
 
-// loadPrefixWidth reads prefix_width from <plansDir>/<plansConfigLockFile>.
+// loadPrefixWidth reads prefix_width from <staxDir>/<staxLockFile>.
 // Returns defaultPrefixWidth on any read/parse failure so the command is
-// usable before `x-x init` has seeded the lock file.
-func loadPrefixWidth(plansDir string) int {
-	data, err := os.ReadFile(filepath.Join(plansDir, plansConfigLockFile)) // #nosec G304 -- plansDir is a CLI arg, path is project-local.
+// usable before `stax init` has seeded the lock file.
+func loadPrefixWidth(staxDir string) int {
+	data, err := os.ReadFile(filepath.Join(staxDir, staxLockFile)) // #nosec G304 -- staxDir is a CLI arg, path is project-local.
 	if err != nil {
 		return defaultPrefixWidth
 	}
@@ -118,15 +118,15 @@ func loadPrefixWidth(plansDir string) int {
 }
 
 // scanHighestPrefix returns the largest numeric prefix found among entry
-// names in plansDir whose name pattern matches `<width digits>-<rest>.md` —
+// names in staxDir whose name pattern matches `<width digits>-<rest>.md` —
 // the same filename pattern listPlans accepts. Anchoring on `-` and the
 // `.md` extension (not just `\d{width}`) keeps next-prefix consistent
 // with what list / lint will recognize: a 5-digit-prefixed file when
 // width=4 doesn't match either pattern and must not be counted, otherwise
 // next-prefix would hand out numbers based on files list / lint silently
 // ignore.
-func scanHighestPrefix(plansDir string, width int) int {
-	entries, err := os.ReadDir(plansDir)
+func scanHighestPrefix(staxDir string, width int) int {
+	entries, err := os.ReadDir(staxDir)
 	if err != nil {
 		return 0
 	}
@@ -148,7 +148,7 @@ func scanHighestPrefix(plansDir string, width int) int {
 	return highest
 }
 
-// runPlansList prints one tab-separated row per plan in plansDir whose
+// runPlansList prints one tab-separated row per plan in staxDir whose
 // filename matches `<prefix-digits>-<slug>.md`. Each row is
 // `<slug>\t<status>\t<sys1>,<sys2>,...`. Flags:
 //
@@ -162,11 +162,11 @@ func scanHighestPrefix(plansDir string, width int) int {
 //	                                   plansListOverflowThreshold (see constants.go)
 //
 // Files matching the filename pattern but missing frontmatter, `status:`,
-// or `systems:` produce stderr warnings and are skipped. Missing plansDir
+// or `systems:` produce stderr warnings and are skipped. Missing staxDir
 // is treated as empty (no rows, no error) so the command is safe to run
-// before `x-x init` has seeded the scaffold.
+// before `stax init` has seeded the scaffold.
 func runPlansList(args []string) {
-	os.Exit(planList(args, plansDir, os.Stdout, os.Stderr))
+	os.Exit(planList(args, staxDir, os.Stdout, os.Stderr))
 }
 
 // planList is the testable body of runPlansList. Same exit-code contract
@@ -174,7 +174,7 @@ func runPlansList(args []string) {
 // / bad --order). Pulled out so the filter chain + sort + overflow path
 // can be exercised end-to-end at unit level — the e2e suites cover the
 // same surface but a unit test fails faster on a contract regression.
-func planList(args []string, plansDir string, stdout, stderr io.Writer) int {
+func planList(args []string, staxDir string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("plans list", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	var statusFlag, systemFlag, keywordsFlag stringSliceFlag
@@ -183,13 +183,13 @@ func planList(args []string, plansDir string, stdout, stderr io.Writer) int {
 	fs.Var(&systemFlag, "system", "keep only plans whose systems contain this id (repeatable; OR semantics; matches the kebab `id:` from _data_systems.yaml)")
 	fs.Var(&keywordsFlag, "overflow-keywords", "case-insensitive substring(s) narrowing the output when the post-filter count exceeds plansListOverflowThreshold (repeatable; OR semantics; matched against plan body only)")
 	fs.Usage = func() {
-		_, _ = fmt.Fprintln(stderr, "Usage: x-x plans list [--status NAME[,NAME...]] [--system ID] [--order asc|desc] [--overflow-keywords PATTERN[,PATTERN...]]")
+		_, _ = fmt.Fprintln(stderr, "Usage: stax plans list [--status NAME[,NAME...]] [--system ID] [--order asc|desc] [--overflow-keywords PATTERN[,PATTERN...]]")
 	}
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() > 0 {
-		_, _ = fmt.Fprintf(stderr, "x-x plans list takes no positional arguments (got %q)\n", fs.Arg(0))
+		_, _ = fmt.Fprintf(stderr, "stax plans list takes no positional arguments (got %q)\n", fs.Arg(0))
 		return 2
 	}
 	if err := checkProject(); err != nil {
@@ -199,17 +199,17 @@ func planList(args []string, plansDir string, stdout, stderr io.Writer) int {
 
 	order, err := parseOrder(*orderFlag)
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "x-x plans list: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "stax plans list: %v\n", err)
 		return 2
 	}
 	keywords := normalizeKeywords(keywordsFlag)
 	statusSet := toFilterSet(statusFlag)
 	systemSet := toFilterSet(systemFlag)
 
-	width := loadPrefixWidth(plansDir)
-	rows, err := listPlans(plansDir, width, stderr)
+	width := loadPrefixWidth(staxDir)
+	rows, err := listPlans(staxDir, width, stderr)
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "x-x plans list: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "stax plans list: %v\n", err)
 		return 1
 	}
 
@@ -217,7 +217,7 @@ func planList(args []string, plansDir string, stdout, stderr io.Writer) int {
 	// keys off the post-filter count (matching the user-visible result).
 	filtered := filterPlanRows(rows, statusSet, systemSet)
 	sortPlanRows(filtered, order)
-	filtered = applyOverflowNarrow(filtered, keywords, plansDir, plansListOverflowThreshold)
+	filtered = applyOverflowNarrow(filtered, keywords, staxDir, plansListOverflowThreshold)
 
 	for _, r := range filtered {
 		_, _ = fmt.Fprintf(stdout, "%s\t%s\t%s\n", r.slug, r.status, strings.Join(r.systems, ","))
@@ -294,13 +294,13 @@ func normalizeKeywords(tokens []string) []string {
 //     result.
 //
 // Otherwise rows are returned unchanged.
-func applyOverflowNarrow(rows []planRow, keywords []string, plansDir string, threshold int) []planRow {
+func applyOverflowNarrow(rows []planRow, keywords []string, staxDir string, threshold int) []planRow {
 	if len(rows) <= threshold || len(keywords) == 0 {
 		return rows
 	}
 	matched := make([]planRow, 0, len(rows))
 	for _, r := range rows {
-		body, ok := readPlanBody(filepath.Join(plansDir, r.slug+planFileExt))
+		body, ok := readPlanBody(filepath.Join(staxDir, r.slug+planFileExt))
 		if !ok {
 			continue
 		}
@@ -323,7 +323,7 @@ func applyOverflowNarrow(rows []planRow, keywords []string, plansDir string, thr
 // caller can skip them; lintPlanFile surfaces those as per-file findings
 // on its own pass.
 func readPlanBody(path string) (string, bool) {
-	data, err := os.ReadFile(path) // #nosec G304 -- path is composed from a CLI-driven plansDir + slug.
+	data, err := os.ReadFile(path) // #nosec G304 -- path is composed from a CLI-driven staxDir + slug.
 	if err != nil {
 		return "", false
 	}
@@ -418,16 +418,16 @@ var (
 	planSystemsRe = regexp.MustCompile(`(?m)^systems:\s*\[([^\]]*)\]\s*$`)
 )
 
-// listPlans walks plansDir, parses every file whose name matches
+// listPlans walks staxDir, parses every file whose name matches
 // `<width digits>-<anything>.md`, and returns the parsed rows in
 // prefix-ascending order. Warnings for filename-matching files with
 // malformed/missing frontmatter go to warnW so the caller can route them
 // (CLI sends them to stderr; tests can capture them).
 //
-// Missing plansDir is treated as "no plans" (returns nil, nil) so callers
+// Missing staxDir is treated as "no plans" (returns nil, nil) so callers
 // don't need to special-case the pre-init state.
-func listPlans(plansDir string, width int, warnW io.Writer) ([]planRow, error) {
-	entries, err := os.ReadDir(plansDir)
+func listPlans(staxDir string, width int, warnW io.Writer) ([]planRow, error) {
+	entries, err := os.ReadDir(staxDir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
@@ -455,7 +455,7 @@ func listPlans(plansDir string, width int, warnW io.Writer) ([]planRow, error) {
 
 	rows := make([]planRow, 0, len(names))
 	for _, name := range names {
-		row, ok := parsePlan(filepath.Join(plansDir, name), warnW)
+		row, ok := parsePlan(filepath.Join(staxDir, name), warnW)
 		if !ok {
 			continue
 		}
@@ -469,7 +469,7 @@ func listPlans(plansDir string, width int, warnW io.Writer) ([]planRow, error) {
 // file lacks frontmatter or is missing a required field — warn-and-skip
 // so a single bad file never aborts the whole `plans list` walk.
 func parsePlan(path string, warnW io.Writer) (planRow, bool) {
-	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from a CLI-driven ReadDir of plansDir.
+	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from a CLI-driven ReadDir of staxDir.
 	if err != nil {
 		_, _ = fmt.Fprintf(warnW, "warning: %s: %v; skipping\n", path, err)
 		return planRow{}, false
@@ -579,8 +579,8 @@ var (
 
 // loadMaxPlanLines mirrors loadPrefixWidth for the max_plan_lines key in
 // _config.lock. Falls back to defaultMaxPlanLines on any failure.
-func loadMaxPlanLines(plansDir string) int {
-	data, err := os.ReadFile(filepath.Join(plansDir, plansConfigLockFile)) // #nosec G304 -- plansDir is project-local.
+func loadMaxPlanLines(staxDir string) int {
+	data, err := os.ReadFile(filepath.Join(staxDir, staxLockFile)) // #nosec G304 -- staxDir is project-local.
 	if err != nil {
 		return defaultMaxPlanLines
 	}
@@ -593,35 +593,35 @@ func loadMaxPlanLines(plansDir string) int {
 	return cfg.MaxPlanLines
 }
 
-// runPlansLint validates every *.md file in plansDir against the plan schema.
-// Takes no arguments — always operates on the standard .x-plans/ scaffold.
+// runPlansLint validates every *.md file in staxDir against the plan schema.
+// Takes no arguments — always operates on the standard .stax/ scaffold.
 // Output contract:
 //
 //   - Per-file findings → stdout, one per line, prefixed with file path.
 //   - A passing file emits `<path>: ok`.
 //   - Summary `<ok> ok, <fail> failed` → stderr.
-//   - Missing plansDir → 0 plans, exit 0.
+//   - Missing staxDir → 0 plans, exit 0.
 //   - Exit 0 if every file passed, exit 1 if any failed.
 func runPlansLint(args []string) {
-	os.Exit(planLint(args, plansDir, os.Stdout, os.Stderr))
+	os.Exit(planLint(args, staxDir, os.Stdout, os.Stderr))
 }
 
 // planLint is the testable body of runPlansLint. Exit-code contract:
 // 0 every file passed (or zero files), 1 at least one failed, 2 usage
-// error or not-an-x-x-project. Pulled out so unit tests can drive the
+// error or not-an-stax-project. Pulled out so unit tests can drive the
 // per-file loop + summary line + exit-on-fail counter without
 // shelling out a subprocess.
-func planLint(args []string, plansDir string, stdout, stderr io.Writer) int {
+func planLint(args []string, staxDir string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("plans lint", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
-		_, _ = fmt.Fprintln(stderr, "Usage: x-x plans lint")
+		_, _ = fmt.Fprintln(stderr, "Usage: stax plans lint")
 	}
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() > 0 {
-		_, _ = fmt.Fprintf(stderr, "x-x plans lint takes no arguments (got %q)\n", fs.Arg(0))
+		_, _ = fmt.Fprintf(stderr, "stax plans lint takes no arguments (got %q)\n", fs.Arg(0))
 		return 2
 	}
 	if err := checkProject(); err != nil {
@@ -629,13 +629,13 @@ func planLint(args []string, plansDir string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	width := loadPrefixWidth(plansDir)
-	maxLines := loadMaxPlanLines(plansDir)
-	registryPath := filepath.Join(plansDir, plansSystemsFile)
+	width := loadPrefixWidth(staxDir)
+	maxLines := loadMaxPlanLines(staxDir)
+	registryPath := filepath.Join(staxDir, staxSystemsFile)
 	reg := parseRegistry(registryPath)
 
-	// Glob only errors on bad pattern; ours is fixed. Missing plansDir → empty.
-	files, _ := filepath.Glob(filepath.Join(plansDir, "*"+planFileExt))
+	// Glob only errors on bad pattern; ours is fixed. Missing staxDir → empty.
+	files, _ := filepath.Glob(filepath.Join(staxDir, "*"+planFileExt))
 	sort.Strings(files)
 	knownSlugs := make(map[string]bool, len(files))
 	for _, f := range files {
@@ -702,7 +702,7 @@ type registry struct {
 // finding instead.
 func parseRegistry(path string) registry {
 	empty := registry{byID: make(map[string]string), byName: make(map[string]string)}
-	f, err := os.Open(path) // #nosec G304 -- path = plansDir/plansSystemsFile, both constants.
+	f, err := os.Open(path) // #nosec G304 -- path = staxDir/staxSystemsFile, both constants.
 	if err != nil {
 		return empty
 	}
@@ -809,7 +809,7 @@ func isIndented(line string) bool {
 func lintPlanFile(path string, width, maxLines int, reg registry, knownSlugs map[string]bool, relations plansRelations, registryPath string) []string {
 	findings := lintFilename(filepath.Base(path), width)
 
-	data, err := os.ReadFile(path) // #nosec G304 -- path is a plansDir glob result.
+	data, err := os.ReadFile(path) // #nosec G304 -- path is a staxDir glob result.
 	if err != nil {
 		return append(findings, fmt.Sprintf("read error: %v", err))
 	}
@@ -989,7 +989,7 @@ func scanPlansRelations(files []string) plansRelations {
 		supersededBy: make(map[string]map[string]bool, len(files)),
 	}
 	for _, path := range files {
-		data, err := os.ReadFile(path) // #nosec G304 -- path is a plansDir glob result.
+		data, err := os.ReadFile(path) // #nosec G304 -- path is a staxDir glob result.
 		if err != nil {
 			continue
 		}
@@ -1215,7 +1215,7 @@ func slugify(title string) string {
 // runPlansSlugify takes a single positional argument (the title) and prints
 // its kebab-case slug to stdout. Exits 2 on missing/extra arguments or when
 // the title contains no characters that survive slugification. No project
-// check — slugify is a pure transform and is useful before `x-x init`.
+// check — slugify is a pure transform and is useful before `stax init`.
 // runPlansSlugify is the only subcommand that takes a single positional and
 // no flags. flag.Parse can't help here — the title may legitimately start
 // with `-` (e.g. "---draft note"), and flag.Parse would reject it as an
@@ -1228,28 +1228,28 @@ func runPlansSlugify(args []string) {
 
 // planSlugify is the testable body of runPlansSlugify. Exit-code
 // contract: 0 happy (or -h/--help), 2 usage error (missing/extra args
-// or unsluggable title). No plansDir argument because slugify is a pure
-// transform — useful before `x-x init`, so it deliberately skips the
+// or unsluggable title). No staxDir argument because slugify is a pure
+// transform — useful before `stax init`, so it deliberately skips the
 // project marker check.
 func planSlugify(args []string, stdout, stderr io.Writer) int {
 	if len(args) >= 1 {
 		switch args[0] {
 		case "-h", "--help":
-			_, _ = fmt.Fprintln(stderr, `Usage: x-x plans slugify "<title>"`)
+			_, _ = fmt.Fprintln(stderr, `Usage: stax plans slugify "<title>"`)
 			return 0
 		case "--":
 			args = args[1:]
 		}
 	}
 	if len(args) != 1 {
-		_, _ = fmt.Fprintln(stderr, `Usage: x-x plans slugify "<title>"`)
-		_, _ = fmt.Fprintln(stderr, `x-x plans slugify takes exactly one positional argument: the title (quote it)`)
+		_, _ = fmt.Fprintln(stderr, `Usage: stax plans slugify "<title>"`)
+		_, _ = fmt.Fprintln(stderr, `stax plans slugify takes exactly one positional argument: the title (quote it)`)
 		return 2
 	}
 	title := args[0]
 	slug := slugify(title)
 	if slug == "" {
-		_, _ = fmt.Fprintf(stderr, "x-x plans slugify: title %q has no slug-able characters\n", title)
+		_, _ = fmt.Fprintf(stderr, "stax plans slugify: title %q has no slug-able characters\n", title)
 		return 2
 	}
 	_, _ = fmt.Fprintln(stdout, slug)

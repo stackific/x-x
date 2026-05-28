@@ -162,26 +162,26 @@ jobs:
       - name: install via INSTALL_LOCAL.ps1
         run: |
           Write-Host "=== HOME state BEFORE install ==="
-          if (Test-Path -LiteralPath (Join-Path $HOME '.x-x')) {
-            Get-ChildItem -Recurse -Force -LiteralPath (Join-Path $HOME '.x-x') |
+          if (Test-Path -LiteralPath (Join-Path $HOME '.stax')) {
+            Get-ChildItem -Recurse -Force -LiteralPath (Join-Path $HOME '.stax') |
               Select-Object FullName, Length |
               Format-Table -AutoSize
-          } else { Write-Host "  (no `$HOME/.x-x yet)" }
+          } else { Write-Host "  (no `$HOME/.stax yet)" }
           Write-Host ""
           Write-Host "=== running INSTALL_LOCAL.ps1 ==="
           .\scripts\INSTALL_LOCAL.ps1 -Verbose
           if ($LASTEXITCODE -ne 0) { throw "INSTALL_LOCAL.ps1 failed with exit $LASTEXITCODE" }
           Write-Host ""
           Write-Host "=== HOME state AFTER install ==="
-          Get-ChildItem -Recurse -Force -LiteralPath (Join-Path $HOME '.x-x') |
+          Get-ChildItem -Recurse -Force -LiteralPath (Join-Path $HOME '.stax') |
             Select-Object FullName, Length |
             Format-Table -AutoSize
-          Write-Host "=== ~/.x-x/.config.json contents ==="
-          Get-Content -LiteralPath (Join-Path $HOME '.x-x\.config.json') | Write-Host
+          Write-Host "=== ~/.stax/.config.json contents ==="
+          Get-Content -LiteralPath (Join-Path $HOME '.stax\.config.json') | Write-Host
 
       - name: verify installed binary
         run: |
-          $bin = Join-Path $HOME '.x-x\x-x.exe'
+          $bin = Join-Path $HOME '.stax\stax.exe'
           Write-Host "Expected binary path: $bin"
           if (-not (Test-Path -LiteralPath $bin)) { throw "binary not at $bin" }
           $info = Get-Item -LiteralPath $bin
@@ -209,11 +209,11 @@ jobs:
         if: always()
         run: |
           Write-Host "=== HOME state BEFORE uninstall ==="
-          if (Test-Path -LiteralPath (Join-Path $HOME '.x-x')) {
-            Get-ChildItem -Recurse -Force -LiteralPath (Join-Path $HOME '.x-x') |
+          if (Test-Path -LiteralPath (Join-Path $HOME '.stax')) {
+            Get-ChildItem -Recurse -Force -LiteralPath (Join-Path $HOME '.stax') |
               Select-Object FullName |
               Format-Table -AutoSize
-          } else { Write-Host "  (no `$HOME/.x-x to uninstall)" }
+          } else { Write-Host "  (no `$HOME/.stax to uninstall)" }
           Write-Host ""
           Write-Host "=== running UNINSTALL.ps1 ==="
           .\scripts\UNINSTALL.ps1
@@ -222,13 +222,13 @@ jobs:
       - name: verify install dir is removed
         if: always()
         run: |
-          $xxDir = Join-Path $HOME '.x-x'
+          $xxDir = Join-Path $HOME '.stax'
           Write-Host "Checking: $xxDir"
           if (Test-Path -LiteralPath $xxDir) {
             $leftovers = Get-ChildItem -Recurse -Force -LiteralPath $xxDir |
                          Select-Object -ExpandProperty FullName
             throw "expected $xxDir to be removed; leftovers found"
           }
-          $bin = Join-Path $HOME '.x-x\x-x.exe'
+          $bin = Join-Path $HOME '.stax\stax.exe'
           if (Test-Path -LiteralPath $bin) { throw "binary still present: $bin" }
           Write-Host "clean."

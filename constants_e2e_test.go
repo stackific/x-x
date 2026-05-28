@@ -30,18 +30,17 @@ func TestE2EShellConstantsMatchGo(t *testing.T) {
 
 	// Mapping: shell variable name → expected Go-side value.
 	want := map[string]string{
-		"XX_HOME_DIR":                   xxHomeDir,
-		"XX_CONFIG_FILE":                xxConfigFile,
+		"STAX_DIR":                      staxDir,
+		"STAX_CONFIG_FILE":              staxConfigFile,
 		"AGENTS_EMBED_ROOT":             agentsEmbedRoot,
 		"SKILLS_SUBDIR":                 skillsSubdir,
-		"PLANS_DIR":                     plansDir,
-		"PLANS_CONFIG_LOCK":             plansConfigLockFile,
-		"PLANS_SYSTEMS_FILE":            plansSystemsFile,
+		"STAX_LOCK_FILE":                staxLockFile,
+		"STAX_SYSTEMS_FILE":             staxSystemsFile,
 		"DEFAULT_PREFIX_WIDTH":          strconv.Itoa(defaultPrefixWidth),
 		"PLANS_LIST_OVERFLOW_THRESHOLD": strconv.Itoa(plansListOverflowThreshold),
 
-		"SKILL_X_PLAN_DIR":    skillXPlanDir,
-		"SKILL_X_X_DIR":       skillXXDir,
+		"SKILL_SCOPE_DIR":     skillScopeDir,
+		"SKILL_SHIP_DIR":      skillShipDir,
 		"SKILL_MANIFEST_FILE": skillManifestFile,
 
 		"ANTIGRAVITY_SKILLS_REL":      agentByKey("antigravity").skillsRel,
@@ -101,7 +100,7 @@ func TestE2EShellConstantsMatchGo(t *testing.T) {
 // Inline comments after the value are stripped. Quoted values have their
 // surrounding double-quotes removed. `${VAR}` references inside the value
 // are resolved against earlier entries — so composed values like
-// `${PLANS_DIR}/${PLANS_CONFIG_LOCK}` resolve to their final form, and
+// `${STAX_DIR}/${STAX_LOCK_FILE}` resolve to their final form, and
 // space-joined collections like OWNED_SKILLS are validated end-to-end.
 func parseShellReadonly(path string) (map[string]string, error) {
 	f, err := os.Open(path) // #nosec G304 -- test-controlled path.

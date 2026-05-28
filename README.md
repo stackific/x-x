@@ -1,28 +1,28 @@
-# x-x by [Stackific Inc.](https://stackific.com)
+# Stax by [Stackific Inc.](https://stackific.com)
 
-An evidence-based, spec-driven agent skillset with enterprise accuracy at startup speed with just 2-skill vocabulary: `/x-plan` and `/x-x`. 
+An evidence-based, spec-driven agent skillset with enterprise accuracy at startup speed with just 2-skill vocabulary: `/scope` and `/ship`. 
 
 ## Quick start
 
 ```bash
 # For macOS and Linux
-curl -fsSL https://stackific.com/x-x/INSTALL.sh | sh
+curl -fsSL https://stackific.com/stax/INSTALL.sh | sh
 
 # For Windows
 Set-ExecutionPolicy Bypass -Scope Process -Force # If only needed
-iex (irm https://stackific.com/x-x/INSTALL.ps1)
+iex (irm https://stackific.com/stax/INSTALL.ps1)
 
 ## Follow the on-screen instructions
 
-# Initialize a x-x project
+# Initialize a stax project
 cd <your-project-folder>
-x-x init
+stax init
 
-# Launch your AI coding agent and invoke the `/x-plan` skill
-/x-plan <specify-your-need>
+# Launch your AI coding agent and invoke the `/scope` skill
+/scope <specify-your-need>
 
 # Execute the next plan in line
-/x-x
+/ship
 ```
 
 ## Documentation
@@ -45,9 +45,9 @@ Common tasks (via [Task](https://taskfile.dev)):
 
 See [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) for the contribution workflow (DCO sign-off and signed commits are required).
 
-## What does `x-x` mean? 
+## What does `stax` mean?
 
-😵 But, honestly it is just shorter and quicker to remember and invoke as a skill, i.e., _slash, x, dash_.
+Stacks of plans. The binary writes plans into `.stax/`, and the two skills move them along the line: `/scope` files a new plan, `/ship` works the stack.
 
 ## License
 

@@ -17,15 +17,15 @@ that matter for the eval loop:
    resolves <name> against `.opencode/{command,commands}/**/*.md` and the
    skill registry (`.claude/skills/`, `.agents/skills/`, etc.). The lookup
    keys off the file's frontmatter `name:` value, not the on-disk path —
-   so `x-x init --agents opencode` writing `.opencode/commands/x-plan/SKILL.md`
-   with `name: x-plan` registers a command callable as
-   `opencode run --command x-plan`. Verified empirically against opencode 1.x.
-   This sidesteps the `/x-plan ...`-as-literal-text problem the earlier
+   so `stax init --agents opencode` writing `.opencode/commands/scope/SKILL.md`
+   with `name: scope` registers a command callable as
+   `opencode run --command scope`. Verified empirically against opencode 1.x.
+   This sidesteps the `/scope ...`-as-literal-text problem the earlier
    inline-template workaround was built for.
 
    When the command template has no `$ARGUMENTS` / `$N` placeholders,
    opencode appends the positional message to the template body
-   (session/prompt.ts in sst/opencode). The bundled x-x SKILL.md files
+   (session/prompt.ts in sst/opencode). The bundled stax SKILL.md files
    don't carry placeholders, so the user task lands at the end of the
    prompt verbatim.
 
@@ -85,13 +85,13 @@ DEFAULT_MODEL = "deepseek/deepseek-v4-pro"
 # Targets the two gates that stranded sessions in the first green-on-CI
 # attempts:
 #
-#   1. Empty systems registry. `x-plan` SKILL.md Appendix C step 4 says
+#   1. Empty systems registry. `scope` SKILL.md Appendix C step 4 says
 #      "STOP. Propose a new system to the user. On approval, add to
 #      _data_systems.yaml. Then continue." The propose-and-wait wording
 #      doesn't surface as `Reply yes` so the auto-yes regex misses it
 #      and opencode goes idle.
 #
-#   2. Destructive overwrites in the executor. When `x-x` runs a plan
+#   2. Destructive overwrites in the executor. When `ship` runs a plan
 #      whose system already has an existing artifact (e.g. a reminders
 #      plan that supersedes a todo plan, with the todo's index.html
 #      already on disk), the model emits a checkpoint message like
@@ -261,7 +261,7 @@ def _drive_loop(
       # sets the child's cwd but inherits the parent's PWD, so without
       # an explicit override opencode would walk up from pytest's cwd
       # (skills-evals/) instead of the workspace and find none of the
-      # `.opencode/commands/` files x-x init wrote. The CI failure mode
+      # `.opencode/commands/` files stax init wrote. The CI failure mode
       # was "Available commands: init, review, customize-opencode" —
       # only built-ins, because cfg.command was never populated.
       env = {**os.environ, "PWD": str(workspace)}

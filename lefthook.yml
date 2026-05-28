@@ -11,7 +11,7 @@ pre-commit:
   commands:
     format:
       glob: "*.go"
-      run: gofumpt -w {staged_files} && goimports -w {staged_files} && gci write --section standard --section default --section "prefix(github.com/stackific/x-x)" {staged_files} && git add {staged_files}
+      run: gofumpt -w {staged_files} && goimports -w {staged_files} && gci write --section standard --section default --section "prefix(github.com/stackific/stax)" {staged_files} && git add {staged_files}
     golangci-lint:
       glob: "*.go"
       run: golangci-lint run --fix ./...
@@ -31,7 +31,7 @@ pre-push:
     # printed "(cached)" on most invocations).
     test:
       run: go test -race -count=1 ./...
-    # End-to-end CLI tests — builds x-x into a sandbox and drives every
+    # End-to-end CLI tests — builds stax into a sandbox and drives every
     # subcommand. Runs in parallel with the Go unit tests above (no shared
     # state: the e2e script provisions its own sandbox HOME and binary).
     # Caught release-blocking bugs that unit tests alone missed, so it guards

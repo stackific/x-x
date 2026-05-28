@@ -1,6 +1,6 @@
 # Agent skill & hook paths
 
-Per-agent install paths for **skills** (where x-x lands `SKILL.md` files via `x-x init`) and **hooks** (where each agent reads its lifecycle-hook config) — verified from each agent's official docs at the time of writing.
+Per-agent install paths for **skills** (where stax lands `SKILL.md` files via `stax init`) and **hooks** (where each agent reads its lifecycle-hook config) — verified from each agent's official docs at the time of writing.
 
 The "verified" column links to the page each row was sourced from. Where two locations are listed, both are documented as valid lookup paths.
 
@@ -38,15 +38,15 @@ The "verified" column links to the page each row was sourced from. Where two loc
 | Oh My Pi (omp, oh-my-pi) | Dynamic module import (omp's current model — TypeScript modules). Legacy shell-style examples mention `.claude/hooks/pre/*` and `.omp/.../hooks/pre/*` but the in-tree implementation is module-based | Equivalent at user scope (`~/.omp/...`, `~/.claude/hooks/pre/*`) | TypeScript modules; supports `session_*`, `before_agent_start`, `agent_start/end`, `turn_start/end`, `tool_call`, `tool_result`, `context`, `auto_compaction_*`, etc. | [github.com/can1357/oh-my-pi/.../docs/hooks.md](https://github.com/can1357/oh-my-pi/blob/main/docs/hooks.md) |
 | Zed | Zed's hook surface goes through `~/.config/zed/settings.json`'s `assistant:` + `agent:` keys + MCP tool registration rather than a discrete event-file format. | Same — Zed's editor settings double as the global config. | JSON in `settings.json` | [zed.dev/docs/ai/agent-panel](https://zed.dev/docs/ai/agent-panel) — no documented lifecycle hook surface; verify before bundling. |
 
-## Implications for the x-x `agentTarget` registry
+## Implications for the stax `agentTarget` registry
 
 `agentTargets` in `constants.go` carries `skillsRel` (skills install path) and optional `configSrc` / `configRel` (per-agent config bundle path). To wire up hooks for a given agent we need a row whose `configSrc` points at a bundled `agents/<key>/<hook-file>` and whose `configRel` points at the agent's documented hook location.
 
-- **Drop-in JSON, easy to bundle**: Claude Code (already wired — `agents/claude/settings.json` → `~/.claude/settings.json`), Codex (already wired — `agents/codex/hooks.json` → `~/.codex/hooks.json`), Copilot CLI (could ship `~/.copilot/hooks/x-x.json`), Cursor (would need `.cursor/hooks.json` if added as a target).
+- **Drop-in JSON, easy to bundle**: Claude Code (already wired — `agents/claude/settings.json` → `~/.claude/settings.json`), Codex (already wired — `agents/codex/hooks.json` → `~/.codex/hooks.json`), Copilot CLI (could ship `~/.copilot/hooks/stax.json`), Cursor (would need `.cursor/hooks.json` if added as a target).
 - **Executable script bundle**: Cline — would need a bundle of executable scripts at `.clinerules/hooks/<event>`; the current `installAgentConfig` JSON-merge model doesn't fit. macOS/Linux only.
 - **TypeScript plugin bundle**: OpenCode, Pi, omp — would need `.ts` files installed at their respective extension paths. Not a config-file shape.
 - **Underdocumented (hooks only)**: Antigravity's skill paths are pinned and the row is registered in `agentTargets` (`.agents/skills` workspace, `~/.gemini/antigravity/skills` global), but its hook surfaces aren't on a single authoritative reference page yet — defer a bundled `agents/antigravity/*.json` until antigravity.google/docs/hooks names a concrete filename + envelope format.
 
 ## Source policy
 
-Each row was confirmed against the page in its **Docs** column at the time of writing. Where a row says "not officially documented" or "verify before relying", the search surfaced community blogs or contradictory sources rather than a single authoritative reference, and the row should be re-checked before x-x ships behaviour that depends on it.
+Each row was confirmed against the page in its **Docs** column at the time of writing. Where a row says "not officially documented" or "verify before relying", the search surfaced community blogs or contradictory sources rather than a single authoritative reference, and the row should be re-checked before stax ships behaviour that depends on it.

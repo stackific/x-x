@@ -1,4 +1,4 @@
-module github.com/stackific/x-x
+module github.com/stackific/stax
 
 go 1.26
 

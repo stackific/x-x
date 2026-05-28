@@ -3,9 +3,9 @@
 """End-to-end: drive Claude through plan-supersede + artifact-replace.
 
 Sequence:
-  1. /x-plan a todo list app.
-  2. /x-plan a reminders app that SUPERSEDES the todo plan.
-  3. /x-x — executes the queue; per agents/skills/x-x/SKILL.md step 3.4,
+  1. /scope a todo list app.
+  2. /scope a reminders app that SUPERSEDES the todo plan.
+  3. /ship — executes the queue; per agents/skills/ship/SKILL.md step 3.4,
      when the executor finishes the successor plan it flips the
      predecessor's `status: valid` → `status: superseded` and appends
      the successor slug to the predecessor's `superseded_by:` array.
@@ -48,11 +48,11 @@ def test_claude_reminders_supersedes_todo(workspace: Path, tmp_path: Path) -> No
   # --- Plan 1: todo list ---
   todo_run = drive_skill(
     workspace,
-    f"/x-plan {TODO_TASK}",
-    transcript_path=transcripts / "x-plan-todo.jsonl",
+    f"/scope {TODO_TASK}",
+    transcript_path=transcripts / "scope-todo.jsonl",
   )
   assert todo_run.exit_code == 0, (
-    f"claude exited {todo_run.exit_code} during /x-plan todo; "
+    f"claude exited {todo_run.exit_code} during /scope todo; "
     f"timed_out={todo_run.timed_out}; stderr:\n{todo_run.stderr_tail}"
   )
   assert todo_run.completed
@@ -61,11 +61,11 @@ def test_claude_reminders_supersedes_todo(workspace: Path, tmp_path: Path) -> No
   # --- Plan 2: reminders (supersedes todo) ---
   reminders_run = drive_skill(
     workspace,
-    f"/x-plan {REMINDERS_TASK}",
-    transcript_path=transcripts / "x-plan-reminders.jsonl",
+    f"/scope {REMINDERS_TASK}",
+    transcript_path=transcripts / "scope-reminders.jsonl",
   )
   assert reminders_run.exit_code == 0, (
-    f"claude exited {reminders_run.exit_code} during /x-plan reminders; "
+    f"claude exited {reminders_run.exit_code} during /scope reminders; "
     f"timed_out={reminders_run.timed_out}; stderr:\n{reminders_run.stderr_tail}"
   )
   assert reminders_run.completed
@@ -74,11 +74,11 @@ def test_claude_reminders_supersedes_todo(workspace: Path, tmp_path: Path) -> No
   # --- Execute ---
   exec_run = drive_skill(
     workspace,
-    "/x-x",
-    transcript_path=transcripts / "x-x.jsonl",
+    "/ship",
+    transcript_path=transcripts / "stax.jsonl",
   )
   assert exec_run.exit_code == 0, (
-    f"claude exited {exec_run.exit_code} during /x-x; "
+    f"claude exited {exec_run.exit_code} during /ship; "
     f"timed_out={exec_run.timed_out}; stderr:\n{exec_run.stderr_tail}"
   )
   assert exec_run.completed
@@ -93,7 +93,7 @@ def test_claude_reminders_supersedes_todo(workspace: Path, tmp_path: Path) -> No
   todo_plan, reminders_plan = plans  # numeric prefix asc
 
   assert todo_plan.frontmatter.get("status") == "superseded", (
-    f"todo plan should be status=superseded after /x-x ran the "
+    f"todo plan should be status=superseded after /ship ran the "
     f"successor, got {todo_plan.frontmatter.get('status')!r}"
   )
   superseded_by = todo_plan.frontmatter.get("superseded_by") or []

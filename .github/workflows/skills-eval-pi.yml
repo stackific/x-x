@@ -3,18 +3,18 @@ name: skills eval / pi
 # Manually-triggered experiment from the agent-eval lineage. The loop:
 #
 #   1. Install Pi (`@earendil-works/pi-coding-agent` from pi.dev) on the
-#      runner; install x-x to PATH.
+#      runner; install stax to PATH.
 #   2. Sync the uv-managed skills-evals project (deepeval, openai, pytest,
 #      python-dotenv).
 #   3. Run `uv run pytest`. The tests:
 #        a. Spawn `pi --mode json --model deepseek/<id> -p "/skill:<name>
 #           <task>"` per turn (single-shot subprocesses; resume with -c).
 #           Pi's CLI command parser resolves `/skill:<name>` against
-#           SKILL.md frontmatter `name:` values — `x-x init --agents codex`
-#           writes `.agents/skills/x-plan/SKILL.md` and pi discovers it
+#           SKILL.md frontmatter `name:` values — `stax init --agents codex`
+#           writes `.agents/skills/scope/SKILL.md` and pi discovers it
 #           walking up from cwd (one of pi's documented skill locations
 #           alongside `.pi/skills/` and `~/.pi/agent/skills/`).
-#        b. Drive the x-plan / x-x skill prompts via that slash-command
+#        b. Drive the scope / stax skill prompts via that slash-command
 #           form in skills_evals.pi_driver. Confirmation gates show up as
 #           text events the driver matches against the "Reply yes" pattern
 #           and replies to with `pi -c -p yes` on the next turn.
@@ -41,11 +41,11 @@ jobs:
     timeout-minutes: 60
 
     env:
-      # X_X_AGENT_KEY tells the skills-evals conftest which backend's
+      # STAX_AGENT_KEY tells the skills-evals conftest which backend's
       # tests to collect, which binary to require on PATH, and which
-      # `--agents <key>` value to pass to `x-x init`. Default is
+      # `--agents <key>` value to pass to `stax init`. Default is
       # "claude"; this workflow runs the Pi set.
-      X_X_AGENT_KEY: pi
+      STAX_AGENT_KEY: pi
 
       # Pi reads `DEEPSEEK_API_KEY` directly for the `deepseek` provider
       # entry in its model registry — no rename mirror needed (unlike
@@ -66,12 +66,12 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # `go install .` lands a release-flavored x-x in $(go env GOPATH)/bin.
+      # `go install .` lands a release-flavored stax in $(go env GOPATH)/bin.
       # The setup-go action puts that directory on PATH.
-      - name: install x-x to PATH
+      - name: install stax to PATH
         run: |
           go install .
-          x-x --version
+          stax --version
 
       # Pi requires Node 22+ (legacy-node20 tag is pinned to 0.74.2 only).
       - uses: actions/setup-node@v6

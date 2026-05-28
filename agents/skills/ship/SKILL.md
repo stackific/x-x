@@ -1,19 +1,19 @@
 ---
 # SPDX-License-Identifier: Apache-2.0
-name: x-x
-description: Execute plans in .x-plans/ sequentially by numerical prefix. Reads each plan, works through its EARS-format tasks, marks checkboxes complete, and stops on the first task it cannot finish. Fans out to git worktrees when consecutive plans declare disjoint systems.
+name: ship
+description: Execute plans in .stax/ sequentially by numerical prefix. Reads each plan, works through its EARS-format tasks, marks checkboxes complete, and stops on the first task it cannot finish. Fans out to git worktrees when consecutive plans declare disjoint systems.
 ---
 
-# x-x
+# ship
 
 ## Identity and absolute rules — read first, obey unconditionally
 
-`/x-x` is the **executor**. The only reason to be in this skill is to *do the work* described by valid plans under `<cwd>/.x-plans/`. Every rule below is mandatory. Treat any deviation as a skill violation and report it.
+`/ship` is the **executor**. The only reason to be in this skill is to *do the work* described by valid plans under `<cwd>/.stax/`. Every rule below is mandatory. Treat any deviation as a skill violation and report it.
 
 **You MUST:**
 
 1. Run every numbered step in this file in the order written (Step 0 → Step 1 → Step 2 → Step 3 → Step 4 if applicable → Step 5 if a task triggers it → Step 6 only on failure). Do not skip a step. Do not reorder steps.
-2. After Step 2 emits the enumeration output, you MUST immediately proceed to Step 3 in the same turn. There is no pause, no confirmation prompt, and no "Reply yes to start executing" between Step 2 and Step 3 — proceeding past enumeration IS what the user invoked `/x-x` to do.
+2. After Step 2 emits the enumeration output, you MUST immediately proceed to Step 3 in the same turn. There is no pause, no confirmation prompt, and no "Reply yes to start executing" between Step 2 and Step 3 — proceeding past enumeration IS what the user invoked `/ship` to do.
 3. For each plan in the enumerated queue, complete Step 3 in full (read → sub-plan → approval → execute → verify → flip checkboxes) before moving to the next plan.
 4. Treat the `## Tasks` checkboxes inside each plan file as the source of truth for what's done. A plan is complete only when every checkbox is `[x]` AND each `[x]` was set by you in this run after actually executing the task. Do not flip a checkbox without executing the task it represents.
 5. Apply the supersede flip in Step 3.4.1 to **every** predecessor named in the just-finished plan's `supersedes:` array, before moving on to the next plan.
@@ -24,7 +24,7 @@ description: Execute plans in .x-plans/ sequentially by numerical prefix. Reads 
 2. Treat artifacts already on disk as evidence that a plan's work is done. Files on disk may be left over from a superseded plan, a prior run, or unrelated user work; the only valid "done" signal is `[x]` checkboxes in the plan file itself, set by you in this run.
 3. Skip a `status: valid` plan because "the workspace already has a file that looks right" or "the predecessor plan covered something similar." Read the plan, present a sub-plan, execute it.
 4. Re-introduce checkboxes you flipped (or files you wrote) by re-running an earlier plan instead of the current one. `--status valid --order=asc` already filtered out `superseded` and `deprecated` plans — every row you got is work that still needs doing.
-5. Defer execution to the user. The user invoked `/x-x` because they want execution; "should I proceed?" is the wrong question. The right question is "what's the next `[ ]` task and how do I satisfy it?"
+5. Defer execution to the user. The user invoked `/ship` because they want execution; "should I proceed?" is the wrong question. The right question is "what's the next `[ ]` task and how do I satisfy it?"
 
 The run is over **only** when one of these is true:
 - (a) every plan emitted by Step 2 has all its `## Tasks` checkboxes `[x]` (set by you in this run), and every `supersedes:` flip required by Step 3.4.1 has landed; or
@@ -34,7 +34,7 @@ Anything else is incomplete work — keep going.
 
 ## 0. Announce review mode (non-blocking)
 
-Before announcing, read `.x-plans/_config.lock` and extract `review_per` (string). If the lock file is missing, STOP and tell the user this directory isn't set up for x-x yet — they need to run `x-x init`. If the file exists but the key is absent or set to anything other than `task`/`plan`, default to `task`. Remember the resolved mode as the **active review mode** for this run.
+Before announcing, read `.stax/_config.lock` and extract `review_per` (string). If the lock file is missing, STOP and tell the user this directory isn't set up for stax yet — they need to run `stax init`. If the file exists but the key is absent or set to anything other than `task`/`plan`, default to `task`. Remember the resolved mode as the **active review mode** for this run.
 
 Emit exactly one line that matches the resolved mode — then immediately proceed to Step 1 without waiting:
 
@@ -49,30 +49,30 @@ The user may switch modes at any point ("review per plan" / "review per task"); 
 
 Required reads before doing anything else:
 
-- `<cwd>/.x-plans/_data_systems.yaml` — registry of named systems (id, name, brief). If missing, STOP and tell the user this directory isn't set up for x-x yet — they need to run `x-x init`.
+- `<cwd>/.stax/_data_systems.yaml` — registry of named systems (id, name, brief). If missing, STOP and tell the user this directory isn't set up for stax yet — they need to run `stax init`.
 - The project constitution: any of `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`, or `.clinerules` at <cwd>. Read whichever is present and take it as the override on all defaults in this skill. `AGENTS.md` is the de-facto cross-agent convention (Kilocode, OpenCode, Codex, Cursor, Antigravity, pi, omp); the others are each agent's bespoke filename (`CLAUDE.md` for Claude Code, `GEMINI.md` for Gemini CLI, `.github/copilot-instructions.md` for GitHub Copilot, `.clinerules` for Cline). If none exist, suggest the user create one as a helpful tip and proceed.
 
 The plan-first protocol (used by Step 3.3.2 when presenting sub-plans) is defined inline in Appendix A at the bottom of this file. Read it before the first approval prompt.
 
 ## 2. Enumerate plans
 
-Run `x-x plans list --status valid --order=asc`. Output is tab-separated, one row per plan, sorted by numerical prefix ascending (the default sort is descending; `--order=asc` gives the oldest-first execution order this skill iterates):
+Run `stax plans list --status valid --order=asc`. Output is tab-separated, one row per plan, sorted by numerical prefix ascending (the default sort is descending; `--order=asc` gives the oldest-first execution order this skill iterates):
 
 ```
 <slug>\t<status>\t<id>,<id>,...
 ```
 
-All emitted rows are the work queue — the `--status valid` flag filters out `superseded` and `deprecated`. Files in `.x-plans/` that match `<prefix>-<slug>.md` but have missing or malformed frontmatter trigger stderr warnings from `x-x`; flag those in your end-of-run summary so they aren't lost.
+All emitted rows are the work queue — the `--status valid` flag filters out `superseded` and `deprecated`. Files in `.stax/` that match `<prefix>-<slug>.md` but have missing or malformed frontmatter trigger stderr warnings from `stax`; flag those in your end-of-run summary so they aren't lost.
 
-The third column is each plan's **scope** — the kebab `id:` of every system it touches, as declared in `<cwd>/.x-plans/_data_systems.yaml`.
+The third column is each plan's **scope** — the kebab `id:` of every system it touches, as declared in `<cwd>/.stax/_data_systems.yaml`.
 
-**Step 2 → Step 3 transition (mandatory, no gap):** the moment enumeration finishes, you continue into Step 2a (progress tracking) and Step 3 (execution) in the same turn. Do not stop. Do not emit a "found N plans, proceed?" message. Do not wait for the user to confirm. The user already confirmed they want execution by invoking `/x-x`; your job from Step 2's output forward is to actually execute. The only legitimate pause is the per-task or per-plan approval prompt inside Step 3.3.2 (governed by the active review mode from Step 0).
+**Step 2 → Step 3 transition (mandatory, no gap):** the moment enumeration finishes, you continue into Step 2a (progress tracking) and Step 3 (execution) in the same turn. Do not stop. Do not emit a "found N plans, proceed?" message. Do not wait for the user to confirm. The user already confirmed they want execution by invoking `/ship`; your job from Step 2's output forward is to actually execute. The only legitimate pause is the per-task or per-plan approval prompt inside Step 3.3.2 (governed by the active review mode from Step 0).
 
 ## 2a. Progress tracking
 
 Always maintain a visible task list during execution. After enumeration, create one entry per plan in the work queue using your harness's task/todo-tracking capability (subject = plan slug, description = its scope). If your harness has no native task tool, keep an equivalent markdown checklist inline in your reply and update it as plans progress. Mark each entry `in_progress` when you start the plan's first incomplete EARS task and `completed` when the plan's last task is `[x]`. In parallel mode, give each worktree-bound plan its own entry. Keep the list in sync with reality — every status change reflects an actual execution event.
 
-If the user enqueues new work mid-execution — a new plan dropped into `.x-plans/`, a new `[ ]` EARS criterion added to a running plan, or an out-of-band request — append it to the visible queue immediately so the queue stays complete. Never absorb new work silently. Prioritization (interrupt vs. queue-at-end) follows the user's instruction; default is queue-at-end unless they signal otherwise.
+If the user enqueues new work mid-execution — a new plan dropped into `.stax/`, a new `[ ]` EARS criterion added to a running plan, or an out-of-band request — append it to the visible queue immediately so the queue stays complete. Never absorb new work silently. Prioritization (interrupt vs. queue-at-end) follows the user's instruction; default is queue-at-end unless they signal otherwise.
 
 ## 3. Sequential mode (default)
 
@@ -89,7 +89,7 @@ For each plan, in numerical order:
    4. **Verify before flipping.** If the task added new code paths (endpoint, worker, parser, adapter, signal handler, etc.), write at least one unit or smoke test exercising the new path in the project's test layout. Then run the project's standard test + lint + type-check target, if exists. They MUST exit 0 before the checkbox flips. If verification fails, leave the checkbox `[ ]` and apply the failure-mode protocol in step 6. Pure config / doc / registry / settings edits skip the test-write step but still run lint + type-checks.
    5. Flip the checkbox from `[ ]` to `[x]` in the plan file.
 4. After all tasks in the plan are `[x]`:
-   1. If the plan's frontmatter includes `supersedes: [<slug>, ...]`, for each listed predecessor: edit its plan file to (a) flip `status: valid` → `status: superseded`, and (b) append this plan's slug to its `superseded_by:` array (create the array right before `created:` if absent). Both edits must land in the same revision — `x-x plans lint` enforces that the supersedes ↔ superseded_by back link is symmetric. Treat each predecessor edit as a side effect that goes through the plan-first sub-plan protocol.
+   1. If the plan's frontmatter includes `supersedes: [<slug>, ...]`, for each listed predecessor: edit its plan file to (a) flip `status: valid` → `status: superseded`, and (b) append this plan's slug to its `superseded_by:` array (create the array right before `created:` if absent). Both edits must land in the same revision — `stax plans lint` enforces that the supersedes ↔ superseded_by back link is symmetric. Treat each predecessor edit as a side effect that goes through the plan-first sub-plan protocol.
    2. Report one-line completion and move to the next plan.
 
 ## 4. Parallel mode (auto-detected)
@@ -106,7 +106,7 @@ Do not merge worktrees back, do not remove them, and do not modify any branch ou
 
 ## 5. Ground-truth lookup
 
-When a task needs the current contract for a system (to extend, modify, or reason about existing behavior), run `x-x plans list --status valid --system <id> --order=asc` (the kebab `id:` from `<cwd>/.x-plans/_data_systems.yaml`, not the display name), then read the listed plan files. Collect only `[x]` (completed) criteria naming that system, ordered by numerical prefix ascending. Treat that ordered list as the live contract. Never read `superseded` or `deprecated` plans for current truth — they are history.
+When a task needs the current contract for a system (to extend, modify, or reason about existing behavior), run `stax plans list --status valid --system <id> --order=asc` (the kebab `id:` from `<cwd>/.stax/_data_systems.yaml`, not the display name), then read the listed plan files. Collect only `[x]` (completed) criteria naming that system, ordered by numerical prefix ascending. Treat that ordered list as the live contract. Never read `superseded` or `deprecated` plans for current truth — they are history.
 
 ## 6. Failure mode
 
@@ -114,7 +114,7 @@ If a task cannot be completed (command fails, user rejects the sub-plan, missing
 
 ## Appendix A: Plan-first protocol
 
-Every sub-plan presented for approval in Step 3.3.2 follows this protocol. The same protocol is used by the `x-plan` skill when authoring full plan files; here in `x-x` it governs the approval prompts shown for each task (per-task) or each plan (per-plan).
+Every sub-plan presented for approval in Step 3.3.2 follows this protocol. The same protocol is used by the `scope` skill when authoring full plan files; here in `ship` it governs the approval prompts shown for each task (per-task) or each plan (per-plan).
 
 ### The protocol
 
@@ -134,12 +134,12 @@ Every sub-plan must include:
 - **Goal:** one-sentence description of the outcome.
 - **Inputs already gathered:** what the skill found (plan slug, current state, related items).
 - **Changes proposed:** every file that will be created/modified/deleted; every DB row that will change.
-- **Named systems used:** which entries from `<cwd>/.x-plans/_data_systems.yaml`'s `systems` array the work targets.
+- **Named systems used:** which entries from `<cwd>/.stax/_data_systems.yaml`'s `systems` array the work targets.
 - **Commands to run:** the exact shell commands or tool calls, in order.
 
-### Plan file format (read-side, for executing plan files written by x-plan)
+### Plan file format (read-side, for executing plan files written by scope)
 
-Every plan file under `<cwd>/.x-plans/` lives at `<prefix>-<slug>.md` with YAML frontmatter:
+Every plan file under `<cwd>/.stax/` lives at `<prefix>-<slug>.md` with YAML frontmatter:
 
 ```yaml
 ---
@@ -158,18 +158,18 @@ created: 2026-05-23T14:30:00Z
 ---
 ```
 
-Body sections, in order: `## Goal`, `## Approach`, `## Tasks` (EARS-format checkboxes; `[ ]` open, `[x]` done — x-x flips these as it executes).
+Body sections, in order: `## Goal`, `## Approach`, `## Tasks` (EARS-format checkboxes; `[ ]` open, `[x]` done — ship flips these as it executes).
 
-### Plan tooling (the `x-x plans` subcommands)
+### Plan tooling (the `stax plans` subcommands)
 
-- `x-x plans list [--status NAME[,NAME...]] [--system ID] [--order asc|desc] [--overflow-keywords PATTERN[,PATTERN...]]` — lists plans, one tab-separated row per plan: `<slug>\t<status>\t<id>,<id>,...`.
+- `stax plans list [--status NAME[,NAME...]] [--system ID] [--order asc|desc] [--overflow-keywords PATTERN[,PATTERN...]]` — lists plans, one tab-separated row per plan: `<slug>\t<status>\t<id>,<id>,...`.
   - `--status` keeps only matching statuses. Repeatable; comma-separated values OK.
   - `--system` keeps only plans whose `systems:` array contains the given kebab id.
   - `--order` sorts by zero-padded prefix; default `desc`. Pass `--order=asc` when you need oldest-first execution order (this skill's work queue uses asc).
   - `--overflow-keywords` filters by body substring when row count exceeds the project's overflow threshold. Safe to omit.
-- `x-x plans lint` — validates every plan file. Exit 0 = all pass, exit 1 = at least one failure.
+- `stax plans lint` — validates every plan file. Exit 0 = all pass, exit 1 = at least one failure.
 
-All `x-x plans` commands read `prefix_width` / `max_plan_lines` from `<cwd>/.x-plans/_config.lock` (seeded by `x-x init`).
+All `stax plans` commands read `prefix_width` / `max_plan_lines` from `<cwd>/.stax/_config.lock` (seeded by `stax init`).
 
 ### Approval discipline
 
@@ -208,13 +208,13 @@ Keep it terse. The user reads, says yes, the task executes.
 
 ## Before returning control — verification checklist
 
-Before declaring this `/x-x` invocation complete (i.e., before the final summary line that hands control back to the user), verify every one of the following. If any is false, you are not done — continue executing or apply the Step 6 failure protocol.
+Before declaring this `/ship` invocation complete (i.e., before the final summary line that hands control back to the user), verify every one of the following. If any is false, you are not done — continue executing or apply the Step 6 failure protocol.
 
-1. You ran `x-x plans list --status valid --order=asc` exactly once at Step 2 and used its output verbatim as the work queue.
+1. You ran `stax plans list --status valid --order=asc` exactly once at Step 2 and used its output verbatim as the work queue.
 2. For every plan in that queue, you read the full plan file (Step 3.1) and either:
    - flipped every `[ ]` checkbox to `[x]` after actually executing the corresponding task and running the project's verify target (Step 3.3.1–3.3.5), or
    - left the run halted per Step 6 with a clear "blocking plan + task" summary.
-3. For every plan in that queue whose frontmatter declares `supersedes: [<slug>, ...]`, you edited each named predecessor's frontmatter to set `status: superseded` AND append the current plan's slug to `superseded_by:` (Step 3.4.1). `x-x plans lint` exits 0 after the edits.
+3. For every plan in that queue whose frontmatter declares `supersedes: [<slug>, ...]`, you edited each named predecessor's frontmatter to set `status: superseded` AND append the current plan's slug to `superseded_by:` (Step 3.4.1). `stax plans lint` exits 0 after the edits.
 4. The artifacts you produced satisfy the **most recent** valid plan's EARS criteria — not a superseded predecessor's. If a plan with `supersedes:` declares a different deliverable from its predecessor, the workspace must reflect the successor's deliverable (replacing or rewriting whatever the predecessor left behind), not coexist with predecessor artifacts.
 5. You did NOT skip a plan because "the workspace looks done." Checkbox state in the plan file is the only authoritative completion signal.
 6. You did NOT exit after Step 2 with a "found N plans" summary. Step 2's output is intermediate; Step 3 is the deliverable.

@@ -5,9 +5,9 @@
 Mirrors test_claude_reminders_supersedes_todo.py.
 
 Sequence:
-  1. /x-plan a todo list app.
-  2. /x-plan a reminders app that SUPERSEDES the todo plan.
-  3. /x-x — executes the queue; per agents/skills/x-x/SKILL.md step 3.4,
+  1. /scope a todo list app.
+  2. /scope a reminders app that SUPERSEDES the todo plan.
+  3. /ship — executes the queue; per agents/skills/ship/SKILL.md step 3.4,
      when the executor finishes the successor plan it flips the
      predecessor's `status: valid` → `status: superseded` and appends
      the successor slug to the predecessor's `superseded_by:` array.
@@ -53,47 +53,47 @@ def test_copilot_reminders_supersedes_todo(
   # --- Plan 1: todo list ---
   todo_run = drive_skill(
     copilot_workspace,
-    f"/x-plan {TODO_TASK}",
-    transcript_path=transcripts / "x-plan-todo.txt",
+    f"/scope {TODO_TASK}",
+    transcript_path=transcripts / "scope-todo.txt",
   )
   assert todo_run.exit_code == 0, (
-    f"copilot exited {todo_run.exit_code} during /x-plan todo; "
+    f"copilot exited {todo_run.exit_code} during /scope todo; "
     f"timed_out={todo_run.timed_out}; stderr:\n{todo_run.stderr_tail}"
   )
   assert todo_run.completed
   assert todo_run.turns < DEFAULT_MAX_TURNS, (
-    f"/x-plan todo hit max_turns cap ({DEFAULT_MAX_TURNS}). Inspect "
-    f"{transcripts / 'x-plan-todo.txt'}."
+    f"/scope todo hit max_turns cap ({DEFAULT_MAX_TURNS}). Inspect "
+    f"{transcripts / 'scope-todo.txt'}."
   )
 
   # --- Plan 2: reminders (supersedes todo) ---
   reminders_run = drive_skill(
     copilot_workspace,
-    f"/x-plan {REMINDERS_TASK}",
-    transcript_path=transcripts / "x-plan-reminders.txt",
+    f"/scope {REMINDERS_TASK}",
+    transcript_path=transcripts / "scope-reminders.txt",
   )
   assert reminders_run.exit_code == 0, (
-    f"copilot exited {reminders_run.exit_code} during /x-plan reminders; "
+    f"copilot exited {reminders_run.exit_code} during /scope reminders; "
     f"timed_out={reminders_run.timed_out}; stderr:\n{reminders_run.stderr_tail}"
   )
   assert reminders_run.completed
   assert reminders_run.turns < DEFAULT_MAX_TURNS, (
-    f"/x-plan reminders hit max_turns cap ({DEFAULT_MAX_TURNS}). Inspect "
-    f"{transcripts / 'x-plan-reminders.txt'}."
+    f"/scope reminders hit max_turns cap ({DEFAULT_MAX_TURNS}). Inspect "
+    f"{transcripts / 'scope-reminders.txt'}."
   )
 
   # --- Execute ---
   exec_run = drive_skill(
     copilot_workspace,
-    "/x-x",
-    transcript_path=transcripts / "x-x.txt",
+    "/ship",
+    transcript_path=transcripts / "stax.txt",
   )
   assert exec_run.exit_code == 0, (
-    f"copilot exited {exec_run.exit_code} during /x-x; "
+    f"copilot exited {exec_run.exit_code} during /ship; "
     f"timed_out={exec_run.timed_out}; stderr:\n{exec_run.stderr_tail}"
   )
   assert exec_run.completed
-  # No turn-cap assertion for /x-x: legitimate execution of two plans
+  # No turn-cap assertion for /ship: legitimate execution of two plans
   # plus the supersede flip (SKILL.md step 3.4) needs more turns than
   # a tight cap allows under --review-per plan. The supersede flip
   # itself is asserted directly via plan-frontmatter inspection below,
@@ -109,7 +109,7 @@ def test_copilot_reminders_supersedes_todo(
   todo_plan, reminders_plan = plans  # numeric prefix asc
 
   assert todo_plan.frontmatter.get("status") == "superseded", (
-    f"todo plan should be status=superseded after /x-x ran the "
+    f"todo plan should be status=superseded after /ship ran the "
     f"successor, got {todo_plan.frontmatter.get('status')!r}"
   )
   superseded_by = todo_plan.frontmatter.get("superseded_by") or []

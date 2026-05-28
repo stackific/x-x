@@ -1,4 +1,4 @@
-# Commit Signing Guide for `specd`
+# Commit Signing Guide for `stax`
 
 ## What is the DCO and why do we use it?
 
@@ -52,11 +52,11 @@ URL: https://github.com/apps/dco
 
 1. Install / Configure (if already installed at the user level)
 2. Select the `stackific` organization.
-3. Only select repositories = specd
+3. Only select repositories = stax
 4. Click Install.
 
 ---
-URL: https://github.com/stackific/specd/security
+URL: https://github.com/stackific/stax/security
 
 Private vulnerability reporting = Enabled
 Code scanning = Default
@@ -68,12 +68,12 @@ Protection rules:
 
 Secret protection = Enable
 
-Go back again to (if GitHub sends you somewhere else): https://github.com/stackific/specd/security
+Go back again to (if GitHub sends you somewhere else): https://github.com/stackific/stax/security
 
 Code quality findings = Enable
 
 ---
-URL: https://github.com/stackific/specd/settings
+URL: https://github.com/stackific/stax/settings
 
 ### Configurations
 
@@ -86,7 +86,7 @@ Visibility = Public; otherwise the following configuration will not take effect
 Automatically deelete head branches.
 
 ---
-URL: https://github.com/stackific/specd/settings/rules
+URL: https://github.com/stackific/stax/settings/rules
 
 ### Configurations
 
@@ -161,7 +161,7 @@ If you also want this key for authentication (pushing), repeat the steps with **
 
 ### Configure Git to sign with SSH
 
-Run these in your `specd` clone. We use `--local` so the config
+Run these in your `stax` clone. We use `--local` so the config
 applies to this repo only and will not leak to your other clones.
 If this is a work-only machine and you genuinely want this on every
 repo, drop `--local` and add `--global` instead.

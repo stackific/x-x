@@ -6,9 +6,9 @@ Runs before the scenario tests (pytest_collection_modifyitems reorders
 `smoke` to the front). If THIS test fails, the failure is a
 binary-install / env-var / BYOK-routing issue, not a skill issue. If
 only this passes but the scenario tests fail, the failure is specific
-to how Copilot CLI handles `/x-plan` and `/x-x` slash commands.
+to how Copilot CLI handles `/scope` and `/ship` slash commands.
 
-The check is intentionally minimal: trivial prompt, no `x-x init`, no
+The check is intentionally minimal: trivial prompt, no `stax init`, no
 slash-command invocation. We assert the agent emitted at least one line
 of stdout and exited cleanly.
 """

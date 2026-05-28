@@ -32,7 +32,7 @@ func hasDesktop() bool {
 // sessions are treated as desktop-capable unconditionally — the rare
 // server-only configurations (Windows Server Core, headless macOS over
 // SSH with no window server) are not the audience for an interactive
-// `x-x` invocation, and the OS-level launcher (`open` / `rundll32`) is
+// `stax` invocation, and the OS-level launcher (`open` / `rundll32`) is
 // always present even on those edge cases. On Linux the standard signal
 // is a non-empty DISPLAY (X11) or WAYLAND_DISPLAY; both empty means
 // headless (SSH, server, container) and we refuse to launch.
@@ -65,7 +65,7 @@ func browserCommand(url string) (*exec.Cmd, error) {
 //	          mainstream desktop distro ships it via xdg-utils.
 //
 // The url is the only variable input. It is a package-internal value
-// (the bare-x-x landing URL or, in tests, a fixed example.test URL),
+// (the bare-stax landing URL or, in tests, a fixed example.test URL),
 // never user-supplied — so the gosec G204 warning about "subprocess
 // launched with variable" does not apply here.
 func browserCommandFor(goos, url string) (*exec.Cmd, error) {
@@ -84,7 +84,7 @@ func browserCommandFor(goos, url string) (*exec.Cmd, error) {
 // openBrowser hands the URL off to the OS-default browser via the
 // per-platform launcher. cmd.Start is intentionally non-blocking — the
 // launcher forks the browser process and returns immediately, which is
-// the behavior the CLI wants (do not stall x-x waiting for the user to
+// the behavior the CLI wants (do not stall stax waiting for the user to
 // close the browser). The launcher's own stdout/stderr are discarded:
 // they are OS chatter the caller does not act on.
 func openBrowser(url string) error {

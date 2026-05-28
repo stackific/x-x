@@ -1,9 +1,9 @@
 # agents/
 
-This directory holds the agent skill definitions that ship with **x-x**.
+This directory holds the agent skill definitions that ship with **stax**.
 
-The CLI sparse-clones this folder into `~/.x-x/agents/` on first run, so any
-file you add here becomes available to a freshly-installed `x-x` binary
+The CLI sparse-clones this folder into `~/.stax/agents/` on first run, so any
+file you add here becomes available to a freshly-installed `stax` binary
 without re-releasing it.
 
 Layout follows the cross-agent `SKILL.md` open standard so the same skills

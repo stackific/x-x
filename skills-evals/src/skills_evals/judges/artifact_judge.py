@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Stackific Inc.
-"""DeepEval judge that scores the artifacts produced by /x-x.
+"""DeepEval judge that scores the artifacts produced by /ship.
 
-Runs after /x-x finishes. Looks at every file in the workspace EXCEPT the
-scaffold directories (.x-plans/, .claude/, .agents/, .git/, .codex/,
-.x-x/) — those were written by `x-x init` and the planner, not by the
-executor. The judge asks: did /x-x produce real artifacts that satisfy
+Runs after /ship finishes. Looks at every file in the workspace EXCEPT the
+scaffold directories (.stax/, .claude/, .agents/, .git/, .codex/,
+.stax/) — those were written by `stax init` and the planner, not by the
+executor. The judge asks: did /ship produce real artifacts that satisfy
 the task?
 """
 
@@ -23,13 +23,13 @@ from ..workspace import collect_produced_files, collect_tree
 from .base import Judge, Judgment
 
 INPUT_TEMPLATE = """\
-The user asked an x-x executor agent to:
+The user asked a ship executor agent to:
 
 {task}
 
 The executor's job was to produce concrete artifacts in the workspace
 that satisfy the task. The actual output below dumps every produced file
-(scaffold directories like .x-plans/, .claude/, .agents/ are excluded)
+(scaffold directories like .stax/, .claude/, .agents/ are excluded)
 and then a tree summary of the workspace for context.
 """
 

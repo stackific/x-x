@@ -2,7 +2,7 @@
 
 ## Our Pledge
 
-We pledge to make participation in the **x-x** project a harassment-free experience for everyone, regardless of their characteristics, backgrounds and identities.
+We pledge to make participation in the **stax** project a harassment-free experience for everyone, regardless of their characteristics, backgrounds and identities.
 
 ## Our Standards
 

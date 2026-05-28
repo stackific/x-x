@@ -1,17 +1,18 @@
 .DS_Store
 /bin/
 
-# /x-x and /x-x.exe — accidental `go build` output at the module root.
+# /stax and /stax.exe — accidental `go build` output at the module root.
 # Go names a main package's binary after its directory, so a bare
 # `go build`, `go build .`, or `go build ./...` here drops a multi-MB
 # executable on top of the working tree. AGENTS.md:7 forbids that:
 # use `go vet ./...` or `go build -o /dev/null ./...` for compile
 # checks, and `task build` for release artifacts (writes to /bin/).
-# The `!/x-x/` re-include guards the agents/skills/x-x sibling path
-# in case a future layout puts an `x-x/` directory at the root.
-/x-x
-/x-x.exe
-!/x-x/
+# The `!/stax/` re-include is a defensive guard in case a future layout
+# puts a `stax/` directory at the root — keep it so the binary rule
+# never accidentally hides a sibling directory of the same name.
+/stax
+/stax.exe
+!/stax/
 
 # If you prefer the allow list template instead of the deny list, see community template:
 # https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore

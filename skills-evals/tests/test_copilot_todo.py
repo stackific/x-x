@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Stackific Inc.
-"""End-to-end: drive Copilot through /x-plan + /x-x for a TODO app task.
+"""End-to-end: drive Copilot through /scope + /ship for a TODO app task.
 
 Mirrors test_claude_todo.py against the Copilot CLI driver. Same TASK
 string, same judges, same thresholds — the only difference is the agent
@@ -16,31 +16,31 @@ from skills_evals.judges import ArtifactJudge, PlanJudge
 
 TASK = "build me a single HTML and localStorage-based todo list app"
 
-PLAN_PROMPT = f"/x-plan {TASK}"
-EXEC_PROMPT = "/x-x"
+PLAN_PROMPT = f"/scope {TASK}"
+EXEC_PROMPT = "/ship"
 
 
 def test_copilot_builds_todo_app(copilot_workspace: Path, tmp_path: Path) -> None:
   transcripts = tmp_path / "transcripts"
 
-  # --- /x-plan ---
+  # --- /scope ---
   plan_run = drive_skill(
     copilot_workspace,
     PLAN_PROMPT,
-    transcript_path=transcripts / "x-plan.txt",
+    transcript_path=transcripts / "scope.txt",
   )
   assert plan_run.exit_code == 0, (
-    f"copilot exited {plan_run.exit_code} during /x-plan; "
+    f"copilot exited {plan_run.exit_code} during /scope; "
     f"timed_out={plan_run.timed_out}; stderr tail:\n{plan_run.stderr_tail}"
   )
   assert plan_run.completed, (
-    f"/x-plan did not complete cleanly: lines={plan_run.events_received} "
+    f"/scope did not complete cleanly: lines={plan_run.events_received} "
     f"timed_out={plan_run.timed_out}"
   )
   assert plan_run.turns < DEFAULT_MAX_TURNS, (
-    f"/x-plan hit the max_turns cap ({DEFAULT_MAX_TURNS}) — the planner "
+    f"/scope hit the max_turns cap ({DEFAULT_MAX_TURNS}) — the planner "
     f"kept gating on 'Reply yes' past what we expected. Inspect "
-    f"{transcripts / 'x-plan.txt'} to see what it was asking."
+    f"{transcripts / 'scope.txt'} to see what it was asking."
   )
 
   plan_judgment = PlanJudge().evaluate(TASK, copilot_workspace)
@@ -50,21 +50,21 @@ def test_copilot_builds_todo_app(copilot_workspace: Path, tmp_path: Path) -> Non
     f"reason={plan_judgment.reason}"
   )
 
-  # --- /x-x ---
+  # --- /ship ---
   exec_run = drive_skill(
     copilot_workspace,
     EXEC_PROMPT,
-    transcript_path=transcripts / "x-x.txt",
+    transcript_path=transcripts / "stax.txt",
   )
   assert exec_run.exit_code == 0, (
-    f"copilot exited {exec_run.exit_code} during /x-x; "
+    f"copilot exited {exec_run.exit_code} during /ship; "
     f"timed_out={exec_run.timed_out}; stderr tail:\n{exec_run.stderr_tail}"
   )
   assert exec_run.completed, (
-    f"/x-x did not complete cleanly: lines={exec_run.events_received} "
+    f"/ship did not complete cleanly: lines={exec_run.events_received} "
     f"timed_out={exec_run.timed_out}"
   )
-  # No turn-cap assertion for /x-x: the executor legitimately needs
+  # No turn-cap assertion for /ship: the executor legitimately needs
   # many turns (one per plan-boundary review under --review-per plan,
   # plus whatever intermediate gates the agent emits). Downstream
   # exit_code/completed/ArtifactJudge assertions cover correctness;

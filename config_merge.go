@@ -4,7 +4,7 @@
 package main
 
 // This file owns the bidirectional JSON-config operations between the
-// bundled per-agent files under ~/.x-x/agents/<agent>/ and the user's
+// bundled per-agent files under ~/.stax/agents/<agent>/ and the user's
 // copies under <scopeRoot>/<configRel>/. Two directions live side-by-side
 // so the install/uninstall symmetry is visible at a glance:
 //
@@ -33,7 +33,7 @@ import (
 	"strings"
 )
 
-// installAgentConfig walks src (e.g. ~/.x-x/agents/claude/) and installs
+// installAgentConfig walks src (e.g. ~/.stax/agents/claude/) and installs
 // each file under dest (e.g. ~/.claude/) preserving the relative path.
 // Behavior depends on whether the destination already exists AND its
 // file extension:
@@ -41,9 +41,9 @@ import (
 //   - Destination absent → copy the bundle's bytes. Config files are
 //     ALWAYS copies, even in user-scope POSIX installs where skills get
 //     symlinked. The reason: writing through a symlink mutates the
-//     bundled file under ~/.x-x/agents/, which corrupts the embed
+//     bundled file under ~/.stax/agents/, which corrupts the embed
 //     materialization for every project that points at it.
-//   - Destination exists as a stale symlink (from an older x-x that did
+//   - Destination exists as a stale symlink (from an older stax that did
 //     symlink config files) → remove and treat as absent. We created it,
 //     so it's safe to remove.
 //   - Destination exists AND src has extension configJSONExt → deep-merge
@@ -57,11 +57,11 @@ import (
 //     log. We don't have a merger for TOML/YAML yet, so the conservative
 //     default keeps user customizations intact.
 //
-// Rationale: prior to the JSON merge path, `x-x init` would skip every
+// Rationale: prior to the JSON merge path, `stax init` would skip every
 // existing config file outright. That left users who'd hand-edited a
 // settings.json without our hooks no way to get them short of deleting
 // the file. The merge path makes the install additive — re-running init
-// surgically lands x-x defaults into an existing file rather than asking
+// surgically lands stax defaults into an existing file rather than asking
 // the user to throw their config away.
 func installAgentConfig(src, dest string) error {
 	if err := os.MkdirAll(dest, 0o700); err != nil {
@@ -101,7 +101,7 @@ func installOneAgentConfigFile(srcPath, destPath, rel string) error {
 	}
 	switch {
 	case info.Mode()&os.ModeSymlink != 0:
-		// Leftover from an older x-x that materialized config files as
+		// Leftover from an older stax that materialized config files as
 		// symlinks. Drop the link so we don't write through to the
 		// bundle on the fresh-copy fallthrough below.
 		if err := os.Remove(destPath); err != nil {
@@ -254,8 +254,8 @@ func mergeJSONArrays(existing, bundled []any) []any {
 }
 
 // removeBundledHooksIn walks the bundled per-agent config tree at bundleSrc
-// (e.g. ~/.x-x/agents/claude/) and, for every bundled .json file, subtracts
-// x-x's shipped hook records from the user's counterpart under userDest
+// (e.g. ~/.stax/agents/claude/) and, for every bundled .json file, subtracts
+// stax's shipped hook records from the user's counterpart under userDest
 // (e.g. ~/.claude/). The bundled file is the live reference for "what we
 // shipped" — no install-time snapshot, no marker files.
 //
@@ -362,7 +362,7 @@ func collectHookUnmerges(bundleSrc, userDest string) (pending []hookUnmerge, ski
 func buildHookUnmerge(bundlePath, userPath, rel string) (change hookUnmerge, skip, ok bool) {
 	// #nosec G304,G122 -- userPath is built from scopeRoot+agentTargets[*].configRel
 	// and bundlePath is yielded by filepath.WalkDir under agentsTarget(); both
-	// roots are confined to user-owned, x-x-managed directories under $HOME.
+	// roots are confined to user-owned, stax-managed directories under $HOME.
 	userRaw, err := os.ReadFile(userPath)
 	if errors.Is(err, os.ErrNotExist) {
 		return hookUnmerge{}, false, false

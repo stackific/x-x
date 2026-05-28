@@ -2,8 +2,8 @@
 # Copyright 2026 Stackific Inc.
 """Drive a Claude Code session non-interactively with auto-yes replies.
 
-The x-x skills (`/x-plan`, `/x-x`) routinely pause and ask the user to
-`Reply yes to proceed`. A bare `claude -p "/x-plan ..."` invocation is
+The stax skills (`/scope`, `/ship`) routinely pause and ask the user to
+`Reply yes to proceed`. A bare `claude -p "/scope ..."` invocation is
 one-shot — it gets the question, exits without answering, and the skill
 aborts before doing real work.
 

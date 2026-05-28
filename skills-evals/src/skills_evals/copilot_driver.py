@@ -11,15 +11,15 @@ docs.github.com/en/copilot/reference/copilot-cli-reference/cli-programmatic-refe
 and the issue tracking missing stream output in CI:
 github.com/github/copilot-cli/issues/1181.
 
-What this means for the auto-yes mechanic the x-x skills rely on:
+What this means for the auto-yes mechanic the stax skills rely on:
 
-The x-x and x-plan skills pause at "Reply `yes` to proceed" gates. We
+The ship and scope skills pause at "Reply `yes` to proceed" gates. We
 originally hoped `--no-ask-user` would replace the auto-yes loop, but
 empirical evidence from the first manual eval run shows it's a hint,
 not a hard constraint: the agent decides per-turn whether to honor the
 gate. Run 26432641287 had three of four turns proceed autonomously and
 one stop dead at "Reply yes" — workspace state goes wrong, downstream
-turns see an empty `.x-plans/`.
+turns see an empty `.stax/`.
 
 The fix is a continuation loop modeled on the Claude driver: when one
 turn ends with the "Reply yes" prompt in its captured stdout, run

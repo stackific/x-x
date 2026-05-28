@@ -1,6 +1,6 @@
-# Contributing to x-x
+# Contributing to stax
 
-Thanks for your interest in contributing to **x-x by Stackific**. This document explains how to get changes accepted into the project.
+Thanks for your interest in contributing to **stax by Stackific**. This document explains how to get changes accepted into the project.
 
 ## Before You Start
 
@@ -78,7 +78,7 @@ You also understand that the contribution is public and may be maintained indefi
 ### Reporting Issues
 
 - Search existing issues first.
-- Include reproduction steps, expected vs actual behavior, `x-x` version, OS, and relevant logs.
+- Include reproduction steps, expected vs actual behavior, `stax` version, OS, and relevant logs.
 - For security issues, do **not** open a public issue. See [Security](#security).
 
 ### Proposing Changes

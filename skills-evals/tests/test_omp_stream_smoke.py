@@ -6,9 +6,9 @@ Runs before the scenario tests (`pytest_collection_modifyitems` reorders
 `smoke` to the front). If THIS test fails, the failure is a binary-install
 / env-var / Models.dev DeepSeek-routing issue, not a skill issue. If only
 this passes but the scenario tests fail, the failure is specific to how
-omp handles the `/skill:x-plan` and `/skill:x-x` slash-command forms.
+omp handles the `/skill:scope` and `/skill:stax` slash-command forms.
 
-The check is intentionally minimal: trivial prompt, no `x-x init`, no
+The check is intentionally minimal: trivial prompt, no `stax init`, no
 slash-command invocation. We assert the agent emitted at least one
 parseable JSON event and exited cleanly.
 """

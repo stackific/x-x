@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Stackific Inc.
 #
-# INSTALL_LOCAL.sh — Install the locally-built x-x binary on macOS or Linux.
+# INSTALL_LOCAL.sh — Install the locally-built stax binary on macOS or Linux.
 #
 # Companion to INSTALL.sh that skips the GitHub-release download path and
 # uses an artifact already on disk under ./bin/ (produced by `task build`).
@@ -13,14 +13,14 @@
 #   BIN_DIR=/path/to/bin INSTALL_DIR=/usr/local/bin ./scripts/INSTALL_LOCAL.sh
 #
 # Environment overrides:
-#   BIN_DIR      Directory holding x-x-<os>-<arch> artifacts
+#   BIN_DIR      Directory holding stax-<os>-<arch> artifacts
 #                (default: <repo>/bin, derived from this script's location)
-#   INSTALL_DIR  Destination directory (default: $HOME/.x-x)
+#   INSTALL_DIR  Destination directory (default: $HOME/.stax)
 
 set -eu
 
-BINARY="x-x"
-INSTALL_DIR="${INSTALL_DIR:-$HOME/.x-x}"
+BINARY="stax"
+INSTALL_DIR="${INSTALL_DIR:-$HOME/.stax}"
 
 script_dir=$(cd "$(dirname "$0")" && pwd)
 BIN_DIR="${BIN_DIR:-${script_dir}/../bin}"
@@ -54,7 +54,7 @@ mkdir -p "${INSTALL_DIR}"
 cp "$source_path" "${INSTALL_DIR}/${BINARY}"
 chmod +x "${INSTALL_DIR}/${BINARY}"
 
-config_dir="${HOME}/.x-x"
+config_dir="${HOME}/.stax"
 mkdir -p "${config_dir}"
 chmod 700 "${config_dir}"
 
@@ -88,7 +88,7 @@ ensure_on_path() {
   esac
 
   rc=$(rc_file_for_shell)
-  marker="# x-x installer: PATH"
+  marker="# stax installer: PATH"
   if [ -f "$rc" ] && grep -qF "$marker" "$rc"; then
     info "${INSTALL_DIR} already added to $rc"
   else
@@ -111,10 +111,10 @@ ensure_on_path() {
   return 1
 }
 
-# Seed ~/.x-x/agents/ from the binary's embed via a bare invocation. Same
+# Seed ~/.stax/agents/ from the binary's embed via a bare invocation. Same
 # trick the release installer uses; the 24h update check is bound to bare
 # invocations and handles refreshes from then on.
-info "Seeding ~/.x-x/agents/ from binary"
+info "Seeding ~/.stax/agents/ from binary"
 "${INSTALL_DIR}/${BINARY}" >/dev/null
 
 if ensure_on_path; then
