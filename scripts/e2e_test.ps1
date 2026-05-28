@@ -65,17 +65,19 @@ Set-Variable -Option Constant -Name SKILL_MANIFEST_FILE -Value 'SKILL.md'
 Set-Variable -Option Constant -Name OWNED_SKILLS -Value @($SKILL_X_PLAN_DIR, $SKILL_X_X_DIR)
 
 # agentTargets in constants.go — index 0 = Claude Code, 1 = Codex CLI,
-# 2 = OpenCode, 3 = GitHub Copilot CLI, 4 = Pi, 5 = Cline. Codex,
-# Copilot, and Pi resolve skills from `.agents\skills` at both scopes
-# (cross-agent open spec, install is idempotent so the three rows
-# co-exist on disk without conflict). Cline does NOT use the cross-agent
-# path — per docs.cline.bot/customization/overview it reads from
-# `.cline\skills` (project) and `~\.cline\skills` (user) only. The
+# 2 = OpenCode, 3 = GitHub Copilot CLI, 4 = Pi, 5 = Cline, 6 = omp
+# (oh-my-pi). Codex, Copilot, Pi, and omp all resolve skills from
+# `.agents\skills` at both scopes (cross-agent open spec, install is
+# idempotent so the four rows co-exist on disk without conflict). Cline
+# does NOT use the cross-agent path — per docs.cline.bot/customization/
+# overview it reads from `.cline\skills` (project) and `~\.cline\skills`
+# (user) only. Claude and OpenCode stay on their own paths because
+# their lookup logic doesn't include `.agents\skills`. OpenCode and omp
+# ship no per-agent config today (configRel is ""), so there are no
+# OPENCODE_CONFIG_REL / OMP_CONFIG_REL mirrors. The
 # agentTarget.userSkillsRel field exists for future agents whose
-# project- vs user-scope paths diverge; none of the current rows need it
-# (Cline's project and user paths are the same `.cline\skills` relative
-# to scope root). OpenCode ships no per-agent config today (configRel is
-# "") so there is no OPENCODE_CONFIG_REL mirror.
+# project- vs user-scope paths diverge; none of the current rows need
+# it.
 Set-Variable -Option Constant -Name CLAUDE_SKILLS_REL   -Value '.claude\skills'
 Set-Variable -Option Constant -Name CLAUDE_CONFIG_REL   -Value '.claude'
 Set-Variable -Option Constant -Name CODEX_SKILLS_REL    -Value '.agents\skills'
@@ -84,6 +86,7 @@ Set-Variable -Option Constant -Name OPENCODE_SKILLS_REL -Value '.opencode\comman
 Set-Variable -Option Constant -Name COPILOT_SKILLS_REL  -Value '.agents\skills'
 Set-Variable -Option Constant -Name PI_SKILLS_REL       -Value '.agents\skills'
 Set-Variable -Option Constant -Name CLINE_SKILLS_REL    -Value '.cline\skills'
+Set-Variable -Option Constant -Name OMP_SKILLS_REL      -Value '.agents\skills'
 
 # Bundled config filenames (not constants in Go; pinned here for assertions).
 Set-Variable -Option Constant -Name CLAUDE_SETTINGS_FILE -Value 'settings.json'
@@ -2485,6 +2488,48 @@ try {
     (Join-Path $env:USERPROFILE (Join-Path $CLINE_SKILLS_REL $SKILL_X_X_DIR))
   Assert-NotExists 'no install under project cwd' `
     (Join-Path $projCL2 (Join-Path $CLINE_SKILLS_REL $SKILL_X_X_DIR))
+} finally { Pop-Location }
+
+Start-Case 'init --agents=omp project-scope install'
+Reset-UserHome
+$projOmp1 = New-FreshProject
+Push-Location $projOmp1
+try {
+  Invoke-XX init --scope project --agents=omp `
+                    --prefix-width 4 --max-plan-lines 30 --review-per task
+  Assert-Eq    'exit 0' $RunRC 0
+  # Project scope: omp reuses the cross-agent `.agents\skills` path
+  # (Codex and Copilot do the same). omp's documented `agents` skill
+  # provider (priority 70 in docs/skills.md) walks the path at every
+  # cwd ancestor up to repoRoot.
+  Assert-IsDir 'omp project skills present' `
+    (Join-Path $projOmp1 (Join-Path $OMP_SKILLS_REL $SKILL_X_X_DIR))
+  # The paths the OTHER agents claim exclusively must stay absent.
+  Assert-NotExists 'claude path NOT present' `
+    (Join-Path $projOmp1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'opencode path NOT present' `
+    (Join-Path $projOmp1 (Join-Path $OPENCODE_SKILLS_REL $SKILL_X_X_DIR))
+  # Per-agent config files of other agents must also stay absent.
+  Assert-NotExists 'codex config NOT present' `
+    (Join-Path $projOmp1 $CODEX_CONFIG_REL)
+  Assert-NotExists 'claude config NOT present' `
+    (Join-Path $projOmp1 $CLAUDE_CONFIG_REL)
+} finally { Pop-Location }
+
+Start-Case 'init --agents=omp --scope=user lands at ~/.agents/skills'
+Reset-UserHome
+$projOmp2 = New-FreshProject
+Push-Location $projOmp2
+try {
+  Invoke-XX init --scope user --agents=omp `
+                    --prefix-width 4 --max-plan-lines 30 --review-per task
+  Assert-Eq    'exit 0' $RunRC 0
+  # User scope: omp's `agents` provider scans `$HOME\.agents\skills` —
+  # same path Codex and Copilot use at user scope.
+  Assert-IsDir 'omp user-scope skills landed' `
+    (Join-Path $env:USERPROFILE (Join-Path $OMP_SKILLS_REL $SKILL_X_X_DIR))
+  Assert-NotExists 'no install under project cwd' `
+    (Join-Path $projOmp2 (Join-Path $OMP_SKILLS_REL $SKILL_X_X_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init --prefix-width=6 seeds the lock with 6'

@@ -55,6 +55,12 @@ func TestE2EShellConstantsMatchGo(t *testing.T) {
 		// Copilot bundles no per-agent config (configRel is ""); no mirror needed.
 		"PI_SKILLS_REL": agentTargets[4].skillsRel,
 		// Pi bundles no per-agent config (configRel is ""); no mirror needed.
+		"CLINE_SKILLS_REL": agentTargets[5].skillsRel,
+		// Cline bundles no per-agent config (configRel is ""); no mirror needed.
+		"OMP_SKILLS_REL": agentTargets[6].skillsRel,
+		// omp is skills-only — agentTargets[6].configRel is "" because omp's
+		// own settings live at ~/.omp/config.yml, outside the x-x install
+		// scope.
 	}
 
 	for name, expected := range want {

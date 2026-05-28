@@ -44,16 +44,18 @@ readonly SKILL_MANIFEST_FILE="SKILL.md"           # skillManifestFile
 readonly OWNED_SKILLS="${SKILL_X_PLAN_DIR} ${SKILL_X_X_DIR}"
 
 # agentTargets in constants.go — index 0 = Claude Code, 1 = Codex CLI,
-# 2 = OpenCode, 3 = GitHub Copilot CLI, 4 = Pi, 5 = Cline. Codex,
-# Copilot, and Pi all resolve skills from `.agents/skills` at both
-# scopes (cross-agent open spec, install is idempotent so the three rows
-# co-exist on disk without conflict). Cline does NOT use the cross-agent
-# path — per docs.cline.bot/customization/overview it reads from
-# `.cline/skills/` (project) and `~/.cline/skills/` (user) only. The
-# agentTarget.userSkillsRel field exists for future agents whose
-# project- vs user-scope paths diverge; none of the current rows need it
-# (cline's project and user paths are the same `.cline/skills` relative
-# to scope root).
+# 2 = OpenCode, 3 = GitHub Copilot CLI, 4 = Pi, 5 = Cline, 6 = omp
+# (oh-my-pi). Codex, Copilot, Pi, and omp all resolve skills from
+# `.agents/skills` at both scopes (cross-agent open spec, install is
+# idempotent so the four rows co-exist on disk without conflict). Cline
+# does NOT use the cross-agent path — per docs.cline.bot/customization/
+# overview it reads from `.cline/skills/` (project) and
+# `~/.cline/skills/` (user) only. OpenCode and Claude stay on their own
+# paths because their lookup logic doesn't include `.agents/skills` —
+# OpenCode reads `.opencode/{command,commands}/` only, Claude reads
+# `.claude/skills/` only. The agentTarget.userSkillsRel field exists
+# for future agents whose project- vs user-scope paths diverge; none of
+# the current rows need it.
 readonly CLAUDE_SKILLS_REL=".claude/skills"            # agentTargets[0].skillsRel
 readonly CLAUDE_CONFIG_REL=".claude"                   # agentTargets[0].configRel
 readonly CODEX_SKILLS_REL=".agents/skills"             # agentTargets[1].skillsRel
@@ -64,6 +66,9 @@ readonly OPENCODE_SKILLS_REL=".opencode/commands"      # agentTargets[2].skillsR
 readonly COPILOT_SKILLS_REL=".agents/skills"           # agentTargets[3].skillsRel
 readonly PI_SKILLS_REL=".agents/skills"                # agentTargets[4].skillsRel
 readonly CLINE_SKILLS_REL=".cline/skills"              # agentTargets[5].skillsRel
+readonly OMP_SKILLS_REL=".agents/skills"               # agentTargets[6].skillsRel
+# omp ships no per-agent config (settings live at ~/.omp/config.yml,
+# outside the x-x install scope), so no OMP_CONFIG_REL mirror is needed.
 # Parent of CODEX_SKILLS_REL — used by isolation cases that seed sibling
 # files alongside the Codex skills dir. Derived (not a Go constant) to
 # avoid drift if agentTargets[1].skillsRel ever moves.
@@ -700,6 +705,43 @@ assert_is_dir "cline user-scope skills landed" \
   "${SANDBOX_HOME}/${CLINE_SKILLS_REL}/${SKILL_X_X_DIR}"
 assert_absent "no install under project cwd" \
   "$PROJ_CL_USER/${CLINE_SKILLS_REL}"
+
+case_start "x-x init --agents=omp installs at the shared .agents/skills/ path"
+reset_user_home
+PROJ_OMP="$(fresh_project)"
+cd "$PROJ_OMP"
+run_capture "" init --agents=omp --scope=project
+assert_eq "exit 0" "$RUN_RC" "0"
+# omp reuses the cross-agent `.agents/skills/` path (Codex and Copilot
+# do the same — see their cases above). omp's documented `agents`
+# skill provider (priority 70 in docs/skills.md) walks the path at
+# every cwd ancestor up to repoRoot. The paths the other agents claim
+# exclusively (Claude `.claude/skills`, OpenCode `.opencode/commands`)
+# must NOT be touched — that's how we know `--agents=omp` didn't
+# accidentally install the whole registry.
+assert_is_dir "omp project skills installed" \
+  "$PROJ_OMP/${OMP_SKILLS_REL}/${SKILL_X_X_DIR}"
+assert_absent "claude path NOT installed"   "$PROJ_OMP/${CLAUDE_SKILLS_REL}"
+assert_absent "opencode path NOT installed" "$PROJ_OMP/${OPENCODE_SKILLS_REL}"
+# Per-agent config files of OTHER agents (Codex hooks.json, Claude
+# settings.json) must also stay absent — confirms the install was
+# really scoped to the single requested row, not all of them.
+assert_absent "codex config NOT installed"  "$PROJ_OMP/${CODEX_CONFIG_REL}"
+assert_absent "claude config NOT installed" "$PROJ_OMP/${CLAUDE_CONFIG_REL}"
+
+case_start "x-x init --agents=omp --scope=user lands at ~/.agents/skills"
+PROJ_OMP_USER="$(fresh_project)"
+cd "$PROJ_OMP_USER"
+reset_user_home
+run_capture "" init --agents=omp --scope=user
+assert_eq "exit 0" "$RUN_RC" "0"
+# `agents` provider scans `$HOME/.agents/skills/` at user scope — same
+# path Codex and Copilot use at user scope. Skills land under
+# SANDBOX_HOME, project cwd is left alone.
+assert_is_dir "omp user-scope skills landed" \
+  "${SANDBOX_HOME}/${OMP_SKILLS_REL}/${SKILL_X_X_DIR}"
+assert_absent "no install under project cwd" \
+  "$PROJ_OMP_USER/${OMP_SKILLS_REL}"
 
 case_start "x-x init --agents=invalid rejects unknown agent"
 reset_user_home
