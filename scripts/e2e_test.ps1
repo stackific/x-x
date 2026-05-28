@@ -396,11 +396,14 @@ function Start-StaxServer {
     [string[]]$ExtraArgs = @()
   )
   # Bare `stax` blocks on the loopback HTTP server. Start it in the
-  # background, wait up to 5s for the port to start accepting requests
-  # (polled via /api/stats), then return the Process object so the
-  # caller can stop it. Captures stdout / stderr to per-process temp
-  # files for post-mortem assertions, and stashes their paths on the
-  # Process object for the caller to read.
+  # background, wait up to 5s for the listening banner to appear in
+  # stdout (which carries the actually-bound URL — preferred port may
+  # have been busy and the server fell forward to an adjacent one per
+  # `serverPortFallbackAttempts`), then probe `/api/stats` against that
+  # URL. Returns the Process object with `StaxStdout`, `StaxStderr`,
+  # and `StaxUrl` properties attached for the caller. On timeout, dumps
+  # stdout/stderr into the exception message so CI runs can self-
+  # diagnose without re-running with debug logging.
   $stdout = New-TemporaryFile
   $stderr = New-TemporaryFile
   $args = @($ExtraArgs)
@@ -410,23 +413,33 @@ function Start-StaxServer {
     -RedirectStandardError  $stderr.FullName
   Add-Member -InputObject $proc -NotePropertyName StaxStdout -NotePropertyValue $stdout.FullName -Force
   Add-Member -InputObject $proc -NotePropertyName StaxStderr -NotePropertyValue $stderr.FullName -Force
+  Add-Member -InputObject $proc -NotePropertyName StaxUrl    -NotePropertyValue ''                -Force
   $deadline = (Get-Date).AddSeconds(5)
+  $bannerRe = 'Stax server listening on (\S+)'
   while ((Get-Date) -lt $deadline) {
     if ($proc.HasExited) {
       $out = Get-Content -LiteralPath $stdout.FullName -Raw -ErrorAction SilentlyContinue
       $err = Get-Content -LiteralPath $stderr.FullName -Raw -ErrorAction SilentlyContinue
       throw "stax background process exited before listening (rc=$($proc.ExitCode))`nstdout: $out`nstderr: $err"
     }
-    try {
-      $null = Invoke-WebRequest -Uri "$STAX_SERVER_DISPLAY_URL$STAX_API_STATS_PATH" `
-        -TimeoutSec 1 -UseBasicParsing -ErrorAction Stop
-      return $proc
-    } catch {
-      Start-Sleep -Milliseconds 100
+    $banner = Get-Content -LiteralPath $stdout.FullName -Raw -ErrorAction SilentlyContinue
+    if ($banner -and ($banner -match $bannerRe)) {
+      $proc.StaxUrl = $matches[1]
+      try {
+        $null = Invoke-WebRequest -Uri "$($proc.StaxUrl)$STAX_API_STATS_PATH" `
+          -TimeoutSec 1 -UseBasicParsing -ErrorAction Stop
+        return $proc
+      } catch {
+        # Banner present but probe failed — keep retrying within the
+        # deadline (server may still be wiring routes).
+      }
     }
+    Start-Sleep -Milliseconds 100
   }
+  $out = Get-Content -LiteralPath $stdout.FullName -Raw -ErrorAction SilentlyContinue
+  $err = Get-Content -LiteralPath $stderr.FullName -Raw -ErrorAction SilentlyContinue
   Stop-StaxServer -Process $proc
-  throw "stax server never started listening on $STAX_SERVER_DISPLAY_URL"
+  throw "stax server never started listening (deadline 5s)`nstdout: $out`nstderr: $err"
 }
 
 function Stop-StaxServer {
@@ -619,13 +632,13 @@ $projNoBrowser = New-FreshProject
 Initialize-ProjectScaffold -Path $projNoBrowser
 $srv = Start-StaxServer --no-browser --cwd $projNoBrowser
 try {
-  $resp = Invoke-WebRequest -Uri "$STAX_SERVER_DISPLAY_URL$STAX_API_STATS_PATH" -TimeoutSec 1 -UseBasicParsing
+  $resp = Invoke-WebRequest -Uri "$($srv.StaxUrl)$STAX_API_STATS_PATH" -TimeoutSec 1 -UseBasicParsing
   Assert-Eq       'stats status 200' $resp.StatusCode 200
   Assert-Contains 'stats version'    $resp.Content "`"version`":`"$E2E_VERSION`""
   Assert-Contains 'stats systems'    $resp.Content '"systems":'
   Assert-Contains 'stats scopes'     $resp.Content '"scopes":'
   $banner = Get-Content -LiteralPath $srv.StaxStdout -Raw
-  Assert-Contains 'listening banner' $banner $STAX_SERVER_DISPLAY_URL
+  Assert-Contains 'listening banner' $banner $srv.StaxUrl
   Assert-Contains 'ctrl-c hint'      $banner 'Ctrl-C'
   $errOut = Get-Content -LiteralPath $srv.StaxStderr -Raw -ErrorAction SilentlyContinue
   if ($null -eq $errOut) { $errOut = '' }
@@ -657,7 +670,7 @@ $registry = "systems:`n  - id: auth`n    name: Auth Service`n"
 Set-Content -LiteralPath (Join-Path (Join-Path $projApi $STAX_DIR) $STAX_SYSTEMS_FILE) -Value $registry -Encoding ascii
 $srv = Start-StaxServer --no-browser --cwd $projApi
 try {
-  $resp = Invoke-WebRequest -Uri "$STAX_SERVER_DISPLAY_URL$STAX_API_SYSTEMS_PATH" -TimeoutSec 1 -UseBasicParsing
+  $resp = Invoke-WebRequest -Uri "$($srv.StaxUrl)$STAX_API_SYSTEMS_PATH" -TimeoutSec 1 -UseBasicParsing
   Assert-Eq       'systems status 200' $resp.StatusCode 200
   Assert-Contains 'systems id'          $resp.Content '"id":"auth"'
   Assert-Contains 'systems name'        $resp.Content '"name":"Auth Service"'
@@ -672,7 +685,7 @@ Initialize-ProjectScaffold -Path $emptyProjApi
 Remove-Item -LiteralPath (Join-Path (Join-Path $emptyProjApi $STAX_DIR) $STAX_SYSTEMS_FILE) -ErrorAction SilentlyContinue
 $srv = Start-StaxServer --no-browser --cwd $emptyProjApi
 try {
-  $resp = Invoke-WebRequest -Uri "$STAX_SERVER_DISPLAY_URL$STAX_API_SYSTEMS_PATH" -TimeoutSec 1 -UseBasicParsing
+  $resp = Invoke-WebRequest -Uri "$($srv.StaxUrl)$STAX_API_SYSTEMS_PATH" -TimeoutSec 1 -UseBasicParsing
   Assert-Eq       'systems status 200'  $resp.StatusCode 200
   Assert-Contains 'empty systems list'  $resp.Content '"systems":[]'
 } finally {
