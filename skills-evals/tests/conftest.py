@@ -3,8 +3,10 @@
 """Shared pytest fixtures for the skills evals.
 
 1. Load `.env` (from skills-evals/ or any parent) so DEEPSEEK_API_KEY
-   reaches both the judge LLM (DeepSeek directly) and the Claude Code
-   backend (DeepSeek via Anthropic-compatible env vars).
+   reaches every supported agent backend — the judge LLM (DeepSeek
+   directly), Claude Code (Anthropic-compatible env vars), OpenCode
+   (deepseek provider via Models.dev), and GitHub Copilot CLI (BYOK env
+   vars with provider type `anthropic`).
 2. Provide a fresh, isolated `workspace` directory per test — `x-x init`
    runs in it before any skill is invoked.
 
@@ -45,19 +47,61 @@ CLAUDE_ENV_DEFAULTS = {
 # stays uniform across backends.
 OPENCODE_ENV_DEFAULTS: dict[str, str] = {}
 
+# GitHub Copilot CLI BYOK routing. Provider type MUST be `anthropic` (not
+# `openai`) — DeepSeek requires reasoning_content echo-back on subsequent
+# requests, which Copilot CLI's OpenAI integration does not support and
+# Copilot reports as 400 "The reasoning_content in the thinking mode must
+# be passed back to the API". The Anthropic Messages wire avoids the issue.
+# COPILOT_PROVIDER_API_KEY is mirrored from DEEPSEEK_API_KEY in the session
+# fixture below, same pattern as ANTHROPIC_AUTH_TOKEN for Claude.
+COPILOT_ENV_DEFAULTS = {
+  "COPILOT_PROVIDER_TYPE": "anthropic",
+  "COPILOT_PROVIDER_BASE_URL": "https://api.deepseek.com/anthropic",
+  "COPILOT_MODEL": "deepseek-v4-pro",
+  # deepseek-v4-pro isn't in Copilot CLI's built-in model catalog, so the
+  # token limits must be set explicitly or the CLI falls back to a default
+  # conservative cap.
+  "COPILOT_PROVIDER_MAX_PROMPT_TOKENS": "840000",
+  "COPILOT_PROVIDER_MAX_OUTPUT_TOKENS": "128000",
+}
+
 # Which agent backend the workspace fixture installs and probes for.
 # Default `claude` keeps the existing Claude tests running unchanged.
-# Workflows targeting other backends (e.g. manual-opencode-judge.yml)
-# set X_X_AGENT_KEY=opencode to flip both the `--agents <key>` value
-# passed to `x-x init` and the binary the fixture skips on if missing.
-VALID_AGENT_KEYS = ("claude", "opencode")
+# Workflows targeting other backends (e.g. manual-opencode-judge.yml,
+# manual-copilot-judge.yml) set X_X_AGENT_KEY=<key> to flip both the
+# binary the fixture skips on if missing and the per-agent env defaults
+# that get pointed at DeepSeek.
+VALID_AGENT_KEYS = ("claude", "opencode", "copilot")
 AGENT_BINARY_FOR_KEY = {
   "claude": "claude",
   "opencode": "opencode",
+  "copilot": "copilot",
 }
 AGENT_ENV_DEFAULTS_FOR_KEY = {
   "claude": CLAUDE_ENV_DEFAULTS,
   "opencode": OPENCODE_ENV_DEFAULTS,
+  "copilot": COPILOT_ENV_DEFAULTS,
+}
+# Value passed to `x-x init --agents <value>` for each backend. Today the
+# binary's agentTargets registry (constants.go) recognizes "claude",
+# "codex", and "opencode" — "copilot" is not yet a registered target, so
+# Copilot tests install the Claude skill layout as a transitional shape
+# and the copilot CLI discovers them by the cross-agent SKILL.md
+# convention. When copilot is added to agentTargets, flip this entry to
+# "copilot" in the same change.
+AGENT_INIT_VALUE_FOR_KEY = {
+  "claude": "claude",
+  "opencode": "opencode",
+  "copilot": "claude",
+}
+# Per-agent skills install root under $HOME used by the user-scope
+# post-install log. Reflects each agent's discovery convention — Claude
+# reads `.claude/skills/`, OpenCode reads `.opencode/commands/`, Copilot
+# CLI (via the transitional Claude layout) reads `.claude/skills/`.
+AGENT_USER_SKILLS_REL_FOR_KEY = {
+  "claude": Path(".claude") / "skills",
+  "opencode": Path(".opencode") / "commands",
+  "copilot": Path(".claude") / "skills",
 }
 
 # Which `x-x init --scope` value to use when bootstrapping each test's
@@ -121,7 +165,9 @@ def _load_dotenv_and_route_agent() -> None:
   Each agent's per-process env requirements are encoded in
   `AGENT_ENV_DEFAULTS_FOR_KEY` — Claude needs the `ANTHROPIC_*` block
   pointed at DeepSeek's compat shim; OpenCode picks up the deepseek
-  provider directly from `DEEPSEEK_API_KEY` and needs no extra mirror.
+  provider directly from `DEEPSEEK_API_KEY`; Copilot uses the BYOK
+  `COPILOT_PROVIDER_*` block plus a mirror of DEEPSEEK_API_KEY into
+  `COPILOT_PROVIDER_API_KEY`.
   """
   log("conftest", f"python={sys.version.split()[0]} platform={sys.platform}")
 
@@ -155,6 +201,13 @@ def _load_dotenv_and_route_agent() -> None:
   if agent_key == "claude" and not os.environ.get("ANTHROPIC_AUTH_TOKEN"):
     os.environ["ANTHROPIC_AUTH_TOKEN"] = api_key
     log("conftest", "mirrored DEEPSEEK_API_KEY into ANTHROPIC_AUTH_TOKEN")
+
+  # Copilot CLI's BYOK provider auth uses COPILOT_PROVIDER_API_KEY; mirror
+  # DEEPSEEK_API_KEY in so the same single secret routes both the agent
+  # and the judge.
+  if agent_key == "copilot" and not os.environ.get("COPILOT_PROVIDER_API_KEY"):
+    os.environ["COPILOT_PROVIDER_API_KEY"] = api_key
+    log("conftest", "mirrored DEEPSEEK_API_KEY into COPILOT_PROVIDER_API_KEY")
 
   for k, v in AGENT_ENV_DEFAULTS_FOR_KEY[agent_key].items():
     if k in os.environ:
@@ -190,9 +243,10 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
   `x-x init --scope project` (skills land under <ws>/<agent-skills-rel>/)
   and `x-x init --scope user` (skills land under $HOME/<agent-skills-rel>/).
   X_X_AGENT_KEY (default "claude") selects which agent's `--agents <key>`
-  value to pass to `x-x init` and which binary to require on PATH —
-  per-agent workflows (.github/workflows/manual-<agent>-*judge.yml)
-  reuse this same pytest collection by flipping that env var.
+  value to pass to `x-x init` (via `AGENT_INIT_VALUE_FOR_KEY`) and which
+  binary to require on PATH — per-agent workflows
+  (.github/workflows/manual-<agent>-*judge.yml) reuse this same pytest
+  collection by flipping that env var.
 
   $HOME (and $USERPROFILE on Windows) is redirected to a per-test
   sandboxed directory before `x-x init` runs, so every test sees a
@@ -233,6 +287,7 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
   ws.mkdir()
   log("conftest", f"workspace: {ws}")
 
+  init_value = AGENT_INIT_VALUE_FOR_KEY[agent_key]
   for cmd in (
     ["git", "init", "-q"],
     ["git", "config", "user.email", "ci@example.com"],
@@ -240,7 +295,7 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     [
       "x-x", "init",
       "--scope", scope,
-      "--agents", agent_key,
+      "--agents", init_value,
       "--prefix-width", "4",
       "--max-plan-lines", "30",
       "--review-per", "plan",
@@ -263,13 +318,15 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
   log("conftest", f"workspace ready: {sorted(p.name for p in ws.iterdir())}")
   if scope == "user":
+    # Log every user-scope skill destination an agent might read from, so
+    # a missing install is immediately visible regardless of which agent
+    # the test is exercising. Claude reads `~/.claude/skills/`; Codex and
+    # Copilot read `~/.agents/skills/`; the legacy `~/.copilot/skills/`
+    # is also on Copilot CLI's official list and is checked for parity.
     home = Path.home()
     # Mirror the on-disk path each agent's skills install to so the
     # post-install log shows what landed.
-    skills_root = {
-      "claude": home / ".claude" / "skills",
-      "opencode": home / ".opencode" / "commands",
-    }[agent_key]
+    skills_root = home / AGENT_USER_SKILLS_REL_FOR_KEY[agent_key]
     if skills_root.is_dir():
       log(
         "conftest",

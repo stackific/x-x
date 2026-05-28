@@ -168,7 +168,7 @@ repo, drop `--local` and add `--global` instead.
 
 ```bash
 # Identity (DCO requirement: author email must match Signed-off-by)
-git config --local user.name  "Your Full Name"
+git config --local user.name "Your Full Name"
 git config --local user.email "you@stackific.com"
 
 # Developer Certificate of Origin (DCO) auto-signoff
