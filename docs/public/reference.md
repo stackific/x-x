@@ -12,8 +12,8 @@ Every subcommand below also accepts `--cwd <path>` (git `-C` semantics): when se
 
 | Command                       | Description                                                          |
 | ----------------------------- | -------------------------------------------------------------------- |
-| `stax`                         | Start the local Stax web UI and open it in the OS-default browser. Blocks until Ctrl-C. |
-| `stax --no-browser`            | Same as bare `stax` but skip the browser handoff. The local UI keeps running; useful in CI or any scripted invocation that should not pop a window. |
+| `stax`                         | Start the local Stax web UI and open it in the OS-default browser. Blocks until Ctrl-C. Requires the current directory to be an initialized stax project (see the [Project-scope marker check](#project-scope-marker-check)) — refuses to bind the listener and prints the init banner otherwise. |
+| `stax --no-browser`            | Same as bare `stax` but skip the browser handoff. The local UI keeps running; useful in CI or any scripted invocation that should not pop a window. Same project marker requirement as bare `stax`. |
 | `stax post-install`            | Installer hook subcommand. Triggers the first-run write of `~/.stax/agents/` and exits silently. `INSTALL.sh` / `INSTALL.ps1` use this; end users normally do not. Takes no arguments. |
 | `stax init [--agents ...] [--scope ...] [--prefix-width N] [--max-plan-lines N] [--review-per task\|plan] [--cwd PATH]` | Install bundled agent skills + seed the project's `.stax/` scaffold. |
 | `stax skills remove --user`                  | Uninstall bundled stax skills from your user scope (`$HOME`). `--cwd` is rejected here — the wipe is always rooted at `$HOME`. |
@@ -123,14 +123,13 @@ Same logic as `--user`, but rooted at the current working directory instead of `
 
 ### Project-scope marker check
 
-Every `stax plans` subcommand and `stax skills remove --project` require `./.stax/` to exist — it's how `stax` recognizes the current directory as a stax project. If it's missing, the command prints a two-line diagnostic on stderr and exits `2`:
+Bare `stax` (web UI), `stax --no-browser`, every `stax plans` subcommand, and `stax skills remove --project` all require the current directory to be an initialized stax project — the on-disk marker is `./.stax/_config.lock`. If it's missing, the command prints a one-line diagnostic on stderr and exits `2`:
 
 ```
-error: not a stax project: no .stax/ in <cwd>
-run `stax init` to initialize the current directory as a stax project.
+error: not a stax project — run `stax init` to initialize the current directory first.
 ```
 
-It runs *after* per-subcommand flag/positional validation, so a usage error (unknown flag, stray positional) still wins the diagnostic and gives the user the most actionable feedback first.
+For subcommands, the check runs *after* per-subcommand flag/positional validation, so a usage error (unknown flag, stray positional) still wins the diagnostic and gives the user the most actionable feedback first. For bare `stax` it runs after `--cwd` has been honored and after `ensureBundledAgents()` has materialized the user-scope embed, but before any listener is bound or browser launched.
 
 ### `stax plans next-prefix`
 
