@@ -77,6 +77,45 @@ DEFAULT_MAX_TURNS = 20
 DEFAULT_PER_TURN_TIMEOUT_S = 600.0
 
 DEFAULT_MODEL = "deepseek/deepseek-v4-pro"
+
+# Appended to the user task in `drive_command` so opencode lands it at
+# the tail of the prompt (after the SKILL.md template body opencode
+# resolved from `--command <name>`). Last-instruction-wins in attention.
+#
+# Targets the two gates that stranded sessions in the first green-on-CI
+# attempts:
+#
+#   1. Empty systems registry. `x-plan` SKILL.md Appendix C step 4 says
+#      "STOP. Propose a new system to the user. On approval, add to
+#      _data_systems.yaml. Then continue." The propose-and-wait wording
+#      doesn't surface as `Reply yes` so the auto-yes regex misses it
+#      and opencode goes idle.
+#
+#   2. Destructive overwrites in the executor. When `x-x` runs a plan
+#      whose system already has an existing artifact (e.g. a reminders
+#      plan that supersedes a todo plan, with the todo's index.html
+#      already on disk), the model emits a checkpoint message like
+#      "FYI: I'll review the whole plan with you at once" and goes
+#      idle waiting for a `review per task` reply.
+#
+# Claude doesn't need this — the slash-command framing in Claude Code
+# resolves the same SKILL.md differently and the model is less hesitant.
+# This is opencode-specific and lives next to the driver, not in the
+# SKILL.md (which has to stay agent-agnostic).
+CI_DIRECTIVE = (
+  "\n\n--- OPERATING MODE: non-interactive CI evaluation ---\n"
+  "There is no human operator available to answer questions or grant "
+  "approvals. Every gate the SKILL TEMPLATE above describes ('propose "
+  "to user and wait for approval', 'STOP and ask', 'Reply yes to "
+  "proceed', 'review per task', 'clarify only when underspecified', "
+  "etc.) is auto-approved by default — treat the propose-or-clarify "
+  "step as informational, immediately take the implied default or "
+  "your best-judgment choice, and continue with the work. Never end "
+  "a turn while the user's task below still has open work. Do not "
+  "ask AskUserQuestion-style or text-prompt questions; make a "
+  "reasonable choice and proceed. Follow the SKILL TEMPLATE "
+  "instructions verbatim otherwise."
+)
 # Note: the trailing "[1m]" variant suffix that Claude Code uses
 # (`deepseek-v4-pro[1m]` — the 1M-context build) is an Anthropic-shim
 # convention. OpenCode reads provider/model IDs from Models.dev's
@@ -131,13 +170,18 @@ def drive_command(
   the positional message. Subsequent turns spawn `opencode run --continue`
   with `yes` as the message until the agent stops asking for confirmation,
   the turn cap fires, or a subprocess exits non-zero.
+
+  Arguments get `CI_DIRECTIVE` appended so opencode places it at the
+  end of the prompt (after the SKILL.md template). See the constant's
+  docstring for why.
   """
-  prompt_label = f"--command {command} {_brief(arguments, 100)}"
+  augmented = (arguments + CI_DIRECTIVE) if arguments else CI_DIRECTIVE.lstrip()
+  prompt_label = f"--command {command} {_brief(augmented, 100)}"
   return _drive_loop(
     workspace,
     prompt_label,
     first_cmd=_build_cmd(model, command=command),
-    first_input=arguments,
+    first_input=augmented,
     max_turns=max_turns,
     per_turn_timeout=per_turn_timeout,
     transcript_path=transcript_path,
