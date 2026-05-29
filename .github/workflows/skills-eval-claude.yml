@@ -83,11 +83,14 @@ jobs:
 
       # Claude Code's `--input-format stream-json` is reverse-engineered
       # (see github.com/anthropics/claude-code/issues/24594) and the protocol
-      # format can change between versions. @latest is fragile but kept here
-      # for now; bump only after verifying the smoke test still passes.
+      # format can change between versions. Pinned to 2.1.150: 2.1.156 began
+      # emitting a `system`-role message at messages[1] that DeepSeek's
+      # Anthropic-compat endpoint rejects with `400 ... unknown variant
+      # 'system', expected 'user' or 'assistant'`. Bump intentionally after
+      # verifying the smoke test still passes against the new version.
       - name: install claude code
         run: |
-          npm install -g @anthropic-ai/claude-code@latest
+          npm install -g @anthropic-ai/claude-code@2.1.150
           claude --version
 
       # setup-uv no longer publishes moving major tags (@v8), so pin to a
