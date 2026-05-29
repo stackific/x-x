@@ -43,6 +43,12 @@ jobs:
     timeout-minutes: 60
 
     env:
+      # STAX_AGENT_KEY tells the skills-evals conftest which backend's
+      # tests to collect, which binary to require on PATH, and which
+      # `--agents <key>` value to pass to `stax init`. Default is
+      # "claude"; this workflow runs the Copilot CLI set.
+      STAX_AGENT_KEY: copilot
+
       # Copilot CLI BYOK routing for DeepSeek's Anthropic-compatible endpoint.
       # The conftest mirrors DEEPSEEK_API_KEY into COPILOT_PROVIDER_API_KEY
       # at session-setup time so judge (direct DeepSeek) and agent (DeepSeek
