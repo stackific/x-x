@@ -2083,6 +2083,161 @@ assert_eq "exit 0" "$RUN_RC" "0"
 assert_is_file    "user-scope sibling survives re-run" "$HOME/${CLAUDE_SKILLS_REL}/my-custom/SKILL.md"
 assert_is_symlink "user-scope bundled still symlinked" "$HOME/${CLAUDE_SKILLS_REL}/${SKILL_SHIP_DIR}"
 
+# ---------- skills remove --user un-merges hooks from every shipped config ----------
+#
+# The corresponding project-scope un-merge cases above pin un-merge for
+# claude+codex (line ~1619), copilot (~1764), opencode (~1840/1851), and
+# pi (~1918/1929). The user-scope counterpart wasn't exercised on either
+# runner — `skills remove --user` walks every agentTargets row with a
+# configSrc and consults `configRelFor(scopeUser)` for the destination,
+# which is the only branch where Copilot's userConfigRel override
+# (`.copilot/hooks/`) actually drives a different path than configRel
+# (`.github/hooks/`). The cases below close that gap for all five
+# hook-shipping agents. Each one:
+#   1. Installs --scope user so the bundled config lands at the
+#      user-scope path (different file per agent).
+#   2. Mutates the user file to add a user-authored sibling record /
+#      user-tweaked variant — both must survive the un-merge.
+#   3. Runs `skills remove --user` and asserts the bundled record is
+#      gone, the user record survives, and any top-level scalar is
+#      preserved.
+
+case_start "skills remove --user un-merges bundled hooks from user ${CLAUDE_SETTINGS_FILE}"
+reset_user_home
+PROJ_RM_USER_CL="$(fresh_project)"
+cd "$PROJ_RM_USER_CL"
+run_capture "" init --scope user
+# Append a user-authored Bash record alongside our bundled
+# Write|Edit|MultiEdit record so we can assert it survives.
+cat > "$HOME/${CLAUDE_SETTINGS_PATH}" <<'EOF'
+{
+  "fastMode": true,
+  "hooks": {
+    "PostToolUse": [
+      {"matcher": "Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": "stax work-items lint"}]},
+      {"matcher": "Bash", "hooks": [{"type": "command", "command": "USER-CLAUDE-USER-HOOK"}]}
+    ],
+    "Stop": [
+      {"matcher": "", "hooks": [{"type": "command", "command": "stax work-items lint"}]}
+    ]
+  }
+}
+EOF
+run_capture "" skills remove --user
+assert_eq           "exit 0"                                "$RUN_RC" "0"
+USER_CL_BODY="$(cat "$HOME/${CLAUDE_SETTINGS_PATH}")"
+assert_contains     "user-scope fastMode kept"              "$USER_CL_BODY" '"fastMode": true'
+assert_contains     "user-scope Bash record survives"       "$USER_CL_BODY" 'USER-CLAUDE-USER-HOOK'
+assert_not_contains "user-scope bundled command gone"       "$USER_CL_BODY" 'stax work-items lint'
+
+case_start "skills remove --user un-merges bundled hooks from user ${CODEX_HOOKS_FILE}"
+reset_user_home
+PROJ_RM_USER_CX="$(fresh_project)"
+cd "$PROJ_RM_USER_CX"
+run_capture "" init --scope user
+cat > "$HOME/${CODEX_HOOKS_PATH}" <<'EOF'
+{
+  "hooks": {
+    "PostToolUse": [
+      {"matcher": "apply_patch", "hooks": [{"type": "command", "command": "stax work-items lint"}]}
+    ],
+    "Stop": [
+      {"hooks": [{"type": "command", "command": "stax work-items lint 1>&2"}]},
+      {"hooks": [{"type": "command", "command": "USER-CODEX-USER-HOOK"}]}
+    ]
+  }
+}
+EOF
+run_capture "" skills remove --user
+assert_eq           "exit 0"                                "$RUN_RC" "0"
+USER_CX_BODY="$(cat "$HOME/${CODEX_HOOKS_PATH}")"
+assert_contains     "user-scope codex user hook survives"   "$USER_CX_BODY" 'USER-CODEX-USER-HOOK'
+assert_not_contains "user-scope apply_patch matcher gone"   "$USER_CX_BODY" 'apply_patch'
+assert_not_contains "user-scope Stop bundled command gone"  "$USER_CX_BODY" 'stax work-items lint 1>&2'
+
+case_start "skills remove --user un-merges bundled hooks from user Copilot stax.json"
+reset_user_home
+PROJ_RM_USER_CP="$(fresh_project)"
+cd "$PROJ_RM_USER_CP"
+# Copilot is the canonical scope-asymmetric case — `userConfigRel`
+# diverts the user-scope install to .copilot/hooks/ rather than the
+# project's .github/hooks/. This case proves un-merge follows the
+# same resolver (so install and remove can't drift across scopes).
+run_capture "" init --scope user --agents copilot \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+assert_eq "exit 0" "$RUN_RC" "0"
+assert_is_file "user copilot stax.json present" "$HOME/${COPILOT_USER_CONFIG_REL}/stax.json"
+cat > "$HOME/${COPILOT_USER_CONFIG_REL}/stax.json" <<'EOF'
+{
+  "version": 1,
+  "hooks": {
+    "postToolUse": [
+      {"type": "command", "bash": "stax work-items lint"},
+      {"type": "command", "bash": "USER-COPILOT-USER-HOOK"}
+    ],
+    "agentStop": [
+      {"type": "command", "bash": "stax work-items lint"}
+    ]
+  }
+}
+EOF
+run_capture "" skills remove --user
+assert_eq           "exit 0"                                "$RUN_RC" "0"
+USER_CP_BODY="$(cat "$HOME/${COPILOT_USER_CONFIG_REL}/stax.json")"
+assert_contains     "user-scope copilot user hook survives" "$USER_CP_BODY" 'USER-COPILOT-USER-HOOK'
+assert_not_contains "user-scope copilot bundled cmd gone"   "$USER_CP_BODY" 'stax work-items lint'
+assert_contains     "user-scope version scalar survives"    "$USER_CP_BODY" '"version"'
+
+case_start "skills remove --user deletes byte-equal user OpenCode stax.ts"
+reset_user_home
+PROJ_RM_USER_OC="$(fresh_project)"
+cd "$PROJ_RM_USER_OC"
+run_capture "" init --scope user --agents opencode \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+assert_eq      "exit 0" "$RUN_RC" "0"
+assert_is_file "user opencode stax.ts present" "$HOME/${OPENCODE_USER_CONFIG_REL}/stax.ts"
+run_capture "" skills remove --user
+assert_eq      "exit 0" "$RUN_RC" "0"
+assert_absent  "user opencode stax.ts removed (byte-equal)" "$HOME/${OPENCODE_USER_CONFIG_REL}/stax.ts"
+
+case_start "skills remove --user preserves user-edited OpenCode stax.ts"
+reset_user_home
+PROJ_RM_USER_OCE="$(fresh_project)"
+cd "$PROJ_RM_USER_OCE"
+run_capture "" init --scope user --agents opencode \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+printf '// my user-scope customization\n' >> "$HOME/${OPENCODE_USER_CONFIG_REL}/stax.ts"
+USER_OCE_EDITED="$(cat "$HOME/${OPENCODE_USER_CONFIG_REL}/stax.ts")"
+run_capture "" skills remove --user
+assert_eq "exit 0" "$RUN_RC" "0"
+USER_OCE_BODY="$(cat "$HOME/${OPENCODE_USER_CONFIG_REL}/stax.ts")"
+assert_eq "user-edited user-scope stax.ts survives remove" "$USER_OCE_EDITED" "$USER_OCE_BODY"
+
+case_start "skills remove --user deletes byte-equal user Pi stax.ts"
+reset_user_home
+PROJ_RM_USER_PI="$(fresh_project)"
+cd "$PROJ_RM_USER_PI"
+run_capture "" init --scope user --agents pi \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+assert_eq      "exit 0" "$RUN_RC" "0"
+assert_is_file "user pi stax.ts present" "$HOME/${PI_USER_CONFIG_REL}/stax.ts"
+run_capture "" skills remove --user
+assert_eq      "exit 0" "$RUN_RC" "0"
+assert_absent  "user pi stax.ts removed (byte-equal)" "$HOME/${PI_USER_CONFIG_REL}/stax.ts"
+
+case_start "skills remove --user preserves user-edited Pi stax.ts"
+reset_user_home
+PROJ_RM_USER_PIE="$(fresh_project)"
+cd "$PROJ_RM_USER_PIE"
+run_capture "" init --scope user --agents pi \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+printf '// pi user-scope customization\n' >> "$HOME/${PI_USER_CONFIG_REL}/stax.ts"
+USER_PIE_EDITED="$(cat "$HOME/${PI_USER_CONFIG_REL}/stax.ts")"
+run_capture "" skills remove --user
+assert_eq "exit 0" "$RUN_RC" "0"
+USER_PIE_BODY="$(cat "$HOME/${PI_USER_CONFIG_REL}/stax.ts")"
+assert_eq "user-edited user-scope Pi stax.ts survives remove" "$USER_PIE_EDITED" "$USER_PIE_BODY"
+
 # ---------- skill remove on empty state ----------
 
 case_start "skill remove --user is a silent no-op when nothing is installed"
