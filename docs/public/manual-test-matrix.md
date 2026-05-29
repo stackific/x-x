@@ -51,7 +51,7 @@ cell is visible at a glance.
    expected install path.
 2. The `SKILL.md` files actually land at the agent's documented
    discovery directory (see
-   [agent-skill-and-hook-paths.md](agent-skill-and-hook-paths.md)).
+   [agent-skill-and-hook-paths.md](../internal/agent-skill-and-hook-paths.md)).
 3. The agent's `/scope` and `/ship` commands resolve to those skills
    in a real session — i.e. typing `/scope ...` invokes the planner,
    typing `/ship` invokes the executor, without manual prompting.
@@ -85,7 +85,7 @@ cell is visible at a glance.
 
 1. `stax init --agents <key> --scope <scope>` lands the bundle at
    the agent's documented hook location (see
-   [agent-skill-and-hook-paths.md](agent-skill-and-hook-paths.md) →
+   [agent-skill-and-hook-paths.md](../internal/agent-skill-and-hook-paths.md) →
    "Hooks" table).
 2. JSON-merge agents (Claude, Codex, Copilot): re-running `init`
    over a user-edited config preserves the user's top-level keys +
