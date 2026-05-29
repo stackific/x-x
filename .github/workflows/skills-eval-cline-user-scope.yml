@@ -1,6 +1,9 @@
 name: skills eval / cline (user scope)
 
 # Identical to skills-eval-cline.yml EXCEPT for STAX_INSTALL_SCOPE.
+# Installs skills at user scope (~/.cline/skills/) rather than project
+# scope (<workspace>/.cline/skills/) so we exercise that branch of
+# `stax init`.
 
 on:
   workflow_dispatch:
@@ -27,9 +30,6 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # server.go embeds frontend/dist via //go:embed all:frontend/dist
-      # (gitignored). Build it before `go install` or the embed pattern
-      # resolves to an empty dir and the compile fails at server.go.
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
@@ -49,10 +49,6 @@ jobs:
           go install .
           stax --version
 
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-
       - name: install cline cli
         run: |
           npm install -g cline@latest
@@ -68,7 +64,7 @@ jobs:
 
       - name: run pytest
         working-directory: skills-evals
-        run: uv run pytest tests/test_cline_stream_smoke.py tests/test_cline_todo.py tests/test_cline_work_item_extends.py tests/test_cline_reminders_supersedes_todo.py
+        run: uv run pytest
 
       - name: upload pytest tmp on failure
         if: failure()

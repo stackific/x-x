@@ -6,7 +6,8 @@ name: skills eval / github copilot cli
 #
 #   1. Install GitHub Copilot CLI (npm @github/copilot); install stax to PATH.
 #   2. Sync the uv-managed skills-evals project.
-#   3. Run `uv run pytest`. The tests:
+#   3. Run `uv run pytest`. conftest filters to `test_copilot_*` via
+#      STAX_AGENT_KEY=copilot. The tests:
 #        a. Spawn `copilot -p "<prompt>" -s --allow-all-tools --no-ask-user`
 #           against DeepSeek (COPILOT_PROVIDER_* env vars). `-s` is the
 #           silent flag — Copilot CLI otherwise prints session metadata
@@ -37,9 +38,8 @@ permissions:
 jobs:
   eval:
     runs-on: ubuntu-latest
-    # Same envelope as the Claude eval: 60-minute cap leaves headroom for
-    # DeepSeek latency across the smoke + three scenario tests without
-    # rewarding a stuck agent.
+    # 60-minute cap leaves headroom for DeepSeek latency across the
+    # smoke + scenario tests without rewarding a stuck agent.
     timeout-minutes: 60
 
     env:
@@ -96,15 +96,9 @@ jobs:
           go install .
           stax --version
 
-      # GitHub Copilot CLI requires Node 22+.
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-
-      # The Copilot CLI BYOK / wire surface evolves; pinning to @latest is
-      # fragile but acceptable for a manually-triggered experiment. Bump
-      # intentionally after verifying the smoke test still passes against
-      # the new version.
+      # The Copilot CLI BYOK / wire surface evolves; @latest is fragile but
+      # acceptable for a manually-triggered experiment. Bump intentionally
+      # after verifying the smoke test still passes against the new version.
       - name: install github copilot cli
         run: |
           npm install -g @github/copilot@latest
@@ -120,13 +114,12 @@ jobs:
         working-directory: skills-evals
         run: uv sync --frozen || uv sync
 
-      # `test_copilot_stream_smoke.py` runs first via the smoke-first
-      # collection hook in conftest — a wire-format / install / env
-      # regression fails it without burning a full planner+executor
-      # cycle on a real scenario.
+      # conftest's pytest_collection_modifyitems sorts smoke tests first
+      # so a wire-format / env / version regression fails fast instead of
+      # being masked by a scenario timeout.
       - name: run pytest
         working-directory: skills-evals
-        run: uv run pytest tests/test_copilot_stream_smoke.py tests/test_copilot_todo.py tests/test_copilot_work_item_extends.py tests/test_copilot_reminders_supersedes_todo.py
+        run: uv run pytest
 
       # Pytest writes transcripts and per-test workspaces under tmp_path
       # (`/tmp/pytest-of-runner/...`). Uploading on failure gives us the

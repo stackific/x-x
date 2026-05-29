@@ -1,12 +1,10 @@
 name: skills eval / pi (user scope)
 
 # Identical to skills-eval-pi.yml EXCEPT for STAX_INSTALL_SCOPE.
-# This workflow installs skills at user scope (~/.agents/skills/) rather
-# than project scope (<workspace>/.agents/skills/) so we exercise that
-# branch of `stax init`. The pytest fixture (skills-evals/tests/conftest.py)
-# reads STAX_INSTALL_SCOPE and passes it to `stax init --scope <value>`; pi
-# discovers skills from `~/.agents/skills/` (one of its documented
-# user-scope skill locations alongside `~/.pi/agent/skills/`).
+# Installs skills at user scope (~/.agents/skills/) rather than project
+# scope (<workspace>/.agents/skills/) so we exercise that branch of
+# `stax init`. Pi discovers skills from `~/.agents/skills/` (one of its
+# documented user-scope skill locations).
 
 on:
   workflow_dispatch:
@@ -35,9 +33,6 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # server.go embeds frontend/dist via //go:embed all:frontend/dist
-      # (gitignored). Build it before `go install` or the embed pattern
-      # resolves to an empty dir and the compile fails at server.go.
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
@@ -56,10 +51,6 @@ jobs:
         run: |
           go install .
           stax --version
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '22'
 
       - name: install pi cli
         run: |

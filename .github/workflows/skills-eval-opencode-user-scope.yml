@@ -1,13 +1,9 @@
 name: skills eval / opencode (user scope)
 
 # Identical to skills-eval-opencode.yml EXCEPT for STAX_INSTALL_SCOPE.
-# This workflow installs skills at user scope (~/.opencode/commands/)
-# rather than project scope (<workspace>/.opencode/commands/) so we
-# exercise that branch of `stax init`. The pytest fixture
-# (skills-evals/tests/conftest.py) reads STAX_INSTALL_SCOPE and passes
-# it to `stax init --scope <value>`, and the opencode driver's
-# `resolve_skill_template` helper falls back from project to user scope
-# when locating the SKILL.md to inline.
+# Installs skills at user scope (~/.opencode/commands/) rather than
+# project scope (<workspace>/.opencode/commands/) so we exercise that
+# branch of `stax init`.
 
 on:
   workflow_dispatch:
@@ -34,9 +30,6 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # server.go embeds frontend/dist via //go:embed all:frontend/dist
-      # (gitignored). Build it before `go install` or the embed pattern
-      # resolves to an empty dir and the compile fails at server.go.
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
@@ -55,10 +48,6 @@ jobs:
         run: |
           go install .
           stax --version
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '22'
 
       - name: install opencode
         run: |

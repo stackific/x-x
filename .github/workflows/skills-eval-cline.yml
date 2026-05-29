@@ -1,21 +1,21 @@
 name: skills eval / cline
 
-# Manually-triggered experiment from the agent-eval lineage. Mirrors
-# skills-eval-opencode.yml but targets Cline CLI via DeepSeek routed
-# through cline's first-class `deepseek` provider. The loop:
+# Manually-triggered experiment from the agent-eval lineage. Targets Cline
+# CLI via DeepSeek routed through cline's first-class `deepseek` provider.
+# The loop:
 #
 #   1. Install Cline CLI (npm `cline`); install stax to PATH.
 #   2. Sync the uv-managed skills-evals project.
-#   3. Run `uv run pytest tests/test_cline_*`. The tests:
+#   3. Run `uv run pytest`. conftest filters to `test_cline_*` via
+#      STAX_AGENT_KEY=cline. The tests:
 #        a. Spawn `cline --yolo --json -c <ws> -t <s>` per skill
 #           invocation (single-shot subprocess; YOLO mode auto-approves
 #           every tool call). The cline driver inlines the SKILL.md off
 #           `<ws>/.cline/skills/<skill>/SKILL.md` into the prompt
 #           because cline does not resolve slash commands in headless
-#           mode — same workaround the opencode driver used before
-#           sst/opencode#2348 landed. `stax init --agents cline` (now a
-#           first-class entry in agentTargets) writes the SKILL.md
-#           tree exactly where the driver reads it.
+#           mode. `stax init --agents cline` (first-class entry in
+#           agentTargets) writes the SKILL.md tree exactly where the
+#           driver reads it.
 #        b. Provider routing comes from cline's on-disk auth state
 #           (`cline auth --provider deepseek --apikey <key> --modelid
 #           deepseek-v4-pro` in the workspace fixture; sandboxed $HOME
@@ -34,9 +34,8 @@ permissions:
 jobs:
   eval:
     runs-on: ubuntu-latest
-    # Same envelope as the other manual judges: 60-minute cap leaves
-    # headroom for DeepSeek latency across the smoke + three scenario
-    # tests without rewarding a stuck agent.
+    # 60-minute cap leaves headroom for DeepSeek latency across the
+    # smoke + scenario tests without rewarding a stuck agent.
     timeout-minutes: 60
 
     env:
@@ -85,15 +84,9 @@ jobs:
           go install .
           stax --version
 
-      # Cline CLI requires Node 22+.
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-
-      # The cline CLI BYOK / wire surface evolves; pinning to @latest is
-      # fragile but acceptable for a manually-triggered experiment. Bump
-      # intentionally after verifying the smoke test still passes against
-      # the new version.
+      # The cline CLI BYOK / wire surface evolves; @latest is fragile but
+      # acceptable for a manually-triggered experiment. Bump intentionally
+      # after verifying the smoke test still passes against the new version.
       - name: install cline cli
         run: |
           npm install -g cline@latest
@@ -109,13 +102,12 @@ jobs:
         working-directory: skills-evals
         run: uv sync --frozen || uv sync
 
-      # `test_cline_stream_smoke.py` runs first via the smoke-first
-      # collection hook in conftest — a wire-format / install / env
-      # regression fails it without burning a full planner+executor
-      # cycle on a real scenario.
+      # conftest's pytest_collection_modifyitems sorts smoke tests first
+      # so a wire-format / env / version regression fails fast instead of
+      # being masked by a scenario timeout.
       - name: run pytest
         working-directory: skills-evals
-        run: uv run pytest tests/test_cline_stream_smoke.py tests/test_cline_todo.py tests/test_cline_work_item_extends.py tests/test_cline_reminders_supersedes_todo.py
+        run: uv run pytest
 
       # Pytest writes transcripts and per-test workspaces under tmp_path
       # (`/tmp/pytest-of-runner/...`). Uploading on failure gives us the
