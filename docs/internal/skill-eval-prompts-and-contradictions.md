@@ -4,7 +4,7 @@ This doc is for two audiences:
 
 - **People driving `/scope` and `/ship` by hand** — paste the prompts in
   the first half into any agent that has the bundled skills installed
-  (Claude Code, Codex, Pi, omp, Cline, Copilot CLI, OpenCode), then
+  (Anthropic Claude Code, Codex, Pi, omp, Cline, Copilot CLI, OpenCode), then
   watch the skill execute the same shapes the `skills-evals/` test
   suite enforces in CI.
 - **Reviewers inspecting a work-item tree for semantic problems** — the

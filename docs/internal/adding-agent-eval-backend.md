@@ -11,7 +11,7 @@ section below maps to something already shipped there.
 
 ## Current state
 
-- One agent backend routed: Claude Code, routed at DeepSeek's
+- One agent backend routed: Anthropic Claude Code, routed at DeepSeek's
   Anthropic-compatible endpoint.
 - Two scope workflows: `skills-eval-claude.yml` (project scope) and
   `skills-eval-claude-user-scope.yml` (user scope). They share the
@@ -208,7 +208,7 @@ If the run fails, the failure is almost always one of:
 
 ## Per-agent gotchas (observed)
 
-### Claude Code on DeepSeek
+### Anthropic Claude Code on DeepSeek
 
 - `--input-format stream-json` is undocumented
   ([anthropics/claude-code#24594](https://github.com/anthropics/claude-code/issues/24594)).

@@ -14,7 +14,7 @@ Every subcommand below also accepts `--cwd <path>` (git `-C` semantics): when se
 | ----------------------------- | -------------------------------------------------------------------- |
 | `stax`                         | Start the local Stax web UI and open it in the OS-default browser. Blocks until Ctrl-C. Requires the current directory to be an initialized stax project (see the [Project-scope marker check](#project-scope-marker-check)) — refuses to bind the listener and prints the init banner otherwise. |
 | `stax --no-browser`            | Same as bare `stax` but skip the browser handoff. The local UI keeps running; useful in CI or any scripted invocation that should not pop a window. Same project marker requirement as bare `stax`. |
-| `stax post-install`            | Installer hook subcommand. Triggers the first-run write of `~/.stax/agents/` and exits silently. `INSTALL.sh` / `INSTALL.ps1` use this; end users normally do not. Takes no arguments. |
+| `stax post-install`            | Installer hook subcommand. Triggers the first-run write of `~/.stax/agents/` and exits silently. `install.sh` / `install.ps1` use this; end users normally do not. Takes no arguments. |
 | `stax init [--agents ...] [--scope ...] [--prefix-width N] [--max-work-item-lines N] [--review-per task\|work-item] [--cwd PATH]` | Install bundled agent skills + seed the project's `.stax/` scaffold. |
 | `stax skills remove --user`                  | Uninstall bundled stax skills from your user scope (`$HOME`). `--cwd` is rejected here — the wipe is always rooted at `$HOME`. |
 | `stax skills remove --project [--cwd PATH]`  | Uninstall bundled stax skills from the current directory.             |
@@ -22,7 +22,7 @@ Every subcommand below also accepts `--cwd <path>` (git `-C` semantics): when se
 | `stax work-items list [--cwd PATH]`               | List work items in `./.stax` with slug, status, and declared systems.   |
 | `stax work-items lint [--cwd PATH]`               | Validate every work-item file in `./.stax` against the project schema.  |
 | `stax work-items slugify [--cwd PATH] "<title>"`  | Print the kebab-case slug for a work-item title.                          |
-| `stax --version`               | Print the version notice and exit. This is what `INSTALL.sh` / `INSTALL.ps1` parse to seed `~/.stax/.config.json`. |
+| `stax --version`               | Print the version notice and exit. This is what `install.sh` / `install.ps1` parse to seed `~/.stax/.config.json`. |
 
 ### `stax init`
 
@@ -82,7 +82,8 @@ Every prompt has a flag — pass any subset to skip the matching prompt, or pass
 
 | Key | Display name | Workspace path | User-scope path |
 | --- | --- | --- | --- |
-| `claude` | Claude Code | `.claude/skills/` | `~/.claude/skills/` |
+| `antigravity` | Google Antigravity | `.agents/skills/` | `~/.gemini/antigravity-cli/skills/` and `~/.gemini/config/skills/` |
+| `claude` | Anthropic Claude Code | `.claude/skills/` | `~/.claude/skills/` |
 | `cline` | Cline | `.cline/skills/` | `~/.cline/skills/` |
 | `codex` | Codex CLI | `.agents/skills/` | `~/.agents/skills/` |
 | `continue` | Continue | `.continue/skills/` | `~/.continue/skills/` |
@@ -94,12 +95,13 @@ Every prompt has a flag — pass any subset to skip the matching prompt, or pass
 | `pi` | Pi | `.agents/skills/` | `~/.agents/skills/` |
 | `zed` | Zed | `.agents/skills/` | `~/.agents/skills/` |
 
-Paths follow each agent's own docs ([Cline](https://docs.cline.bot/customization/overview), [Continue](https://docs.continue.dev/customize/overview), [Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills), [Cursor](https://docs.cursor.com/agent), [Pi](https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/docs/skills.md), [Oh My Pi](https://github.com/can1357/oh-my-pi/blob/main/docs/skills.md), [Zed](https://zed.dev/docs/ai/agent-panel)).
+Paths follow each agent's own docs ([Antigravity](https://antigravity.google/docs/skills), [Cline](https://docs.cline.bot/customization/overview), [Continue](https://docs.continue.dev/customize/overview), [Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills), [Cursor](https://docs.cursor.com/agent), [Pi](https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/docs/skills.md), [Oh My Pi](https://github.com/can1357/oh-my-pi/blob/main/docs/skills.md), [Zed](https://zed.dev/docs/ai/agent-panel)).
 
 Key path conventions:
 
-- `.agents/skills/` is the cross-agent open spec. Codex, Copilot, Oh My Pi, Pi, Zed read it natively at both scopes.
+- `.agents/skills/` is the cross-agent open spec. Antigravity, Codex, Copilot, Oh My Pi, Pi, Zed read it natively at workspace scope.
 - Cursor honors `.agents/skills/` at workspace scope but diverges at user scope (Cursor → `~/.cursor/skills/`).
+- Google Antigravity is the only `--agents` row that ships into TWO user-scope skills roots in one install — `~/.gemini/antigravity-cli/skills/` (read by the Antigravity CLI `agy`) AND `~/.gemini/config/skills/` (read by the Antigravity CLI and the Antigravity Desktop app, mirroring `~/.gemini/config/`'s shared-config role).
 - Cline, Continue, Kilo, Claude, and OpenCode use their own per-agent paths.
 
 #### Install behavior
@@ -107,7 +109,7 @@ Key path conventions:
 - **macOS / Linux at user scope** — skills are symlinks into `~/.stax/agents/skills/`, so refreshes to the bundled tree propagate to every project at once.
 - **Windows (and project scope everywhere)** — skills are copied. Re-running `stax init` overwrites the bundled skill directories with the current release.
 - **Agent-specific config files** (e.g. `~/.claude/settings.json`) are seeded only when absent. Existing files are left alone.
-- **Windows / WSL2** — `~` resolves to `%USERPROFILE%`, so `~/.claude/skills/` becomes `%USERPROFILE%\.claude\skills\`. Inside WSL2, paths resolve against the WSL home (`/home/<user>/...`) — install stax with `INSTALL.sh` from inside WSL to land in the WSL filesystem.
+- **Windows / WSL2** — `~` resolves to `%USERPROFILE%`, so `~/.claude/skills/` becomes `%USERPROFILE%\.claude\skills\`. Inside WSL2, paths resolve against the WSL home (`/home/<user>/...`) — install stax with `install.sh` from inside WSL to land in the WSL filesystem.
 
 ### `stax skills remove --user`
 

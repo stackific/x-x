@@ -47,23 +47,38 @@ func TestE2EShellConstantsMatchGo(t *testing.T) {
 		"CLAUDE_CONFIG_REL": agentByKey("claude").configRel,
 		"CLINE_SKILLS_REL":  agentByKey("cline").skillsRel,
 		// Cline bundles no per-agent config (configRel is ""); no mirror needed.
-		"CODEX_SKILLS_REL":         agentByKey("codex").skillsRel,
-		"CODEX_CONFIG_REL":         agentByKey("codex").configRel,
-		"CONTINUE_SKILLS_REL":      agentByKey("continue").skillsRel,
-		"CURSOR_SKILLS_REL":        agentByKey("cursor").skillsRel,
-		"CURSOR_USER_SKILLS_REL":   agentByKey("cursor").userSkillsRel,
-		"COPILOT_SKILLS_REL":       agentByKey("copilot").skillsRel,
-		"COPILOT_CONFIG_REL":       agentByKey("copilot").configRel,
-		"COPILOT_USER_CONFIG_REL":  agentByKey("copilot").userConfigRel,
-		"KILO_SKILLS_REL":          agentByKey("kilo").skillsRel,
-		"OMP_SKILLS_REL":           agentByKey("omp").skillsRel,
-		"OPENCODE_SKILLS_REL":      agentByKey("opencode").skillsRel,
-		"OPENCODE_CONFIG_REL":      agentByKey("opencode").configRel,
-		"OPENCODE_USER_CONFIG_REL": agentByKey("opencode").userConfigRel,
-		"PI_SKILLS_REL":            agentByKey("pi").skillsRel,
-		"PI_CONFIG_REL":            agentByKey("pi").configRel,
-		"PI_USER_CONFIG_REL":       agentByKey("pi").userConfigRel,
-		"ZED_SKILLS_REL":           agentByKey("zed").skillsRel,
+		"CODEX_SKILLS_REL":    agentByKey("codex").skillsRel,
+		"CODEX_CONFIG_REL":    agentByKey("codex").configRel,
+		"CONTINUE_SKILLS_REL": agentByKey("continue").skillsRel,
+		"CURSOR_SKILLS_REL":   agentByKey("cursor").skillsRel,
+		// Cursor has a single user-scope override; userSkillsRels[0] resolves
+		// it under the slice-typed field shared with multi-destination agents
+		// (Google Antigravity below).
+		"CURSOR_USER_SKILLS_REL":  agentByKey("cursor").userSkillsRels[0],
+		"COPILOT_SKILLS_REL":      agentByKey("copilot").skillsRel,
+		"COPILOT_CONFIG_REL":      agentByKey("copilot").configRel,
+		"COPILOT_USER_CONFIG_REL": agentByKey("copilot").userConfigRel,
+		// Google Antigravity is the only registry row that installs skills
+		// into multiple user-scope discovery roots (`agy` CLI-local skills
+		// AND the Antigravity tool family's shared skills root). Each entry
+		// in userSkillsRels gets its own mirror so the shell harness can
+		// assert presence at both destinations and the bash sandbox can
+		// wipe the parent of each between cases. Hook config is symmetric
+		// across scopes (configRel == userConfigRel == ".gemini"), so no
+		// USER_CONFIG_REL mirror is needed.
+		"ANTIGRAVITY_SKILLS_REL":             agentByKey("antigravity").skillsRel,
+		"ANTIGRAVITY_USER_SKILLS_REL_CLI":    agentByKey("antigravity").userSkillsRels[0],
+		"ANTIGRAVITY_USER_SKILLS_REL_SHARED": agentByKey("antigravity").userSkillsRels[1],
+		"ANTIGRAVITY_CONFIG_REL":             agentByKey("antigravity").configRel,
+		"KILO_SKILLS_REL":                    agentByKey("kilo").skillsRel,
+		"OMP_SKILLS_REL":                     agentByKey("omp").skillsRel,
+		"OPENCODE_SKILLS_REL":                agentByKey("opencode").skillsRel,
+		"OPENCODE_CONFIG_REL":                agentByKey("opencode").configRel,
+		"OPENCODE_USER_CONFIG_REL":           agentByKey("opencode").userConfigRel,
+		"PI_SKILLS_REL":                      agentByKey("pi").skillsRel,
+		"PI_CONFIG_REL":                      agentByKey("pi").configRel,
+		"PI_USER_CONFIG_REL":                 agentByKey("pi").userConfigRel,
+		"ZED_SKILLS_REL":                     agentByKey("zed").skillsRel,
 		// Continue / Cursor / Kilo / omp / Zed each bundle no per-agent
 		// config (configRel is ""), so no *_CONFIG_REL mirror is needed.
 

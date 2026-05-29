@@ -6,11 +6,11 @@ An evidence-based, spec-driven agent skillset with enterprise accuracy at startu
 
 ```bash
 # For macOS and Linux
-curl -fsSL https://stackific.com/stax/INSTALL.sh | sh
+curl -fsSL https://stackific.com/stax/install.sh | sh
 
 # For Windows
 Set-ExecutionPolicy Bypass -Scope Process -Force # If only needed
-iex (irm https://stackific.com/stax/INSTALL.ps1)
+iex (irm https://stackific.com/stax/install.ps1)
 
 ## Follow the on-screen instructions
 

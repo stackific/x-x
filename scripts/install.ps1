@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Stackific Inc.
 #
-# INSTALL.ps1 — Download and install the latest stax release on Windows.
+# install.ps1 — Download and install the latest stax release on Windows.
 #
 # Usage:
-#   irm https://raw.githubusercontent.com/stackific/stax/main/scripts/INSTALL.ps1 | iex
-#   $env:INSTALL_DIR = 'C:\tools\stax'; irm https://raw.githubusercontent.com/stackific/stax/main/scripts/INSTALL.ps1 | iex
+#   irm https://raw.githubusercontent.com/stackific/stax/main/scripts/install.ps1 | iex
+#   $env:INSTALL_DIR = 'C:\tools\stax'; irm https://raw.githubusercontent.com/stackific/stax/main/scripts/install.ps1 | iex
 #
 # Environment overrides:
 #   INSTALL_DIR  Destination directory (default: $HOME\.stax)

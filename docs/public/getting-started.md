@@ -5,21 +5,21 @@
 ### macOS / Linux
 
 ```bash
-curl -fsSL https://stackific.com/stax/INSTALL.sh | sh
+curl -fsSL https://stackific.com/stax/install.sh | sh
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
 Set-ExecutionPolicy Bypass -Scope Process -Force # If only needed
-iex (irm https://stackific.com/stax/INSTALL.ps1)
+iex (irm https://stackific.com/stax/install.ps1)
 ```
 
 ## First run
 
 ```bash
 # Run this inside of a project folder
-$ stax init        # installs bundled skills into ~/.claude/skills, ~/.cline/skills, ~/.continue/skills, ~/.cursor/skills, ~/.kilocode/skills, ~/.opencode/commands, ~/.agents/skills (or project-local)
+$ stax init        # installs bundled skills into ~/.claude/skills, ~/.cline/skills, ~/.continue/skills, ~/.cursor/skills, ~/.gemini/antigravity-cli/skills, ~/.gemini/config/skills, ~/.kilocode/skills, ~/.opencode/commands, ~/.agents/skills (or project-local)
 ```
 
 See [Reference](reference.md) for the full command reference.
@@ -57,14 +57,14 @@ flags.
 ### macOS / Linux
 
 ```bash
-curl -fsSL https://stackific.com/stax/UNINSTALL.sh | sh
+curl -fsSL https://stackific.com/stax/uninstall.sh | sh
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
 Set-ExecutionPolicy Bypass -Scope Process -Force # If only needed
-irm https://stackific.com/stax/UNINSTALL.ps1 | iex
+irm https://stackific.com/stax/uninstall.ps1 | iex
 ```
 
 The uninstaller cleans up the skills it installed into `~/.claude/`, `~/.codex/`, etc., then removes `~/.stax/` and strips the PATH entry that install added.

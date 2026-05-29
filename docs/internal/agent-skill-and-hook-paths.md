@@ -8,7 +8,8 @@ The "verified" column links to the page each row was sourced from. Where two loc
 
 | Agent | Project scope | User / global scope | Docs |
 |---|---|---|---|
-| Claude Code | `.claude/skills/<name>/SKILL.md` | `~/.claude/skills/<name>/SKILL.md` | [code.claude.com/docs/en/skills](https://code.claude.com/docs/en/skills) |
+| Anthropic Claude Code | `.claude/skills/<name>/SKILL.md` | `~/.claude/skills/<name>/SKILL.md` | [code.claude.com/docs/en/skills](https://code.claude.com/docs/en/skills) |
+| Google Antigravity | `.agents/skills/<name>/SKILL.md` (cross-agent open spec, honored at workspace scope per the docs codelab) | BOTH `~/.gemini/antigravity-cli/skills/<name>/SKILL.md` (CLI-local global skills consumed by the Antigravity CLI `agy`) AND `~/.gemini/config/skills/<name>/SKILL.md` (skills shared across the Antigravity tool family — read by both `agy` and the Antigravity Desktop app, mirroring the role `~/.gemini/config/mcp_config.json` plays for shared MCP servers). The row's `userSkillsRels` slice carries both destinations so a single `--scope user` install lands the bundle at both. | [antigravity.google/docs/skills](https://antigravity.google/docs/skills) and [antigravity.google/docs/gcli-migration](https://antigravity.google/docs/gcli-migration) |
 | OpenCode (sst) | `.opencode/commands/<name>.md` | `~/.config/opencode/commands/<name>.md` | [opencode.ai/docs/commands](https://opencode.ai/docs/commands) |
 | GitHub Copilot CLI | `.github/skills/<name>/SKILL.md`, `.claude/skills/<name>/SKILL.md`, or `.agents/skills/<name>/SKILL.md` | `~/.copilot/skills/<name>/SKILL.md` or `~/.agents/skills/<name>/SKILL.md` | [docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills) |
 | OpenAI Codex | `$CWD/.agents/skills/<name>/SKILL.md` and `$REPO_ROOT/.agents/skills/<name>/SKILL.md` (hierarchical) | `$HOME/.agents/skills/<name>/SKILL.md` | [developers.openai.com/docs/guides/tools-skills](https://developers.openai.com/docs/guides/tools-skills) |
@@ -24,7 +25,8 @@ The "verified" column links to the page each row was sourced from. Where two loc
 
 | Agent | Project scope | User / global scope | Format | Docs |
 |---|---|---|---|---|
-| Claude Code | `.claude/settings.json` (key: `hooks`) | `~/.claude/settings.json` (key: `hooks`) | JSON in settings file | [code.claude.com/docs/en/hooks](https://code.claude.com/docs/en/hooks) |
+| Anthropic Claude Code | `.claude/settings.json` (key: `hooks`) | `~/.claude/settings.json` (key: `hooks`) | JSON in settings file | [code.claude.com/docs/en/hooks](https://code.claude.com/docs/en/hooks) |
+| Google Antigravity | `.gemini/settings.json` (key: `hooks`; same `{matcher, hooks:[{type, command}]}` schema as Claude's settings.json) | `~/.gemini/settings.json` (key: `hooks`). The agent layer reads both the Antigravity CLI's `agy` runtime and the Antigravity Desktop app from this path (precedence inherited from Gemini CLI: project `.gemini/settings.json` overrides `~/.gemini/settings.json`). The CLI-only `~/.gemini/antigravity-cli/settings.json` is for CLI-specific auth/model preferences, NOT lifecycle hooks. | JSON in settings file | [antigravity.google/docs/hooks](https://antigravity.google/docs/hooks) |
 | OpenCode (sst) | `.opencode/plugins/*.ts` (plugin module exporting `tool.execute.before` / `tool.execute.after` / `session.idle` etc.) | `~/.config/opencode/plugins/*.ts` | TypeScript plugin (no JSON config) | [opencode.ai/docs/plugins](https://opencode.ai/docs/plugins) |
 | GitHub Copilot CLI | `.github/hooks/*.json` | `~/.copilot/hooks/*.json` (override via `COPILOT_HOME`) | Standalone JSON files, `{ "version": 1, "hooks": { ... } }` | [docs.github.com/en/copilot/reference/hooks-configuration](https://docs.github.com/en/copilot/reference/hooks-configuration) |
 | OpenAI Codex | `.codex/hooks.json` (or inline `[hooks]` table in `.codex/config.toml`) | `~/.codex/hooks.json` (or inline `[hooks]` in `~/.codex/config.toml`) | JSON file or inline TOML | [developers.openai.com/codex/hooks](https://developers.openai.com/codex/hooks) |
@@ -38,14 +40,15 @@ The "verified" column links to the page each row was sourced from. Where two loc
 
 ## Implications for the stax `agentTarget` registry
 
-`agentTargets` in `constants.go` carries `skillsRel` / `userSkillsRel` (skills install path) and optional `configSrc` / `configRel` / `userConfigRel` (per-agent config bundle path; the `userConfigRel` override exists for agents whose hook directory differs between project and user scope — Copilot CLI is the current example). `installOneAgentConfigFile` dispatches on extension: `.json` files deep-merge into the user's copy under the top-level `hooks` key; `.ts` files install with whole-file byte-identity ownership (copy on absent, no-op on byte-equal, preserve on user-edit). `stax skills remove` runs the symmetric un-merge / delete-if-byte-equal.
+`agentTargets` in `constants.go` carries `skillsRel` / `userSkillsRels` (skills install path; `userSkillsRels` is a slice so one agent can install into multiple user-scope discovery roots in one shot — Antigravity is the current example) and optional `configSrc` / `configRel` / `userConfigRel` (per-agent config bundle path; the `userConfigRel` override exists for agents whose hook directory differs between project and user scope — Copilot CLI is the current example). `installOneAgentConfigFile` dispatches on extension: `.json` files deep-merge into the user's copy under the top-level `hooks` key; `.ts` files install with whole-file byte-identity ownership (copy on absent, no-op on byte-equal, preserve on user-edit). `stax skills remove` runs the symmetric un-merge / delete-if-byte-equal.
 
 What's shipped today:
 
 - **JSON merge (record-level ownership under top-level `hooks` key)**:
-  - Claude Code — `agents/claude/settings.json` → `.claude/settings.json` (both scopes).
+  - Anthropic Claude Code — `agents/claude/settings.json` → `.claude/settings.json` (both scopes).
   - Codex — `agents/codex/hooks.json` → `.codex/hooks.json` (both scopes).
   - Copilot CLI — `agents/copilot/stax.json` → `.github/hooks/stax.json` at project scope, `~/.copilot/hooks/stax.json` at user scope (scope-asymmetric via `userConfigRel`).
+  - Google Antigravity — `agents/antigravity/settings.json` → `.gemini/settings.json` (both scopes; same merge contract Claude uses). At user scope the row ALSO ships skills into two destinations in one install — `~/.gemini/antigravity-cli/skills/` and `~/.gemini/config/skills/` — via the `userSkillsRels []string` slice on the registry row. Multi-destination skills are unique to this row today.
 - **TypeScript plugin (whole-file byte-identity ownership)**:
   - OpenCode — `agents/opencode/stax.ts` → `.opencode/plugins/stax.ts` at project, `~/.config/opencode/plugins/stax.ts` at user.
   - Pi — `agents/pi/stax.ts` → `.pi/extensions/stax.ts` at project, `~/.pi/agent/extensions/stax.ts` at user.

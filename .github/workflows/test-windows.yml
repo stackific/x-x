@@ -4,8 +4,8 @@ name: E2E test / windows
 #
 #   build  (ubuntu-latest, golang container) -> `task build` -> upload bin/
 #   smoke  (windows-latest)                  -> download bin/ ->
-#                                               INSTALL_LOCAL.ps1 -> e2e_test.ps1
-#                                               -> UNINSTALL.ps1 -> assert clean
+#                                               install_local.ps1 -> e2e_test.ps1
+#                                               -> uninstall.ps1 -> assert clean
 #
 # Triggers:
 #   - pull_request against main: every PR gets a Windows smoke check.
@@ -179,7 +179,7 @@ jobs:
             Write-Host ("{0}  {1}" -f $h, $_.FullName)
           }
 
-      - name: install via INSTALL_LOCAL.ps1
+      - name: install via install_local.ps1
         run: |
           Write-Host "=== HOME state BEFORE install ==="
           if (Test-Path -LiteralPath (Join-Path $HOME '.stax')) {
@@ -188,9 +188,9 @@ jobs:
               Format-Table -AutoSize
           } else { Write-Host "  (no `$HOME/.stax yet)" }
           Write-Host ""
-          Write-Host "=== running INSTALL_LOCAL.ps1 ==="
-          .\scripts\INSTALL_LOCAL.ps1 -Verbose
-          if ($LASTEXITCODE -ne 0) { throw "INSTALL_LOCAL.ps1 failed with exit $LASTEXITCODE" }
+          Write-Host "=== running install_local.ps1 ==="
+          .\scripts\install_local.ps1 -Verbose
+          if ($LASTEXITCODE -ne 0) { throw "install_local.ps1 failed with exit $LASTEXITCODE" }
           Write-Host ""
           Write-Host "=== HOME state AFTER install ==="
           Get-ChildItem -Recurse -Force -LiteralPath (Join-Path $HOME '.stax') |
@@ -252,7 +252,7 @@ jobs:
           Write-Host "=== e2e exit code: $LASTEXITCODE ==="
           if ($LASTEXITCODE -ne 0) { throw "e2e_test.ps1 failed with exit $LASTEXITCODE" }
 
-      - name: uninstall via UNINSTALL.ps1
+      - name: uninstall via uninstall.ps1
         if: always()
         run: |
           Write-Host "=== HOME state BEFORE uninstall ==="
@@ -262,9 +262,9 @@ jobs:
               Format-Table -AutoSize
           } else { Write-Host "  (no `$HOME/.stax to uninstall)" }
           Write-Host ""
-          Write-Host "=== running UNINSTALL.ps1 ==="
-          .\scripts\UNINSTALL.ps1
-          if ($LASTEXITCODE -ne 0) { throw "UNINSTALL.ps1 failed with exit $LASTEXITCODE" }
+          Write-Host "=== running uninstall.ps1 ==="
+          .\scripts\uninstall.ps1
+          if ($LASTEXITCODE -ne 0) { throw "uninstall.ps1 failed with exit $LASTEXITCODE" }
 
       - name: verify install dir is removed
         if: always()

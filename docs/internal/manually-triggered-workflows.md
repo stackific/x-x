@@ -12,7 +12,7 @@ This doc covers:
 - The conventions every `exp-*.yml` follows.
 - How the DeepSeek API key is added to repo secrets and consumed.
 - The two model tiers and when to use each.
-- Why we install Claude Code via `npm` directly rather than running it inside
+- Why we install Anthropic Claude Code via `npm` directly rather than running it inside
   Docker's `sbx` sandbox in CI.
 
 For the inventory of `exp-*.yml` files currently in the repo, run
@@ -67,9 +67,9 @@ workflow runs keep the old value.
 
 ## Consuming the key
 
-### Claude Code on DeepSeek (Anthropic-compatible endpoint)
+### Anthropic Claude Code on DeepSeek (Anthropic-compatible endpoint)
 
-Claude Code reads a small set of env vars and routes its Messages-API calls
+Anthropic Claude Code reads a small set of env vars and routes its Messages-API calls
 through them. To point it at DeepSeek's Anthropic-compatible endpoint:
 
 ```yaml
@@ -123,7 +123,7 @@ judges and scenarios.
 | `deepseek-v4-pro[1m]` | 1.6T / 49B MoE | 1M tokens | Primary planner / executor (the agent "lead") |
 | `deepseek-v4-flash`   | 284B / 13B MoE | 1M tokens | Subagents, judges, bulk/fast paths |
 
-The `[1m]` suffix is recognized by Claude Code's env-var routing and enables
+The `[1m]` suffix is recognized by Anthropic Claude Code's env-var routing and enables
 the 1M-token context window; the bare name `deepseek-v4-pro` is what you pass
 to the OpenAI-compatible chat-completions endpoint.
 
@@ -139,7 +139,7 @@ Cache-hit input pricing is 1/10 of the cache-miss rate (effective 2026-04-26).
 These numbers go stale fast. Re-check at
 <https://api-docs.deepseek.com/quick_start/pricing> before quoting them.
 
-## Why direct `npm install`, not Docker `sbx`, for Claude Code in CI
+## Why direct `npm install`, not Docker `sbx`, for Anthropic Claude Code in CI
 
 The Docker sandbox toolkit (`sbx`) requires nested virtualization:
 

@@ -83,6 +83,22 @@ readonly COPILOT_SKILLS_REL=".agents/skills"
 # install + un-merge at each scope without rebuilding the path inline.
 readonly COPILOT_CONFIG_REL=".github/hooks"
 readonly COPILOT_USER_CONFIG_REL=".copilot/hooks"
+# Google Antigravity ships skills at `.agents/skills/` at project scope
+# (cross-agent open spec, identical to Codex/Copilot/Pi/omp/Zed) AND
+# installs into TWO user-scope discovery roots in one shot:
+# `~/.gemini/antigravity-cli/skills/` (read by the Antigravity CLI `agy`)
+# and `~/.gemini/config/skills/` (shared across the Antigravity tool
+# family — read by both the CLI and the Antigravity Desktop app, mirroring
+# `~/.gemini/config/mcp_config.json`'s shared-config role). Hooks land in
+# `.gemini/settings.json` at both scopes (configRel == userConfigRel),
+# under the same `{"hooks": {...}}` schema Claude Code's settings.json
+# uses — the agent layer reads project `.gemini/settings.json` with user
+# `~/.gemini/settings.json` as fallback, the precedence Antigravity
+# inherits from Gemini CLI.
+readonly ANTIGRAVITY_SKILLS_REL=".agents/skills"
+readonly ANTIGRAVITY_USER_SKILLS_REL_CLI=".gemini/antigravity-cli/skills"
+readonly ANTIGRAVITY_USER_SKILLS_REL_SHARED=".gemini/config/skills"
+readonly ANTIGRAVITY_CONFIG_REL=".gemini"
 readonly KILO_SKILLS_REL=".kilocode/skills"
 readonly OMP_SKILLS_REL=".agents/skills"
 readonly OPENCODE_SKILLS_REL=".opencode/commands"
@@ -127,6 +143,12 @@ readonly KILO_SKILLS_PARENT="${KILO_SKILLS_REL%/*}"
 readonly COPILOT_USER_CONFIG_PARENT="${COPILOT_USER_CONFIG_REL%/*}"
 readonly OPENCODE_USER_CONFIG_PARENT="${OPENCODE_USER_CONFIG_REL%/*}"
 readonly PI_USER_CONFIG_PARENT="${PI_USER_CONFIG_REL%/*}"
+# Antigravity's user-scope footprint nests every destination under a single
+# `.gemini/` root: both skills paths (`.gemini/antigravity-cli/skills`,
+# `.gemini/config/skills`) and the hooks file (`.gemini/settings.json`).
+# Wiping ANTIGRAVITY_USER_HOME_PARENT alone covers all three between
+# cases — no per-leaf cleanup needed.
+readonly ANTIGRAVITY_USER_HOME_PARENT="${ANTIGRAVITY_CONFIG_REL}"
 
 # Bundle-provided config filenames (agents/<configSrc>/* in the embed). Not
 # named in constants.go (the embed tree is the source) but pinned here
@@ -353,6 +375,7 @@ reset_user_home() {
          "$HOME/${COPILOT_USER_CONFIG_PARENT}" \
          "$HOME/${OPENCODE_USER_CONFIG_PARENT}" \
          "$HOME/${PI_USER_CONFIG_PARENT}" \
+         "$HOME/${ANTIGRAVITY_USER_HOME_PARENT}" \
          "$HOME/${STAX_DIR}"
 }
 
@@ -537,7 +560,7 @@ export USERPROFILE="$HOME"   # noop on POSIX, matters on Windows.
 
 # ---------- post-install (installer hook: silent seed) ----------
 #
-# INSTALL.sh's last step invokes `stax post-install` to materialize
+# install.sh's last step invokes `stax post-install` to materialize
 # ~/.stax/agents/ from the binary's embed. The contract: silent on
 # stdout/stderr, exit 0, and the lazy-bootstrap of the agents tree
 # happens before exit. Bare `stax` is now reserved for the local-server
@@ -702,7 +725,7 @@ bg_kill_stax
 
 # ---------- --version (still prints notice for installer parsing) ----------
 #
-# INSTALL.sh's version-detection awk parses `stax --version` line 1 to
+# install.sh's version-detection awk parses `stax --version` line 1 to
 # seed ~/.stax/.config.json. Bare `stax` no longer prints the notice
 # (it opens a browser), so this is now the canonical version-printing
 # entry point. The first-line-last-token assertion pins the awk
@@ -1948,6 +1971,392 @@ run_capture "" init --scope user --agents pi \
 assert_eq      "exit 0" "$RUN_RC" "0"
 assert_is_file "user stax.ts present" "$HOME/${PI_USER_CONFIG_REL}/stax.ts"
 assert_absent  "project-scope stax.ts empty after user install" "$PROJ_PIU/${PI_CONFIG_REL}/stax.ts"
+
+# ---------- Google Antigravity: dual user-scope skills + JSON hooks ----------
+#
+# Antigravity is the only registry row whose `userSkillsRels` carries more
+# than one entry — `~/.gemini/antigravity-cli/skills/` for the Antigravity
+# CLI's CLI-local skills root and `~/.gemini/config/skills/` for the
+# Antigravity tool-family-shared skills root. The install loop in
+# installForTarget iterates the slice, so a single `stax init --scope user
+# --agents antigravity` must land both bundled skills at BOTH destinations.
+# Project scope collapses to the cross-agent `.agents/skills/` (identical
+# to Codex/Copilot/Pi/omp/Zed), so a `--agents codex,antigravity` install
+# co-locates one shared `.agents/skills/` tree at project scope.
+#
+# Hook config rides the same JSON-merge slot as Claude (Antigravity reads
+# `{"hooks": {...}}` from `.gemini/settings.json` at project, falls back
+# to `~/.gemini/settings.json` at user). Re-run merge and skill-remove
+# un-merge cases mirror the Claude/Copilot patterns above.
+
+case_start "Antigravity: init --scope project lands skills + settings.json"
+reset_user_home
+PROJ_AG="$(fresh_project)"
+cd "$PROJ_AG"
+run_capture "" init --scope project --agents antigravity \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+assert_eq      "exit 0" "$RUN_RC" "0"
+for skill in ${OWNED_SKILLS}; do
+  assert_is_dir "project skill ${skill}" "$PROJ_AG/${ANTIGRAVITY_SKILLS_REL}/${skill}"
+  assert_is_file "project SKILL.md ${skill}" \
+      "$PROJ_AG/${ANTIGRAVITY_SKILLS_REL}/${skill}/${SKILL_MANIFEST_FILE}"
+done
+assert_is_file "project settings.json present" \
+    "$PROJ_AG/${ANTIGRAVITY_CONFIG_REL}/settings.json"
+AG_BODY="$(cat "$PROJ_AG/${ANTIGRAVITY_CONFIG_REL}/settings.json")"
+assert_contains "hooks key present"   "$AG_BODY" '"hooks"'
+assert_contains "PostToolUse present" "$AG_BODY" '"PostToolUse"'
+assert_contains "Stop present"        "$AG_BODY" '"Stop"'
+assert_contains "lint command"        "$AG_BODY" 'stax work-items lint'
+# Project install must not touch either user-scope skills path or the
+# user-scope settings.json (configRelFor returns "$ANTIGRAVITY_CONFIG_REL"
+# at both scopes, so user-scope is rooted at $HOME, not $PROJ_AG).
+assert_absent  "user-scope CLI skills empty after project install" \
+    "$HOME/${ANTIGRAVITY_USER_SKILLS_REL_CLI}/${SKILL_SCOPE_DIR}"
+assert_absent  "user-scope shared skills empty after project install" \
+    "$HOME/${ANTIGRAVITY_USER_SKILLS_REL_SHARED}/${SKILL_SCOPE_DIR}"
+assert_absent  "user-scope settings.json empty after project install" \
+    "$HOME/${ANTIGRAVITY_CONFIG_REL}/settings.json"
+
+case_start "Antigravity: init --scope user lands skills at BOTH user roots + settings.json"
+reset_user_home
+PROJ_AGU="$(fresh_project)"
+cd "$PROJ_AGU"
+run_capture "" init --scope user --agents antigravity \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+assert_eq "exit 0" "$RUN_RC" "0"
+# Both user-scope skill destinations must contain every bundled skill —
+# this is the multi-path install assertion. Reading from
+# ANTIGRAVITY_USER_SKILLS_REL_CLI and _SHARED proves both `userSkillsRels`
+# entries fired.
+for skill in ${OWNED_SKILLS}; do
+  assert_is_dir "CLI-local skill ${skill}" \
+      "$HOME/${ANTIGRAVITY_USER_SKILLS_REL_CLI}/${skill}"
+  assert_is_file "CLI-local SKILL.md ${skill}" \
+      "$HOME/${ANTIGRAVITY_USER_SKILLS_REL_CLI}/${skill}/${SKILL_MANIFEST_FILE}"
+  assert_is_dir "shared skill ${skill}" \
+      "$HOME/${ANTIGRAVITY_USER_SKILLS_REL_SHARED}/${skill}"
+  assert_is_file "shared SKILL.md ${skill}" \
+      "$HOME/${ANTIGRAVITY_USER_SKILLS_REL_SHARED}/${skill}/${SKILL_MANIFEST_FILE}"
+done
+assert_is_file "user settings.json present" \
+    "$HOME/${ANTIGRAVITY_CONFIG_REL}/settings.json"
+# Project-scope path must NOT have been touched by a user-scope install.
+assert_absent  "project skills empty after user install" \
+    "$PROJ_AGU/${ANTIGRAVITY_SKILLS_REL}/${SKILL_SCOPE_DIR}"
+assert_absent  "project settings.json empty after user install" \
+    "$PROJ_AGU/${ANTIGRAVITY_CONFIG_REL}/settings.json"
+
+case_start "Antigravity: init re-run merges into edited settings.json"
+reset_user_home
+PROJ_AGM="$(fresh_project)"
+cd "$PROJ_AGM"
+run_capture "" init --scope project --agents antigravity \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+assert_eq "first init exit 0" "$RUN_RC" "0"
+# Overwrite with a user-authored hook entry plus a user-only top-level
+# scalar. After re-init: scalar must survive; bundled records re-land;
+# user record stays — same contract claude/copilot ship.
+cat > "$PROJ_AGM/${ANTIGRAVITY_CONFIG_REL}/settings.json" <<'EOF'
+{
+  "userOnlyKey": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {"type": "command", "command": "USER-ANTIGRAVITY-HOOK"}
+        ]
+      }
+    ]
+  }
+}
+EOF
+rm "$PROJ_AGM/${STAX_LOCK_PATH}"
+run_capture "" init --scope project --agents antigravity \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+AGM_BODY="$(cat "$PROJ_AGM/${ANTIGRAVITY_CONFIG_REL}/settings.json")"
+assert_contains "user scalar survives merge"  "$AGM_BODY" 'userOnlyKey'
+assert_contains "user hook survives merge"    "$AGM_BODY" 'USER-ANTIGRAVITY-HOOK'
+assert_contains "bundled hook landed"         "$AGM_BODY" 'stax work-items lint'
+
+case_start "Antigravity: skill remove --project un-merges bundled records"
+reset_user_home
+PROJ_AGR="$(fresh_project)"
+cd "$PROJ_AGR"
+run_capture "" init --scope project --agents antigravity \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+# Seed the user file with both bundled-shape and user-authored entries;
+# un-merge must drop the bundled ones and keep the user ones. The bundled
+# records here MUST stay byte-equal to the records shipped in
+# agents/antigravity/settings.json — TestE2EHookFixtureMirrorsBundle
+# enforces that invariant from the Go side and points at the exact event
+# index that drifted if this heredoc lags behind the bundle.
+cat > "$PROJ_AGR/${ANTIGRAVITY_CONFIG_REL}/settings.json" <<'EOF'
+{
+  "userOnlyKey": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {"type": "command", "command": "stax work-items lint"}
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {"type": "command", "command": "USER-ANTIGRAVITY-HOOK"}
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {"type": "command", "command": "stax work-items lint"}
+        ]
+      }
+    ]
+  }
+}
+EOF
+run_capture "" skills remove --project
+assert_eq           "exit 0" "$RUN_RC" "0"
+AGR_BODY="$(cat "$PROJ_AGR/${ANTIGRAVITY_CONFIG_REL}/settings.json")"
+assert_not_contains "bundled command gone"         "$AGR_BODY" 'stax work-items lint'
+assert_contains     "user antigravity hook survives" "$AGR_BODY" 'USER-ANTIGRAVITY-HOOK'
+assert_contains     "user scalar survives un-merge"  "$AGR_BODY" 'userOnlyKey'
+# Project skills tree must be cleaned up too; the dual user-scope tree
+# is untouched (this case is --project).
+assert_absent "project skill scope dir gone" "$PROJ_AGR/${ANTIGRAVITY_SKILLS_REL}/${SKILL_SCOPE_DIR}"
+
+case_start "Antigravity: skill remove --user clears both skills roots"
+reset_user_home
+PROJ_AGRU="$(fresh_project)"
+cd "$PROJ_AGRU"
+run_capture "" init --scope user --agents antigravity \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+# Drop a user-authored sibling skill into each user-scope root — the
+# allowlist must let it through unharmed while still removing the bundled
+# `scope` / `ship` directories.
+mkdir -p "$HOME/${ANTIGRAVITY_USER_SKILLS_REL_CLI}/my-skill"
+mkdir -p "$HOME/${ANTIGRAVITY_USER_SKILLS_REL_SHARED}/my-skill"
+: > "$HOME/${ANTIGRAVITY_USER_SKILLS_REL_CLI}/my-skill/${SKILL_MANIFEST_FILE}"
+: > "$HOME/${ANTIGRAVITY_USER_SKILLS_REL_SHARED}/my-skill/${SKILL_MANIFEST_FILE}"
+run_capture "" skills remove --user
+assert_eq "exit 0" "$RUN_RC" "0"
+for skill in ${OWNED_SKILLS}; do
+  assert_absent "CLI-local ${skill} gone" \
+      "$HOME/${ANTIGRAVITY_USER_SKILLS_REL_CLI}/${skill}"
+  assert_absent "shared ${skill} gone" \
+      "$HOME/${ANTIGRAVITY_USER_SKILLS_REL_SHARED}/${skill}"
+done
+assert_is_dir "user-authored sibling preserved (CLI root)" \
+    "$HOME/${ANTIGRAVITY_USER_SKILLS_REL_CLI}/my-skill"
+assert_is_dir "user-authored sibling preserved (shared root)" \
+    "$HOME/${ANTIGRAVITY_USER_SKILLS_REL_SHARED}/my-skill"
+
+# ---------- Antigravity: surgical merge / un-merge contract ----------
+#
+# Antigravity rides the same JSON-merge primitive as Claude / Codex /
+# Copilot. The Claude block earlier in the file pins eight contract-level
+# cases (idempotent re-run, user-scalar-wins, array-union, malformed-
+# tolerance, empty-seed, foreign-content-preserve, user-tweaked-variant-
+# preserve, user-scope merge). Antigravity must satisfy each of them —
+# the merge code is shared, but a regression in the dispatch / extension
+# / scope-resolution layer could break ONE agent without breaking another,
+# so each agent that ships through this primitive gets its own coverage.
+
+case_start "Antigravity: init re-run is idempotent on merged settings.json"
+reset_user_home
+PROJ_AGIDEM="$(fresh_project)"
+cd "$PROJ_AGIDEM"
+run_capture "" init --scope project --agents antigravity \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+# Drop a user scalar so the merge path executes (vs the fresh-copy path).
+echo '{"model": "gemini-2.5-pro"}' > "$PROJ_AGIDEM/${ANTIGRAVITY_CONFIG_REL}/settings.json"
+rm "$PROJ_AGIDEM/${STAX_LOCK_PATH}"
+run_capture "" init --scope project --agents antigravity \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+SNAP_AG_1="$(cat "$PROJ_AGIDEM/${ANTIGRAVITY_CONFIG_REL}/settings.json")"
+# Second re-run must be a byte-level no-op — array-union dedup catches
+# every bundled entry already present from the first merge.
+rm "$PROJ_AGIDEM/${STAX_LOCK_PATH}"
+run_capture "" init --scope project --agents antigravity \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+SNAP_AG_2="$(cat "$PROJ_AGIDEM/${ANTIGRAVITY_CONFIG_REL}/settings.json")"
+assert_eq "settings.json idempotent across re-runs" "$SNAP_AG_1" "$SNAP_AG_2"
+
+case_start "Antigravity: init re-run merge: hook arrays are unioned"
+reset_user_home
+PROJ_AGARR="$(fresh_project)"
+cd "$PROJ_AGARR"
+run_capture "" init --scope project --agents antigravity \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+# Seed a user-authored hook entry that doesn't deep-equal anything we ship.
+# After re-init the bundled Write|Edit entry AND the user's Read entry
+# must coexist in PostToolUse — that's the additive-array contract.
+cat > "$PROJ_AGARR/${ANTIGRAVITY_CONFIG_REL}/settings.json" <<'JSON'
+{
+  "hooks": {
+    "PostToolUse": [
+      {"matcher": "Read", "hooks": [{"type": "command", "command": "my-tool"}]}
+    ]
+  }
+}
+JSON
+rm "$PROJ_AGARR/${STAX_LOCK_PATH}"
+run_capture "" init --scope project --agents antigravity \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+AGARR_BODY="$(cat "$PROJ_AGARR/${ANTIGRAVITY_CONFIG_REL}/settings.json")"
+assert_contains "user matcher Read survives"          "$AGARR_BODY" '"matcher": "Read"'
+assert_contains "user command my-tool survives"       "$AGARR_BODY" '"command": "my-tool"'
+assert_contains "bundled matcher Write|Edit lands"    "$AGARR_BODY" '"matcher": "Write|Edit"'
+assert_contains "bundled command stax work-items lint lands" "$AGARR_BODY" '"command": "stax work-items lint"'
+
+case_start "Antigravity: init re-run merge: user scalar wins on conflict"
+reset_user_home
+PROJ_AGSCALAR="$(fresh_project)"
+cd "$PROJ_AGSCALAR"
+run_capture "" init --scope project --agents antigravity \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+# Bundled settings.json carries no scalar today, so seed a hypothetical
+# user override that COULD conflict if the bundle ever gains one. The
+# point is the merge path's "existing scalar wins" rule — any future
+# bundled top-level scalar must NOT clobber a user value.
+echo '{"model": "gemini-3-flash", "hooks": {}}' > "$PROJ_AGSCALAR/${ANTIGRAVITY_CONFIG_REL}/settings.json"
+rm "$PROJ_AGSCALAR/${STAX_LOCK_PATH}"
+run_capture "" init --scope project --agents antigravity \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+AGSCALAR_BODY="$(cat "$PROJ_AGSCALAR/${ANTIGRAVITY_CONFIG_REL}/settings.json")"
+assert_contains "user model scalar preserved"      "$AGSCALAR_BODY" '"model": "gemini-3-flash"'
+assert_contains "bundled hooks still added"        "$AGSCALAR_BODY" 'stax work-items lint'
+
+case_start "Antigravity: init re-run merge: malformed JSON preserves user bytes"
+reset_user_home
+PROJ_AGBAD="$(fresh_project)"
+cd "$PROJ_AGBAD"
+run_capture "" init --scope project --agents antigravity \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+echo 'not valid json {' > "$PROJ_AGBAD/${ANTIGRAVITY_CONFIG_REL}/settings.json"
+rm "$PROJ_AGBAD/${STAX_LOCK_PATH}"
+run_capture "" init --scope project --agents antigravity \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+assert_eq "exit 0 despite parse failure" "$RUN_RC" "0"
+assert_eq "malformed file untouched" "$(cat "$PROJ_AGBAD/${ANTIGRAVITY_CONFIG_REL}/settings.json")" 'not valid json {'
+assert_contains "stderr warns about merge failure" "$RUN_ERR" "merge failed"
+
+case_start "Antigravity: init re-run merge: empty existing file is seeded"
+reset_user_home
+PROJ_AGEMPTY="$(fresh_project)"
+cd "$PROJ_AGEMPTY"
+run_capture "" init --scope project --agents antigravity \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+: > "$PROJ_AGEMPTY/${ANTIGRAVITY_CONFIG_REL}/settings.json"
+rm "$PROJ_AGEMPTY/${STAX_LOCK_PATH}"
+run_capture "" init --scope project --agents antigravity \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+AGEMPTY_BODY="$(cat "$PROJ_AGEMPTY/${ANTIGRAVITY_CONFIG_REL}/settings.json")"
+assert_contains "empty file gained hooks key"  "$AGEMPTY_BODY" '"hooks"'
+assert_contains "empty file gained bundled hook" "$AGEMPTY_BODY" 'stax work-items lint'
+
+case_start "Antigravity: init re-run keeps user-authored sibling skills"
+reset_user_home
+PROJ_AGSIB="$(fresh_project)"
+cd "$PROJ_AGSIB"
+run_capture "" init --scope project --agents antigravity \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+mkdir -p "$PROJ_AGSIB/${ANTIGRAVITY_SKILLS_REL}/my-custom"
+echo "MINE" > "$PROJ_AGSIB/${ANTIGRAVITY_SKILLS_REL}/my-custom/${SKILL_MANIFEST_FILE}"
+rm "$PROJ_AGSIB/${STAX_LOCK_PATH}"
+run_capture "" init --scope project --agents antigravity \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+assert_eq "exit 0" "$RUN_RC" "0"
+assert_is_file "sibling antigravity skill survives re-run" \
+    "$PROJ_AGSIB/${ANTIGRAVITY_SKILLS_REL}/my-custom/${SKILL_MANIFEST_FILE}"
+assert_is_dir  "bundled ${SKILL_SHIP_DIR} present after re-run" \
+    "$PROJ_AGSIB/${ANTIGRAVITY_SKILLS_REL}/${SKILL_SHIP_DIR}"
+
+case_start "Antigravity: skill remove leaves foreign content under .gemini alone"
+reset_user_home
+PROJ_AGRMI="$(fresh_project)"
+cd "$PROJ_AGRMI"
+run_capture "" init --scope project --agents antigravity \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+# Foreign files the user dropped into the same parent directories must
+# survive skill remove — un-merge is recordset-scoped on the JSON, the
+# skill walk is allowlist-scoped on the directory entries.
+mkdir -p "$PROJ_AGRMI/${ANTIGRAVITY_CONFIG_REL}/notes"
+echo "USER" > "$PROJ_AGRMI/${ANTIGRAVITY_CONFIG_REL}/GEMINI.md"
+echo "USER" > "$PROJ_AGRMI/${ANTIGRAVITY_CONFIG_REL}/notes/note.txt"
+echo "USER" > "$PROJ_AGRMI/${ANTIGRAVITY_SKILLS_REL}/STRAY.md"
+run_capture "" skills remove --project
+assert_eq "exit 0" "$RUN_RC" "0"
+for p in \
+  "${ANTIGRAVITY_CONFIG_REL}/GEMINI.md" \
+  "${ANTIGRAVITY_CONFIG_REL}/notes/note.txt" \
+  "${ANTIGRAVITY_SKILLS_REL}/STRAY.md" \
+  "${STAX_LOCK_PATH}" \
+  "${STAX_SYSTEMS_PATH}"; do
+  assert_is_file "skill remove kept $p" "$PROJ_AGRMI/$p"
+done
+for skill in $OWNED_SKILLS; do
+  assert_absent "skill remove dropped ${ANTIGRAVITY_SKILLS_REL}/$skill" \
+      "$PROJ_AGRMI/${ANTIGRAVITY_SKILLS_REL}/$skill"
+done
+
+case_start "Antigravity: skill remove preserves user-tweaked variant of a bundled record"
+reset_user_home
+PROJ_AGUNT="$(fresh_project)"
+cd "$PROJ_AGUNT"
+run_capture "" init --scope project --agents antigravity \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+# Tweak the command (`--verbose` suffix) so the record no longer
+# deep-equals the bundle. Un-merge must NOT drop it — ownership is the
+# leaf record, not the matcher or the event key.
+cat > "$PROJ_AGUNT/${ANTIGRAVITY_CONFIG_REL}/settings.json" <<'EOF'
+{
+  "hooks": {
+    "PostToolUse": [
+      {"matcher": "Write|Edit", "hooks": [{"type": "command", "command": "stax work-items lint --verbose"}]}
+    ]
+  }
+}
+EOF
+run_capture "" skills remove --project
+assert_eq "exit 0" "$RUN_RC" "0"
+TWEAKED_AG_BODY="$(cat "$PROJ_AGUNT/${ANTIGRAVITY_CONFIG_REL}/settings.json")"
+assert_contains "tweaked matcher kept" "$TWEAKED_AG_BODY" 'Write|Edit'
+assert_contains "tweaked command kept" "$TWEAKED_AG_BODY" 'stax work-items lint --verbose'
+
+case_start "Antigravity: init --scope user re-run merges edited settings.json"
+reset_user_home
+PROJ_AGUMERGE="$(fresh_project)"
+cd "$PROJ_AGUMERGE"
+run_capture "" init --scope user --agents antigravity \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+# User-scope merge: same contract as the project-scope case but the
+# destination lives under $HOME and the user-scope skill paths must
+# remain populated at BOTH antigravity user-scope roots.
+echo '{"USER": "EDIT", "model": "gemini-3-pro"}' > "$HOME/${ANTIGRAVITY_CONFIG_REL}/settings.json"
+rm "$PROJ_AGUMERGE/${STAX_LOCK_PATH}"
+run_capture "" init --scope user --agents antigravity \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+assert_eq "exit 0" "$RUN_RC" "0"
+USER_AG_BODY="$(cat "$HOME/${ANTIGRAVITY_CONFIG_REL}/settings.json")"
+assert_contains "user-scope settings.json keeps USER key"    "$USER_AG_BODY" '"USER": "EDIT"'
+assert_contains "user-scope settings.json keeps model"       "$USER_AG_BODY" '"model": "gemini-3-pro"'
+assert_contains "user-scope settings.json gains hook"        "$USER_AG_BODY" 'stax work-items lint'
+# Skills tree at BOTH user-scope discovery roots must still be populated
+# after the second install pass — the multi-destination loop is exercised
+# again under merge conditions.
+for skill in ${OWNED_SKILLS}; do
+  assert_is_file "user-scope CLI ${skill} after merge re-run" \
+      "$HOME/${ANTIGRAVITY_USER_SKILLS_REL_CLI}/${skill}/${SKILL_MANIFEST_FILE}"
+  assert_is_file "user-scope shared ${skill} after merge re-run" \
+      "$HOME/${ANTIGRAVITY_USER_SKILLS_REL_SHARED}/${skill}/${SKILL_MANIFEST_FILE}"
+done
 
 # ---------- isolation: lazy first-run write keeps foreign content ----------
 #
