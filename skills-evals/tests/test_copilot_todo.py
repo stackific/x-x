@@ -20,12 +20,12 @@ PLAN_PROMPT = f"/scope {TASK}"
 EXEC_PROMPT = "/ship"
 
 
-def test_copilot_builds_todo_app(copilot_workspace: Path, tmp_path: Path) -> None:
+def test_copilot_builds_todo_app(workspace: Path, tmp_path: Path) -> None:
   transcripts = tmp_path / "transcripts"
 
   # --- /scope ---
   plan_run = drive_skill(
-    copilot_workspace,
+    workspace,
     PLAN_PROMPT,
     transcript_path=transcripts / "scope.txt",
   )
@@ -43,7 +43,7 @@ def test_copilot_builds_todo_app(copilot_workspace: Path, tmp_path: Path) -> Non
     f"{transcripts / 'scope.txt'} to see what it was asking."
   )
 
-  work_item_judgment = WorkItemJudge().evaluate(TASK, copilot_workspace)
+  work_item_judgment = WorkItemJudge().evaluate(TASK, workspace)
   print(f"\n[work-item] score={work_item_judgment.score:.2f} reason={work_item_judgment.reason}")
   assert work_item_judgment.passed, (
     f"WorkItemJudge failed: score={work_item_judgment.score:.2f} "
@@ -52,7 +52,7 @@ def test_copilot_builds_todo_app(copilot_workspace: Path, tmp_path: Path) -> Non
 
   # --- /ship ---
   exec_run = drive_skill(
-    copilot_workspace,
+    workspace,
     EXEC_PROMPT,
     transcript_path=transcripts / "stax.txt",
   )
@@ -71,7 +71,7 @@ def test_copilot_builds_todo_app(copilot_workspace: Path, tmp_path: Path) -> Non
   # a turn cap here would conflate "stuck at gate" with "did real work
   # that took turns" — only the former is a failure mode.
 
-  artifact_judgment = ArtifactJudge().evaluate(TASK, copilot_workspace)
+  artifact_judgment = ArtifactJudge().evaluate(TASK, workspace)
   print(f"\n[artifact] score={artifact_judgment.score:.2f} reason={artifact_judgment.reason}")
   assert artifact_judgment.passed, (
     f"ArtifactJudge failed: score={artifact_judgment.score:.2f} "
