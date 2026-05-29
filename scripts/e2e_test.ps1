@@ -4718,6 +4718,149 @@ try {
   Assert-NotContains 'bundled hook removed' $afterContent 'stax work-items lint'
 } finally { Pop-Location }
 
+# ---------- skills remove --user covers every hook-shipping agent (bash parity) ----------
+#
+# The bash twin to this block lives under "skills remove --user
+# un-merges hooks from every shipped config" in scripts/e2e_test.sh.
+# The codex case above (line ~4296) already covers one of the five
+# hook-shipping agents; this block adds the four it missed: claude
+# (settings.json under ~/.claude), copilot (stax.json under
+# ~/.copilot/hooks/ via userConfigRel — the scope-asymmetric path),
+# opencode (stax.ts under ~/.config/opencode/plugins/), and pi
+# (stax.ts under ~/.pi/agent/extensions/). Each one: install --scope
+# user, mutate to add a user-authored record / variant, run `skills
+# remove --user`, assert ours-gone / user-stays.
+
+Start-Case 'skills remove --user un-merges bundled hooks from user settings.json (claude)'
+Reset-UserHome
+$projRUCl = New-FreshProject
+Push-Location $projRUCl
+try {
+  Invoke-XX init --scope user --agents claude `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  Assert-Eq 'init exit 0' $RunRC 0
+  $userClaudeSettings = Join-Path $env:USERPROFILE $Script:CLAUDE_SETTINGS_PATH
+  $augmented = @'
+{
+  "fastMode": true,
+  "hooks": {
+    "PostToolUse": [
+      {"matcher": "Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": "stax work-items lint"}]},
+      {"matcher": "Bash", "hooks": [{"type": "command", "command": "USER-CLAUDE-USER-HOOK"}]}
+    ],
+    "Stop": [
+      {"matcher": "", "hooks": [{"type": "command", "command": "stax work-items lint"}]}
+    ]
+  }
+}
+'@
+  Set-Content -LiteralPath $userClaudeSettings -Value $augmented -Encoding ascii
+  Invoke-XX skills remove --user
+  Assert-Eq 'remove exit 0' $RunRC 0
+  $after = Get-Content -Raw -LiteralPath $userClaudeSettings
+  Assert-Contains    'user-scope fastMode kept'            $after '"fastMode": true'
+  Assert-Contains    'user-scope Bash record survives'     $after 'USER-CLAUDE-USER-HOOK'
+  Assert-NotContains 'user-scope bundled command gone'     $after 'stax work-items lint'
+} finally { Pop-Location }
+
+Start-Case 'skills remove --user un-merges bundled hooks from user Copilot stax.json'
+Reset-UserHome
+$projRUCp = New-FreshProject
+Push-Location $projRUCp
+try {
+  Invoke-XX init --scope user --agents copilot `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  Assert-Eq 'init exit 0' $RunRC 0
+  # Copilot's userConfigRel diverts the user-scope install to
+  # `.copilot\hooks\` (NOT `.github\hooks\`). This is the only path
+  # that exercises the scope-asymmetric resolver end-to-end on Windows.
+  $userCpPath = Join-Path $env:USERPROFILE (Join-Path $COPILOT_USER_CONFIG_REL 'stax.json')
+  Assert-IsFile 'user copilot stax.json present' $userCpPath
+  $augmented = @'
+{
+  "version": 1,
+  "hooks": {
+    "postToolUse": [
+      {"type": "command", "bash": "stax work-items lint"},
+      {"type": "command", "bash": "USER-COPILOT-USER-HOOK"}
+    ],
+    "agentStop": [
+      {"type": "command", "bash": "stax work-items lint"}
+    ]
+  }
+}
+'@
+  Set-Content -LiteralPath $userCpPath -Value $augmented -Encoding ascii
+  Invoke-XX skills remove --user
+  Assert-Eq 'remove exit 0' $RunRC 0
+  $after = Get-Content -Raw -LiteralPath $userCpPath
+  Assert-Contains    'user-scope copilot user hook survives' $after 'USER-COPILOT-USER-HOOK'
+  Assert-NotContains 'user-scope copilot bundled cmd gone'   $after 'stax work-items lint'
+  Assert-Contains    'user-scope copilot version preserved'  $after '"version"'
+} finally { Pop-Location }
+
+Start-Case 'skills remove --user deletes byte-equal user OpenCode stax.ts'
+Reset-UserHome
+$projRUOc = New-FreshProject
+Push-Location $projRUOc
+try {
+  Invoke-XX init --scope user --agents opencode `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  Assert-Eq 'init exit 0' $RunRC 0
+  $userOcPath = Join-Path $env:USERPROFILE (Join-Path $OPENCODE_USER_CONFIG_REL 'stax.ts')
+  Assert-IsFile 'user opencode stax.ts present' $userOcPath
+  Invoke-XX skills remove --user
+  Assert-Eq        'remove exit 0' $RunRC 0
+  Assert-NotExists 'user opencode stax.ts removed (byte-equal)' $userOcPath
+} finally { Pop-Location }
+
+Start-Case 'skills remove --user preserves user-edited OpenCode stax.ts'
+Reset-UserHome
+$projRUOcE = New-FreshProject
+Push-Location $projRUOcE
+try {
+  Invoke-XX init --scope user --agents opencode `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  $userOcPathE = Join-Path $env:USERPROFILE (Join-Path $OPENCODE_USER_CONFIG_REL 'stax.ts')
+  Add-Content -LiteralPath $userOcPathE -Value '// my user-scope customization'
+  $userEdited = Get-Content -Raw -LiteralPath $userOcPathE
+  Invoke-XX skills remove --user
+  Assert-Eq 'remove exit 0' $RunRC 0
+  $after = Get-Content -Raw -LiteralPath $userOcPathE
+  Assert-Eq 'user-edited user-scope OpenCode stax.ts survives' $userEdited $after
+} finally { Pop-Location }
+
+Start-Case 'skills remove --user deletes byte-equal user Pi stax.ts'
+Reset-UserHome
+$projRUPi = New-FreshProject
+Push-Location $projRUPi
+try {
+  Invoke-XX init --scope user --agents pi `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  Assert-Eq 'init exit 0' $RunRC 0
+  $userPiPath = Join-Path $env:USERPROFILE (Join-Path $PI_USER_CONFIG_REL 'stax.ts')
+  Assert-IsFile 'user pi stax.ts present' $userPiPath
+  Invoke-XX skills remove --user
+  Assert-Eq        'remove exit 0' $RunRC 0
+  Assert-NotExists 'user pi stax.ts removed (byte-equal)' $userPiPath
+} finally { Pop-Location }
+
+Start-Case 'skills remove --user preserves user-edited Pi stax.ts'
+Reset-UserHome
+$projRUPiE = New-FreshProject
+Push-Location $projRUPiE
+try {
+  Invoke-XX init --scope user --agents pi `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  $userPiPathE = Join-Path $env:USERPROFILE (Join-Path $PI_USER_CONFIG_REL 'stax.ts')
+  Add-Content -LiteralPath $userPiPathE -Value '// pi user-scope customization'
+  $userEdited = Get-Content -Raw -LiteralPath $userPiPathE
+  Invoke-XX skills remove --user
+  Assert-Eq 'remove exit 0' $RunRC 0
+  $after = Get-Content -Raw -LiteralPath $userPiPathE
+  Assert-Eq 'user-edited user-scope Pi stax.ts survives' $userEdited $after
+} finally { Pop-Location }
+
 # ---------- Windows-specific: encoding and output stability ----------
 
 Start-Case 'work-items list stdout has no UTF-8 BOM'
