@@ -91,11 +91,11 @@ DEFAULT_MODEL = "deepseek/deepseek-v4-pro"
 #      doesn't surface as `Reply yes` so the auto-yes regex misses it
 #      and opencode goes idle.
 #
-#   2. Destructive overwrites in the executor. When `ship` runs a plan
+#   2. Destructive overwrites in the executor. When `ship` runs a scope
 #      whose system already has an existing artifact (e.g. a reminders
-#      plan that supersedes a todo plan, with the todo's index.html
+#      scope that supersedes a todo scope, with the todo's index.html
 #      already on disk), the model emits a checkpoint message like
-#      "FYI: I'll review the whole plan with you at once" and goes
+#      "FYI: I'll review the whole scope with you at once" and goes
 #      idle waiting for a `review per task` reply.
 #
 # Claude doesn't need this — the slash-command framing in Claude Code

@@ -8,11 +8,11 @@ path. Each scope invocation is `pi --mode json -p "/skill:scope
 <task>"`; Pi's command parser resolves `/skill:<name>` against
 discovered SKILL.md files by frontmatter `name:`.
 
-Per agents/skills/scope/SKILL.md step 2a + step 3, when a new plan
+Per agents/skills/scope/SKILL.md step 2a + step 3, when a new scope
 "extends" a predecessor (rather than supersedes it):
-  - the new plan's frontmatter gets `extends: [<predecessor-slug>]`
+  - the new scope's frontmatter gets `extends: [<predecessor-slug>]`
   - the predecessor's frontmatter gets `extended_by: [<new-slug>]`
-  - both plans stay `status: valid` (extends is a forward pointer, not
+  - both scopes stay `status: valid` (extends is a forward pointer, not
     a state change — unlike supersedes)
 
 This test asserts both sides of that bidirectional link without
@@ -24,12 +24,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from skills_evals.pi_driver import DEFAULT_MAX_TURNS, drive_command
-from skills_evals.workspace import load_all_plans
+from skills_evals.workspace import load_all_scopes
 
 BASE_TASK = "build a single HTML and localStorage-based todo list app"
 EXTENSION_TASK = (
   "add a 'clear all completed' button to the existing todo list app. "
-  "This is a follow-up plan that extends the previous one — both plans "
+  "This is a follow-up scope that extends the previous one — both scopes "
   "should remain valid; do not supersede."
 )
 
@@ -37,7 +37,7 @@ EXTENSION_TASK = (
 def test_pi_plan_extends(workspace: Path, tmp_path: Path) -> None:
   transcripts = tmp_path / "transcripts"
 
-  # --- Plan A: the base todo app ---
+  # --- Scope A: the base todo app ---
   a_run = drive_command(
     workspace,
     "scope",
@@ -54,7 +54,7 @@ def test_pi_plan_extends(workspace: Path, tmp_path: Path) -> None:
   )
   assert a_run.turns < DEFAULT_MAX_TURNS
 
-  # --- Plan B: extension of plan A ---
+  # --- Scope B: extension of scope A ---
   b_run = drive_command(
     workspace,
     "scope",
@@ -71,44 +71,44 @@ def test_pi_plan_extends(workspace: Path, tmp_path: Path) -> None:
   )
   assert b_run.turns < DEFAULT_MAX_TURNS
 
-  # --- Verify plan mechanics ---
-  plans = load_all_plans(workspace)
-  assert len(plans) == 2, (
-    f"expected exactly 2 plan files, got {len(plans)}: "
-    f"{[p.slug for p in plans]}"
+  # --- Verify scope mechanics ---
+  scopes = load_all_scopes(workspace)
+  assert len(scopes) == 2, (
+    f"expected exactly 2 scope files, got {len(scopes)}: "
+    f"{[p.slug for p in scopes]}"
   )
-  plan_a, plan_b = plans  # sorted by filename = numeric prefix asc
+  plan_a, plan_b = scopes  # sorted by filename = numeric prefix asc
 
-  # Both plans stay valid — extends does not flip status.
+  # Both scopes stay valid — extends does not flip status.
   assert plan_a.frontmatter.get("status") == "valid", (
-    f"plan A status should be 'valid' for extends, got "
+    f"scope A status should be 'valid' for extends, got "
     f"{plan_a.frontmatter.get('status')!r}"
   )
   assert plan_b.frontmatter.get("status") == "valid", (
-    f"plan B status should be 'valid' for extends, got "
+    f"scope B status should be 'valid' for extends, got "
     f"{plan_b.frontmatter.get('status')!r}"
   )
 
-  # New plan B has `extends: [plan_a.slug]`.
+  # New scope B has `extends: [plan_a.slug]`.
   extends_value = plan_b.frontmatter.get("extends") or []
   assert plan_a.slug in extends_value, (
-    f"plan B should extend plan A ({plan_a.slug}); "
-    f"plan B 'extends' = {extends_value!r}"
+    f"scope B should extend scope A ({plan_a.slug}); "
+    f"scope B 'extends' = {extends_value!r}"
   )
 
-  # Predecessor plan A has back-link `extended_by: [plan_b.slug]`.
+  # Predecessor scope A has back-link `extended_by: [plan_b.slug]`.
   extended_by_value = plan_a.frontmatter.get("extended_by") or []
   assert plan_b.slug in extended_by_value, (
-    f"plan A should be extended_by plan B ({plan_b.slug}); "
-    f"plan A 'extended_by' = {extended_by_value!r}"
+    f"scope A should be extended_by scope B ({plan_b.slug}); "
+    f"scope A 'extended_by' = {extended_by_value!r}"
   )
 
   # supersedes should NOT have been written — this is extends, not supersedes.
   assert not plan_b.frontmatter.get("supersedes"), (
-    f"plan B should NOT have supersedes for an extends scenario; "
+    f"scope B should NOT have supersedes for an extends scenario; "
     f"got {plan_b.frontmatter.get('supersedes')!r}"
   )
   assert not plan_a.frontmatter.get("superseded_by"), (
-    f"plan A should NOT have superseded_by for an extends scenario; "
+    f"scope A should NOT have superseded_by for an extends scenario; "
     f"got {plan_a.frontmatter.get('superseded_by')!r}"
   )

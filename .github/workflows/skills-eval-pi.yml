@@ -18,7 +18,7 @@ name: skills eval / pi
 #           form in skills_evals.pi_driver. Confirmation gates show up as
 #           text events the driver matches against the "Reply yes" pattern
 #           and replies to with `pi -c -p yes` on the next turn.
-#        c. Score the plan and the produced artifacts with two DeepEval
+#        c. Score the scope and the produced artifacts with two DeepEval
 #           `GEval` metrics backed by DeepSeek.
 #   4. Upload the pytest tmp directory (transcripts + workspace) on
 #      failure so the run can be inspected offline.

@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from skills_evals.copilot_driver import DEFAULT_MAX_TURNS, drive_skill
-from skills_evals.judges import ArtifactJudge, PlanJudge
+from skills_evals.judges import ArtifactJudge, ScopeJudge
 
 TASK = "build me a single HTML and localStorage-based todo list app"
 
@@ -43,11 +43,11 @@ def test_copilot_builds_todo_app(copilot_workspace: Path, tmp_path: Path) -> Non
     f"{transcripts / 'scope.txt'} to see what it was asking."
   )
 
-  plan_judgment = PlanJudge().evaluate(TASK, copilot_workspace)
-  print(f"\n[plan] score={plan_judgment.score:.2f} reason={plan_judgment.reason}")
-  assert plan_judgment.passed, (
-    f"PlanJudge failed: score={plan_judgment.score:.2f} "
-    f"reason={plan_judgment.reason}"
+  scope_judgment = ScopeJudge().evaluate(TASK, copilot_workspace)
+  print(f"\n[scope] score={scope_judgment.score:.2f} reason={scope_judgment.reason}")
+  assert scope_judgment.passed, (
+    f"ScopeJudge failed: score={scope_judgment.score:.2f} "
+    f"reason={scope_judgment.reason}"
   )
 
   # --- /ship ---
@@ -65,7 +65,7 @@ def test_copilot_builds_todo_app(copilot_workspace: Path, tmp_path: Path) -> Non
     f"timed_out={exec_run.timed_out}"
   )
   # No turn-cap assertion for /ship: the executor legitimately needs
-  # many turns (one per plan-boundary review under --review-per plan,
+  # many turns (one per scope-boundary review under --review-per scope,
   # plus whatever intermediate gates the agent emits). Downstream
   # exit_code/completed/ArtifactJudge assertions cover correctness;
   # a turn cap here would conflate "stuck at gate" with "did real work

@@ -99,10 +99,10 @@ DEFAULT_MODEL = "deepseek/deepseek-v4-pro"
 #      wording doesn't always surface as `Reply yes` so the auto-yes
 #      regex misses it and omp goes idle.
 #
-#   2. Destructive-overwrite checkpoints in /ship — when a plan would
+#   2. Destructive-overwrite checkpoints in /ship — when a scope would
 #      replace an existing artifact (e.g. reminders.html on top of
 #      todo.html), the model emits a meta-message ("FYI: I'll review
-#      the whole plan with you at once") and goes idle waiting for
+#      the whole scope with you at once") and goes idle waiting for
 #      review-per direction.
 #
 # Mirrors the same constant in claude_driver / opencode_driver / copilot_driver.
@@ -232,7 +232,7 @@ def drive_skill(
       # is the only hint we get. Flip the exit_code to non-zero so the
       # downstream `assert run.exit_code == 0` in scenario tests reports
       # the upstream cause directly instead of failing much later on
-      # `assert len(plans) == 2, got 0`.
+      # `assert len(scopes) == 2, got 0`.
       log("driver", f"turn {run.turns} ended with LLM error: {stream_error}")
       run.exit_code = 1
       run.stderr_tail = (run.stderr_tail + "\n" + stream_error).strip()
@@ -565,7 +565,7 @@ def _detect_stream_error(events: list[dict]) -> str | None:
   on the last assistant message_end with an empty content[] and an
   `errorMessage` field. Without this check the driver reports the run
   as `completed` and the scenario test fails much later with the
-  cryptic "got 0 plan files" — masking the upstream cause.
+  cryptic "got 0 scope files" — masking the upstream cause.
   """
   for event in reversed(events):
     if not isinstance(event, dict):

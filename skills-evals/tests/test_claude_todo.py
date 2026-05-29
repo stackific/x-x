@@ -5,7 +5,7 @@
 Flow per the user's spec:
   1. The "user" (this test) invokes /scope with the TODO task. Auto-reply
      'yes' until /scope stops asking.
-  2. PlanJudge scores the plan file that landed under .stax/.
+  2. ScopeJudge scores the scope file that landed under .stax/.
   3. The "user" invokes /ship. Auto-reply 'yes' until /ship stops asking.
   4. ArtifactJudge scores the files the executor produced.
 
@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from skills_evals.claude_driver import DEFAULT_MAX_TURNS, drive_skill
-from skills_evals.judges import ArtifactJudge, PlanJudge
+from skills_evals.judges import ArtifactJudge, ScopeJudge
 
 TASK = "build me a single HTML and localStorage-based todo list app"
 
@@ -51,11 +51,11 @@ def test_claude_builds_todo_app(workspace: Path, tmp_path: Path) -> None:
     f"{transcripts / 'scope.jsonl'} to see what it was asking."
   )
 
-  plan_judgment = PlanJudge().evaluate(TASK, workspace)
-  print(f"\n[plan] score={plan_judgment.score:.2f} reason={plan_judgment.reason}")
-  assert plan_judgment.passed, (
-    f"PlanJudge failed: score={plan_judgment.score:.2f} "
-    f"reason={plan_judgment.reason}"
+  scope_judgment = ScopeJudge().evaluate(TASK, workspace)
+  print(f"\n[scope] score={scope_judgment.score:.2f} reason={scope_judgment.reason}")
+  assert scope_judgment.passed, (
+    f"ScopeJudge failed: score={scope_judgment.score:.2f} "
+    f"reason={scope_judgment.reason}"
   )
 
   # --- /ship ---

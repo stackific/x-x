@@ -6,6 +6,6 @@ from __future__ import annotations
 
 from .artifact_judge import ArtifactJudge
 from .base import Judge, Judgment
-from .plan_judge import PlanJudge
+from .scope_judge import ScopeJudge
 
-__all__ = ["ArtifactJudge", "Judge", "Judgment", "PlanJudge"]
+__all__ = ["ArtifactJudge", "Judge", "Judgment", "ScopeJudge"]

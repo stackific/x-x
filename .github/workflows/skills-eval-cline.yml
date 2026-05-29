@@ -20,7 +20,7 @@ name: skills eval / cline
 #           (`cline auth --provider deepseek --apikey <key> --modelid
 #           deepseek-v4-pro` in the workspace fixture; sandboxed $HOME
 #           means the auth state is per-test).
-#        c. Score the plan and produced artifacts with the same DeepEval
+#        c. Score the scope and produced artifacts with the same DeepEval
 #           `GEval` metrics used by the Claude eval.
 #   4. Upload the pytest tmp directory (transcripts + workspace) on
 #      failure so the run can be inspected offline.

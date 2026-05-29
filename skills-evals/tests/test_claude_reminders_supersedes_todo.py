@@ -1,24 +1,24 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Stackific Inc.
-"""End-to-end: drive Claude through plan-supersede + artifact-replace.
+"""End-to-end: drive Claude through scope-supersede + artifact-replace.
 
 Sequence:
   1. /scope a todo list app.
-  2. /scope a reminders app that SUPERSEDES the todo plan.
+  2. /scope a reminders app that SUPERSEDES the todo scope.
   3. /ship — executes the queue; per agents/skills/ship/SKILL.md step 3.4,
-     when the executor finishes the successor plan it flips the
+     when the executor finishes the successor scope it flips the
      predecessor's `status: valid` → `status: superseded` and appends
      the successor slug to the predecessor's `superseded_by:` array.
 
 Two distinct assertion classes:
 
-  Plan mechanics (deterministic Python YAML parsing):
-    - todo plan: status=superseded, superseded_by contains reminders slug
-    - reminders plan: status=valid, supersedes contains todo slug
+  Scope mechanics (deterministic Python YAML parsing):
+    - todo scope: status=superseded, superseded_by contains reminders slug
+    - reminders scope: status=valid, supersedes contains todo slug
 
   Artifact correctness (DeepEval GEval via ArtifactJudge):
     - the final workspace contains a working REMINDERS app, not a todo
-      list — even if the executor ran both plans in order, the reminders
+      list — even if the executor ran both scopes in order, the reminders
       semantics must be present in the produced artifacts.
 """
 
@@ -28,7 +28,7 @@ from pathlib import Path
 
 from skills_evals.claude_driver import DEFAULT_MAX_TURNS, drive_skill
 from skills_evals.judges import ArtifactJudge
-from skills_evals.workspace import load_all_plans
+from skills_evals.workspace import load_all_scopes
 
 TODO_TASK = "build a single HTML and localStorage-based todo list app"
 
@@ -37,15 +37,15 @@ REMINDERS_TASK = (
   "app backed by localStorage. The user can add a reminder, enable or "
   "disable a reminder (check on/off behavior similar to the todo app's "
   "checkbox), and delete a reminder. When a reminder's time arrives, the "
-  "app must display a notification div alerting the user. This plan "
-  "SUPERSEDES the previous todo list plan — mark it accordingly."
+  "app must display a notification div alerting the user. This scope "
+  "SUPERSEDES the previous todo list scope — mark it accordingly."
 )
 
 
 def test_claude_reminders_supersedes_todo(workspace: Path, tmp_path: Path) -> None:
   transcripts = tmp_path / "transcripts"
 
-  # --- Plan 1: todo list ---
+  # --- Scope 1: todo list ---
   todo_run = drive_skill(
     workspace,
     f"/scope {TODO_TASK}",
@@ -58,7 +58,7 @@ def test_claude_reminders_supersedes_todo(workspace: Path, tmp_path: Path) -> No
   assert todo_run.completed
   assert todo_run.turns < DEFAULT_MAX_TURNS
 
-  # --- Plan 2: reminders (supersedes todo) ---
+  # --- Scope 2: reminders (supersedes todo) ---
   reminders_run = drive_skill(
     workspace,
     f"/scope {REMINDERS_TASK}",
@@ -84,32 +84,32 @@ def test_claude_reminders_supersedes_todo(workspace: Path, tmp_path: Path) -> No
   assert exec_run.completed
   assert exec_run.turns < DEFAULT_MAX_TURNS
 
-  # --- Plan mechanics ---
-  plans = load_all_plans(workspace)
-  assert len(plans) == 2, (
-    f"expected exactly 2 plan files, got {len(plans)}: "
-    f"{[p.slug for p in plans]}"
+  # --- Scope mechanics ---
+  scopes = load_all_scopes(workspace)
+  assert len(scopes) == 2, (
+    f"expected exactly 2 scope files, got {len(scopes)}: "
+    f"{[p.slug for p in scopes]}"
   )
-  todo_plan, reminders_plan = plans  # numeric prefix asc
+  todo_scope, reminders_scope = scopes  # numeric prefix asc
 
-  assert todo_plan.frontmatter.get("status") == "superseded", (
-    f"todo plan should be status=superseded after /ship ran the "
-    f"successor, got {todo_plan.frontmatter.get('status')!r}"
+  assert todo_scope.frontmatter.get("status") == "superseded", (
+    f"todo scope should be status=superseded after /ship ran the "
+    f"successor, got {todo_scope.frontmatter.get('status')!r}"
   )
-  superseded_by = todo_plan.frontmatter.get("superseded_by") or []
-  assert reminders_plan.slug in superseded_by, (
-    f"todo plan's superseded_by should include reminders slug "
-    f"({reminders_plan.slug}); got {superseded_by!r}"
+  superseded_by = todo_scope.frontmatter.get("superseded_by") or []
+  assert reminders_scope.slug in superseded_by, (
+    f"todo scope's superseded_by should include reminders slug "
+    f"({reminders_scope.slug}); got {superseded_by!r}"
   )
 
-  assert reminders_plan.frontmatter.get("status") == "valid", (
-    f"reminders plan should remain status=valid, got "
-    f"{reminders_plan.frontmatter.get('status')!r}"
+  assert reminders_scope.frontmatter.get("status") == "valid", (
+    f"reminders scope should remain status=valid, got "
+    f"{reminders_scope.frontmatter.get('status')!r}"
   )
-  supersedes = reminders_plan.frontmatter.get("supersedes") or []
-  assert todo_plan.slug in supersedes, (
-    f"reminders plan's supersedes should include todo slug "
-    f"({todo_plan.slug}); got {supersedes!r}"
+  supersedes = reminders_scope.frontmatter.get("supersedes") or []
+  assert todo_scope.slug in supersedes, (
+    f"reminders scope's supersedes should include todo slug "
+    f"({todo_scope.slug}); got {supersedes!r}"
   )
 
   # --- Artifact correctness: must be a reminders app, not a todo ---
