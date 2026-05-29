@@ -460,6 +460,32 @@ write_registry() {
 
 # ---------- build ----------
 
+# server.go embeds `frontend/dist/` via `//go:embed all:frontend/dist`. The
+# dist tree is gitignored, so a fresh clone (or any pre-push hook running
+# against an un-built frontend) has nothing for the embed to match and
+# `go build` fails with "pattern all:frontend/dist: no matching files".
+# CI builds dist in a separate workflow step (.github/workflows/test.yml),
+# but the lefthook pre-push hook calls this script directly — so we
+# bootstrap dist here when it's missing. Already-built trees are left
+# untouched to keep local re-runs fast; pass FORCE_FRONTEND_BUILD=1 to
+# rebuild unconditionally.
+case_start "build frontend (for //go:embed all:frontend/dist)"
+if [ "${FORCE_FRONTEND_BUILD:-}" = "1" ] || [ ! -d "$REPO_ROOT/frontend/dist" ]; then
+  (
+    cd "$REPO_ROOT/frontend"
+    # `npm ci` is skipped when node_modules already exists — it would
+    # otherwise wipe and reinstall on every run, which is multi-second
+    # overhead the dev cycle does not need.
+    if [ ! -d node_modules ]; then
+      npm ci
+    fi
+    npm run build
+  )
+  assert_is_dir "frontend/dist built" "$REPO_ROOT/frontend/dist"
+else
+  ok "frontend/dist already present (skipping build; set FORCE_FRONTEND_BUILD=1 to override)"
+fi
+
 case_start "build stax"
 (
   cd "$REPO_ROOT"
