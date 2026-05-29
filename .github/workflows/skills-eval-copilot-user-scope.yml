@@ -32,6 +32,8 @@ jobs:
     timeout-minutes: 60
 
     env:
+      STAX_AGENT_KEY: copilot
+
       # Identical to skills-eval-copilot.yml EXCEPT for STAX_INSTALL_SCOPE.
       # The pytest fixture (skills-evals/tests/conftest.py) reads this
       # and passes it to `stax init --scope <value>`, so the same test
