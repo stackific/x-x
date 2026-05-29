@@ -443,11 +443,19 @@ var ownedSkills = []string{
 }
 
 // ownedFiles is the exhaustive list of files (relative to the install scope
-// root) that `stax init` may have written. None of them carry a marker, and
-// each `init` run leaves them alone if they already exist — so removal must
-// be conservative (today: not automated). Recorded here so the inventory
+// root) that `stax init` may have written. None of them carry a marker;
+// each `init` run merges (JSON) or skips-on-byte-identity (.ts) rather
+// than overwriting, so removal is record-by-record via `stax skills
+// remove`'s un-merger, not whole-file. Recorded here so the inventory
 // of "what stax touches on disk" lives in one place, even though no code
 // path currently iterates it (hence the nolint below).
+//
+// Scope-asymmetric agents (configRel ≠ userConfigRel — currently
+// Copilot, OpenCode, Pi) appear TWICE so both destinations are visible
+// to anyone auditing the inventory. The agentByKey helper resolves to
+// `nil` for unknown keys and crashes here at init — that's intentional:
+// dropping a row from agentTargets without updating ownedFiles should
+// fail loudly rather than silently leak a path.
 //
 //nolint:unused // documentation registry; will be surfaced in `stax skills remove` UX.
 var ownedFiles = []string{
@@ -455,8 +463,18 @@ var ownedFiles = []string{
 	staxDir + "/" + staxSystemsFile,
 	staxDir + "/" + staxLockFile,
 	// Per-agent config files copied from agents/<agent>/ by installAgentConfig.
-	// Empty-target-only writes: an existing file is preserved.
+	// Scope-symmetric agents (configRel used at both scopes):
 	agentByKey("claude").configRel + "/settings.json",
+	agentByKey("codex").configRel + "/hooks.json",
+	// Scope-asymmetric agents — list both destinations so the inventory
+	// reflects what actually lands on disk under `stax init --scope project`
+	// AND `--scope user`. Order: project path first, user path second.
+	agentByKey("copilot").configRel + "/stax.json",     // .github/hooks/stax.json
+	agentByKey("copilot").userConfigRel + "/stax.json", // ~/.copilot/hooks/stax.json
+	agentByKey("opencode").configRel + "/stax.ts",      // .opencode/plugins/stax.ts
+	agentByKey("opencode").userConfigRel + "/stax.ts",  // ~/.config/opencode/plugins/stax.ts
+	agentByKey("pi").configRel + "/stax.ts",            // .pi/extensions/stax.ts
+	agentByKey("pi").userConfigRel + "/stax.ts",        // ~/.pi/agent/extensions/stax.ts
 }
 
 // Update-check settings — read by maybeNotifyUpdate / fetchLatestVersion.

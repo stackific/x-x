@@ -38,11 +38,24 @@ The "verified" column links to the page each row was sourced from. Where two loc
 
 ## Implications for the stax `agentTarget` registry
 
-`agentTargets` in `constants.go` carries `skillsRel` (skills install path) and optional `configSrc` / `configRel` (per-agent config bundle path). To wire up hooks for a given agent we need a row whose `configSrc` points at a bundled `agents/<key>/<hook-file>` and whose `configRel` points at the agent's documented hook location.
+`agentTargets` in `constants.go` carries `skillsRel` / `userSkillsRel` (skills install path) and optional `configSrc` / `configRel` / `userConfigRel` (per-agent config bundle path; the `userConfigRel` override exists for agents whose hook directory differs between project and user scope — Copilot CLI is the current example). `installOneAgentConfigFile` dispatches on extension: `.json` files deep-merge into the user's copy under the top-level `hooks` key; `.ts` files install with whole-file byte-identity ownership (copy on absent, no-op on byte-equal, preserve on user-edit). `stax skills remove` runs the symmetric un-merge / delete-if-byte-equal.
 
-- **Drop-in JSON, easy to bundle**: Claude Code (already wired — `agents/claude/settings.json` → `~/.claude/settings.json`), Codex (already wired — `agents/codex/hooks.json` → `~/.codex/hooks.json`), Copilot CLI (could ship `~/.copilot/hooks/stax.json`), Cursor (would need `.cursor/hooks.json` if added as a target).
-- **Executable script bundle**: Cline — would need a bundle of executable scripts at `.clinerules/hooks/<event>`; the current `installAgentConfig` JSON-merge model doesn't fit. macOS/Linux only.
-- **TypeScript plugin bundle**: OpenCode, Pi, omp — would need `.ts` files installed at their respective extension paths. Not a config-file shape.
+What's shipped today:
+
+- **JSON merge (record-level ownership under top-level `hooks` key)**:
+  - Claude Code — `agents/claude/settings.json` → `.claude/settings.json` (both scopes).
+  - Codex — `agents/codex/hooks.json` → `.codex/hooks.json` (both scopes).
+  - Copilot CLI — `agents/copilot/stax.json` → `.github/hooks/stax.json` at project scope, `~/.copilot/hooks/stax.json` at user scope (scope-asymmetric via `userConfigRel`).
+- **TypeScript plugin (whole-file byte-identity ownership)**:
+  - OpenCode — `agents/opencode/stax.ts` → `.opencode/plugins/stax.ts` at project, `~/.config/opencode/plugins/stax.ts` at user.
+  - Pi — `agents/pi/stax.ts` → `.pi/extensions/stax.ts` at project, `~/.pi/agent/extensions/stax.ts` at user.
+
+What's still unshipped, and why:
+
+- **Cursor** — no documented public hook surface yet (per the row above). Skills-only; no `configSrc` until Cursor publishes a config file format.
+- **Cline** — executable scripts at `.clinerules/hooks/<event-name>` (no extension; name == event). The current installer has JSON and `.ts` branches; would need a new "executable file" branch that preserves the +x bit. macOS/Linux only by Cline's own design. Skills-only today.
+- **Continue, Kilo Code, Zed** — no discrete on-disk hook event format documented; behavior is routed through YAML/JSON settings or MCP tool registration rather than a stax-bundlable file. Skills-only.
+- **omp (oh-my-pi)** — `docs/hooks.md` calls out a "legacy mismatch" between the discovery providers (which still reference `.claude/hooks/pre/*` and `.omp/.../hooks/pre/*`) and the runtime, which loads hooks through a capability layer with caller-passed paths rather than a fixed filesystem location. Bundling without a verified path would be guessing; skills-only until omp pins one.
 
 ## Source policy
 
