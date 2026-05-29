@@ -23,7 +23,7 @@ func main() {
 	// bare, --version, and every subcommand. Centralizing it here (rather
 	// than peppering each runner with its own call) makes the upsell
 	// behavior uniform: the user sees the same upgrade nudge whether they
-	// ran `stax`, `stax init`, `stax plans lint`, or anything else. The
+	// ran `stax`, `stax init`, `stax scopes lint`, or anything else. The
 	// function is best-effort and silent on every failure mode — a missing
 	// config, no network, rate-limited, etc. — so it never disrupts the
 	// real command. We run it BEFORE dispatch so any "new version
@@ -43,10 +43,10 @@ func main() {
 			// Lives in skill.go.
 			runSkills(os.Args[2:])
 			return
-		case "plans":
-			// `stax plans <subcmd>` — plan-tooling commands (today: next-prefix).
-			// Lives in plan.go.
-			runPlans(os.Args[2:])
+		case "scopes":
+			// `stax scopes <subcmd>` — scope-tooling commands (today: next-prefix).
+			// Lives in scope.go.
+			runScopes(os.Args[2:])
 			return
 		case "post-install":
 			// `stax post-install` — installer hook. INSTALL.sh / INSTALL.ps1
@@ -150,7 +150,7 @@ func runDefault(args []string) {
 	// web UI's /api/systems, /api/scopes, and /api/scope endpoints all
 	// read from cwd's .stax/ tree, and there is nothing useful to show
 	// when that tree doesn't exist. Surface the same `stax init` hint
-	// the plan-tooling subcommands print, then exit 2 (usage error)
+	// the scope-tooling subcommands print, then exit 2 (usage error)
 	// before runServer binds the listener or opens a browser. --version
 	// above is the deliberate exception: it is an identity probe, not a
 	// project operation, and the installer scripts depend on it
@@ -239,10 +239,10 @@ func printAbout() {
 	fmt.Println("  stax init                       Install bundled agent skills + seed .stax/ (wizard or flag-driven)")
 	fmt.Println("  stax skills remove --user       Uninstall bundled stax skills from $HOME")
 	fmt.Println("  stax skills remove --project    Uninstall bundled stax skills from the current directory")
-	fmt.Println("  stax plans next-prefix          Print the next unused zero-padded plan prefix")
-	fmt.Println("  stax plans list                 List plans with slug, status, and declared systems")
-	fmt.Println("  stax plans lint                 Validate every plan file against the project schema")
-	fmt.Println("  stax plans slugify \"<title>\"    Print the kebab-case slug for a plan title")
+	fmt.Println("  stax scopes next-prefix          Print the next unused zero-padded scope prefix")
+	fmt.Println("  stax scopes list                 List scopes with slug, status, and declared systems")
+	fmt.Println("  stax scopes lint                 Validate every scope file against the project schema")
+	fmt.Println("  stax scopes slugify \"<title>\"    Print the kebab-case slug for a scope title")
 	fmt.Println("  stax --version                  Print version")
 	fmt.Println()
 	fmt.Println("Common flag (every subcommand above):")

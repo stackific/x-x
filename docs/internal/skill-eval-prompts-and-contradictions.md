@@ -7,8 +7,8 @@ This doc is for two audiences:
   (Claude Code, Codex, Pi, omp, Cline, Copilot CLI, OpenCode), then
   watch the skill execute the same shapes the `skills-evals/` test
   suite enforces in CI.
-- **Reviewers inspecting a plan tree for semantic problems** — the
-  second half lists the kinds of contradictions `stax plans lint` does
+- **Reviewers inspecting a scope tree for semantic problems** — the
+  second half lists the kinds of contradictions `stax scopes lint` does
   NOT catch (it's a structural linter, not a meaning checker) and the
   `/scope` skill's design relies on a human noticing.
 
@@ -16,7 +16,7 @@ This doc is for two audiences:
 
 Each block is a single agent turn. Where two prompts are listed, run
 them one after the other in the **same** project workspace (they share
-state — the second prompt's behavior depends on the first plan
+state — the second prompt's behavior depends on the first scope
 existing).
 
 Every prompt assumes the workspace has been initialised with
@@ -35,15 +35,15 @@ of `.stax.example/`.
 
 **What to watch for:**
 
-- A sub-plan is presented and ends with the literal sentence
+- A sub-scope is presented and ends with the literal sentence
   `Reply yes to proceed, or tell me what to change.` (Appendix A,
   approval discipline).
 - After `yes`, exactly one file appears under `.stax/<prefix>-<slug>.md`
   with title-first / created-last frontmatter and the three required
   body sections (`## Goal`, `## Approach`, `## Tasks`).
-- `stax plans lint` exits 0.
+- `stax scopes lint` exits 0.
 - The skill stops. It does NOT chain into `/ship` (forbidden by the
-  identity rules), and zero non-plan files were written.
+  identity rules), and zero non-scope files were written.
 
 ### Prompt 2 — Scope, then ship
 
@@ -62,12 +62,12 @@ then in the next turn:
 
 **What to watch for:**
 
-- `/ship` enumerates the work queue with `stax plans list --status valid
+- `/ship` enumerates the work queue with `stax scopes list --status valid
   --order=asc` and proceeds straight into execution **without** a
-  "found N plans, proceed?" prompt (Step 2→3 has no gap).
+  "found N scopes, proceed?" prompt (Step 2→3 has no gap).
 - Every EARS checkbox in `## Tasks` flips from `[ ]` to `[x]` only
   after the corresponding artifact actually exists on disk.
-- The plan stays `status: valid`. `/ship` does NOT flip the status to
+- The scope stays `status: valid`. `/ship` does NOT flip the status to
   `superseded` or `deprecated` on a happy-path execution.
 
 ### Prompt 3 — Extends pair (both stay valid)
@@ -80,8 +80,8 @@ Two turns in the same workspace:
 
 ```
 /scope add a 'clear all completed' button to the existing todo list
-app. This is a follow-up plan that extends the previous one — both
-plans should remain valid; do not supersede.
+app. This is a follow-up scope that extends the previous one — both
+scopes should remain valid; do not supersede.
 ```
 
 **Source:** `skills-evals/tests/test_claude_plan_extends.py` (and the
@@ -89,13 +89,13 @@ sister `test_*_plan_extends.py` for other backends).
 
 **What to watch for:**
 
-- Plan B's frontmatter has `extends: [<plan-A-slug>]` between the
+- Scope B's frontmatter has `extends: [<scope-A-slug>]` between the
   `systems:` and `created:` keys.
-- Plan A's frontmatter has `extended_by: [<plan-B-slug>]` (the skill
+- Scope A's frontmatter has `extended_by: [<scope-B-slug>]` (the skill
   edited the predecessor as a side effect of writing B, per Step 3).
 - Both files keep `status: valid`. Extends is a forward pointer, not a
   state change.
-- `stax plans lint` exits 0 — its bidirectional-link check is what
+- `stax scopes lint` exits 0 — its bidirectional-link check is what
   guarantees both sides were written.
 
 ### Prompt 4 — Supersedes pair (predecessor retires on /ship)
@@ -114,7 +114,7 @@ reminders app backed by localStorage. The user can add a reminder,
 enable or disable a reminder (check on/off behavior similar to the
 todo app's checkbox), and delete a reminder. When a reminder's time
 arrives, the app must display a notification div alerting the user.
-This plan SUPERSEDES the previous todo list plan — mark it accordingly.
+This scope SUPERSEDES the previous todo list scope — mark it accordingly.
 ```
 
 ```
@@ -126,14 +126,14 @@ and `test_cline_reminders_supersedes_todo.py`.
 
 **What to watch for:**
 
-- After the second `/scope`, the new plan has `supersedes:
-  [<plan-A-slug>]` and the predecessor still reads `status: valid`
+- After the second `/scope`, the new scope has `supersedes:
+  [<scope-A-slug>]` and the predecessor still reads `status: valid`
   (the flip is `/ship`'s job, not `/scope`'s — Step 3 / identity
   rule #3).
 - After the second `/ship`, the predecessor's `status:` is now
   `superseded` AND its `superseded_by:` array contains the successor's
   slug.
-- If the new plan's `## Tasks` includes cleanup criteria (per the
+- If the new scope's `## Tasks` includes cleanup criteria (per the
   "Supersedes may require cleanup criteria" rule in Step 3),
   artifacts from the predecessor are gone from disk.
 
@@ -147,7 +147,7 @@ and `test_cline_reminders_supersedes_todo.py`.
 **Why it exists:** confirms the agent harness can produce a clean
 stream-JSON transcript end-to-end without any skill involvement. Use
 this to verify a fresh install before running any of the
-plan-mechanics prompts above. If this fails, the higher-level prompts
+scope-mechanics prompts above. If this fails, the higher-level prompts
 will fail for harness reasons, not skill reasons.
 
 ### Prompt 6 — Hook firing (Claude only)
@@ -173,27 +173,27 @@ tool names.
 
 ## Part 2 — Contradictions the lint won't catch
 
-`stax plans lint` enforces **structural** invariants: filename pattern,
+`stax scopes lint` enforces **structural** invariants: filename pattern,
 line cap, frontmatter ordering, bidirectional links, slug resolution,
 system membership, EARS-subject ↔ `systems:` set equality, required
-sections. It does NOT enforce **semantic** invariants — two plans can
+sections. It does NOT enforce **semantic** invariants — two scopes can
 each pass lint while making contradictory `[x]` claims about the same
 system. The `/scope` skill's Appendix C says the source of truth for
 "what's true now" is the union of `[x]` criteria across `status: valid`
-plans, so any contradiction in that union is a real bug the human
+scopes, so any contradiction in that union is a real bug the human
 review pass has to catch.
 
 The patterns below are the recurring shapes worth scanning for. Each
 one is followed by a concrete sample that would land cleanly through
-`stax plans lint` but is wrong.
+`stax scopes lint` but is wrong.
 
 ### 2.1 Mutually exclusive responses to the same trigger
 
-Two valid plans, same system, same event, contradictory `shall` clauses.
+Two valid scopes, same system, same event, contradictory `shall` clauses.
 
 > **Generic shape:**
-> - Plan A `[x]` — `When <trigger>, the <System> shall <response-A>.`
-> - Plan B `[x]` — `When <trigger>, the <System> shall <response-B>.`
+> - Scope A `[x]` — `When <trigger>, the <System> shall <response-A>.`
+> - Scope B `[x]` — `When <trigger>, the <System> shall <response-B>.`
 >
 > Where `<response-A>` and `<response-B>` are mutually exclusive (e.g.
 > "retry" vs "halt", "send" vs "drop", "include" vs "omit"). Lint
@@ -202,33 +202,33 @@ Two valid plans, same system, same event, contradictory `shall` clauses.
 
 ### 2.2 Same-window contradiction (rate-limit, retention, dedup, etc.)
 
-Two valid plans on the same system declare different numeric windows
+Two valid scopes on the same system declare different numeric windows
 for what is essentially the same policy.
 
 > **Generic shape:**
-> - Plan A `[x]` — `the <System> shall <verb> within <N> minutes.`
-> - Plan B `[x]` — `the <System> shall <verb> within <M> minutes.`
+> - Scope A `[x]` — `the <System> shall <verb> within <N> minutes.`
+> - Scope B `[x]` — `the <System> shall <verb> within <M> minutes.`
 >
-> Where neither plan supersedes the other and `N ≠ M`. The newer plan
+> Where neither scope supersedes the other and `N ≠ M`. The newer scope
 > may have meant to refine the older but forgot the `supersedes:` or
 > `extends:` link.
 
 ### 2.3 Retain-vs-purge contradiction
 
-One plan establishes a retention/archive rule; a later valid plan
+One scope establishes a retention/archive rule; a later valid scope
 deletes or purges the same data on a shorter cycle.
 
 > **Generic shape:**
-> - Plan A `[x]` — `the <System> shall retain <data> for <N> days.`
-> - Plan B `[x]` — `the <System> shall purge <data> after <M> days.`
+> - Scope A `[x]` — `the <System> shall retain <data> for <N> days.`
+> - Scope B `[x]` — `the <System> shall purge <data> after <M> days.`
 >
-> Where `M < N` and Plan B doesn't carve out an exception. Either
-> Plan A is stale (should be `superseded`) or Plan B has the wrong
+> Where `M < N` and Scope B doesn't carve out an exception. Either
+> Scope A is stale (should be `superseded`) or Scope B has the wrong
 > window — both are reviewable mistakes.
 
 ### 2.4 Stale-foundation extends
 
-A plan whose `extends:` array points at a predecessor whose `status:`
+A scope whose `extends:` array points at a predecessor whose `status:`
 is `superseded` or `deprecated`. The bidirectional link still passes
 lint (the slugs resolve), but the extender is building on a
 foundation that no longer reflects current truth.
@@ -243,7 +243,7 @@ foundation that no longer reflects current truth.
 
 ### 2.5 Supersedes without cleanup
 
-A plan with `supersedes:` whose `## Tasks` never mentions the
+A scope with `supersedes:` whose `## Tasks` never mentions the
 predecessor's on-disk artifacts. The successor's claims are valid in
 isolation but the predecessor's files/endpoints/rows are still on
 disk, so the workspace mixes "old way" and "new way" in production.
@@ -259,30 +259,30 @@ disk, so the workspace mixes "old way" and "new way" in production.
 
 ### 2.6 EARS-subject ambiguity disguised as two systems
 
-A plan splits one logical actor into two registry entries to satisfy
+A scope splits one logical actor into two registry entries to satisfy
 the "exactly one named system per criterion" rule, when really one
 system owns both behaviors. The split looks fine to lint (both
 registry ids exist, both systems get tasks) but creates two source-of-
 truth surfaces for what is functionally one component.
 
-> **Generic shape:** a plan declares `systems: [api-gateway,
+> **Generic shape:** a scope declares `systems: [api-gateway,
 > api-rate-limiter]` where `api-rate-limiter` is just a module inside
 > the gateway and has no independent deployable boundary. Future
-> plans then split criteria across the two and the source-of-truth
+> scopes then split criteria across the two and the source-of-truth
 > union becomes inconsistent.
 
 ## Part 3 — Contradictions seeded into .stax.example
 
 These are concrete contradictions a reviewer could detect against the
 actual scopes in `.stax.example/`. None of them are present in the
-shipped data (the tree is currently coherent — `stax plans lint`
-passes 106/106). Each entry is a **hypothetical** new plan you could
-draft and present as a sub-plan; the reviewer's job is to recognise
+shipped data (the tree is currently coherent — `stax scopes lint`
+passes 106/106). Each entry is a **hypothetical** new scope you could
+draft and present as a sub-scope; the reviewer's job is to recognise
 the conflict and push back before approval.
 
 To exercise these manually: copy `.stax.example/` to a scratch
-project, write the hypothetical plan into `.stax/`, then ask `/scope`
-to plan a follow-up that touches the same system — a competent run
+project, write the hypothetical scope into `.stax/`, then ask `/scope`
+to scope a follow-up that touches the same system — a competent run
 should surface the discrepancy during Step 2a's "find potential
 discrepancies" check.
 
@@ -294,17 +294,17 @@ The `.stax.example/` tree already declares:
   `the Auth Service shall expire refresh tokens after 7 days of
   inactivity.`
 
-Hypothetical contradicting plan:
+Hypothetical contradicting scope:
 
 > **Proposed:** `0107 raise refresh token inactivity window to 30
 > days` — `the Auth Service shall expire refresh tokens after 30 days
 > of inactivity.`
 
-**Why it's a contradiction:** both plans claim to set the inactivity
+**Why it's a contradiction:** both scopes claim to set the inactivity
 expiry window on the same system; they can't both be `[x]` at the
-same time without one superseding the other. The proposed plan
+same time without one superseding the other. The proposed scope
 should be written as `supersedes: [0014-expire-refresh-tokens-after-
-seven-days-of-inactivity]`, not as a standalone valid plan.
+seven-days-of-inactivity]`, not as a standalone valid scope.
 
 ### Case B — Dedup-window contradiction (Notification Bus)
 
@@ -316,13 +316,13 @@ The shipped data declares:
 - **0104 add-configurable-dedup-window-per-channel** — extends 0090,
   makes the window configurable, **defaults to 5 minutes when unset**.
 
-Hypothetical contradicting plan:
+Hypothetical contradicting scope:
 
 > **Proposed:** `0108 widen marketing dedup window to one hour` —
 > `the Notification Bus shall suppress marketing duplicates within
 > 1 hour.`
 
-**Why it's a contradiction:** the proposed plan claims a 1-hour
+**Why it's a contradiction:** the proposed scope claims a 1-hour
 window on a sub-channel without going through the configurable
 mechanism 0104 established. Either it should `extends:
 [0104-add-configurable-dedup-window-per-channel]` and frame the
@@ -340,14 +340,14 @@ The shipped data declares:
   `the Ingest Pipeline shall archive raw events to cold storage after
   90 days.`
 
-Hypothetical contradicting plan:
+Hypothetical contradicting scope:
 
 > **Proposed:** `0109 purge raw events after thirty days to cut
 > storage cost` — `the Ingest Pipeline shall purge raw events after
 > 30 days.`
 
 **Why it's a contradiction:** 0064 says raw events go to cold storage
-at 90 days; the proposed plan purges them at 30 days. The 30-day
+at 90 days; the proposed scope purges them at 30 days. The 30-day
 purge happens before the 90-day archive can fire, so 0064's `[x]` is
 no longer satisfiable in production. Either 0064 needs `superseded_by:
 [0109-…]` or 0109 needs `extends: [0064-…]` with a carve-out.
@@ -360,7 +360,7 @@ The shipped data declares:
   `When 3 consecutive payments fail, the Billing shall auto-cancel
   the subscription.`
 
-Hypothetical contradicting plan:
+Hypothetical contradicting scope:
 
 > **Proposed:** `0110 require manual review before any cancellation`
 > — `Before the Billing cancels a subscription, the Billing shall
@@ -382,7 +382,7 @@ The shipped data declares:
 - **0085 add-sms-delivery-channel-for-two-factor-codes** — sends 2FA
   codes by SMS.
 
-Hypothetical contradicting plan:
+Hypothetical contradicting scope:
 
 > **Proposed:** `0111 always deliver 2FA codes within thirty seconds`
 > — `When a 2FA challenge starts, the Notification Bus shall deliver
@@ -395,7 +395,7 @@ explicitly carved out as critical. A competent reviewer should push
 back and ask: "is 2FA in the 'critical' carve-out 0089 didn't
 specify? If so, supersede 0089 with a version that names the carve-
 out; if not, soften 0111's `shall` to a target." Either way, the two
-plans as drafted can't both be `[x]` in production.
+scopes as drafted can't both be `[x]` in production.
 
 ### Case F — Cleanup-gap supersede (Billing, references our existing data)
 
@@ -430,17 +430,17 @@ check can catch — every one of them is enforced only by review or by
 the skill's own self-discipline mid-run:
 
 - **`/scope` MUST NOT invoke `/ship`** (Identity rule #4). If `/scope`
-  chains into the executor, the plan-only contract is broken;
+  chains into the executor, the scope-only contract is broken;
   detectable only by reading the agent transcript.
 - **`/scope` MUST NOT flip checkboxes** (Identity rule #2). A
   `[x]` set during `/scope` instead of `/ship` is a violation;
-  detectable by comparing the plan file before and after `/scope`.
+  detectable by comparing the scope file before and after `/scope`.
 - **`/scope` MUST NOT touch a predecessor's `status:`** when adding a
   `supersedes:` link (Identity rule #3 + Step 3). The status flip is
   `/ship`'s job; a `/scope` that flips it eagerly creates a
   predecessor that's "retired" without its successor having executed.
 - **Approach bullets without a covering Task** (Step 3 hard rules).
-  Lint accepts a plan with rich `## Approach` and an empty `## Tasks`,
+  Lint accepts a scope with rich `## Approach` and an empty `## Tasks`,
   but the SKILL says every Approach deliverable must have an EARS
   task. The lint check would need to parse Approach intent — too
   fuzzy.
@@ -449,9 +449,9 @@ the skill's own self-discipline mid-run:
   EARS); review has to push back on "feel modern" as non-observable.
 - **System granularity drift** (Appendix C — "be one level more
   granular"). Picking the root API project as the system for every
-  plan passes lint but yields plans that are too umbrella-y to ship.
+  scope passes lint but yields scopes that are too umbrella-y to ship.
 
-A future addition to `stax plans lint` could catch some of these
-(e.g. cross-plan overlap on the same system + similar trigger), but
+A future addition to `stax scopes lint` could catch some of these
+(e.g. cross-scope overlap on the same system + similar trigger), but
 most of this list is genuinely semantic and belongs in the human
-review loop the plan-first protocol exists to enforce.
+review loop the scope-first protocol exists to enforce.

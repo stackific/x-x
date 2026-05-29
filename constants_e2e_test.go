@@ -30,14 +30,14 @@ func TestE2EShellConstantsMatchGo(t *testing.T) {
 
 	// Mapping: shell variable name → expected Go-side value.
 	want := map[string]string{
-		"STAX_DIR":                      staxDir,
-		"STAX_CONFIG_FILE":              staxConfigFile,
-		"AGENTS_EMBED_ROOT":             agentsEmbedRoot,
-		"SKILLS_SUBDIR":                 skillsSubdir,
-		"STAX_LOCK_FILE":                staxLockFile,
-		"STAX_SYSTEMS_FILE":             staxSystemsFile,
-		"DEFAULT_PREFIX_WIDTH":          strconv.Itoa(defaultPrefixWidth),
-		"PLANS_LIST_OVERFLOW_THRESHOLD": strconv.Itoa(plansListOverflowThreshold),
+		"STAX_DIR":                       staxDir,
+		"STAX_CONFIG_FILE":               staxConfigFile,
+		"AGENTS_EMBED_ROOT":              agentsEmbedRoot,
+		"SKILLS_SUBDIR":                  skillsSubdir,
+		"STAX_LOCK_FILE":                 staxLockFile,
+		"STAX_SYSTEMS_FILE":              staxSystemsFile,
+		"DEFAULT_PREFIX_WIDTH":           strconv.Itoa(defaultPrefixWidth),
+		"SCOPES_LIST_OVERFLOW_THRESHOLD": strconv.Itoa(scopesListOverflowThreshold),
 
 		"SKILL_SCOPE_DIR":     skillScopeDir,
 		"SKILL_SHIP_DIR":      skillShipDir,

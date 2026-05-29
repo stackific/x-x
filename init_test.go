@@ -152,11 +152,11 @@ func TestCheckProject_MissingDir(t *testing.T) {
 	}
 }
 
-// TestCheckProject_PlanIsFileNotDir hardens the check against the
+// TestCheckProject_ScopeIsFileNotDir hardens the check against the
 // pathological case where `.stax` exists but as a regular file — must
 // still fail, since `os.ReadDir` on a file would crash the downstream
-// plan-list / next-prefix logic.
-func TestCheckProject_PlanIsFileNotDir(t *testing.T) {
+// scope-list / next-prefix logic.
+func TestCheckProject_ScopeIsFileNotDir(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, staxDir), nil, 0o600); err != nil {
 		t.Fatalf("seed file: %v", err)
@@ -172,7 +172,7 @@ func TestCheckProject_PlanIsFileNotDir(t *testing.T) {
 // populated it) does NOT downgrade the directory to "uninitialized".
 // The lock file is the sole project marker — deleting it (and only
 // it) is the documented way to re-init without losing the systems
-// registry or any plan files.
+// registry or any scope file.
 func TestCheckProject_SystemsFileNotRequired(t *testing.T) {
 	dir := t.TempDir()
 	seedProject(t, dir)
@@ -404,7 +404,7 @@ func TestResolveScope(t *testing.T) {
 	}
 }
 
-// ---------- new plan-tooling prompts ----------
+// ---------- new scope-tooling prompts ----------
 
 // TestPromptPrefixWidth_Default covers the "blank line = accept default"
 // path that lets pre-existing callers pipe nothing into this prompt and
@@ -442,22 +442,22 @@ func TestPromptPrefixWidth_Invalid(t *testing.T) {
 	}
 }
 
-// TestPromptMaxPlanLines_Default and _ValidInt mirror the prefix-width
+// TestPromptMaxScopeLines_Default and _ValidInt mirror the prefix-width
 // pair: shared helper readPositiveIntLine, but each prompt's own
 // printed text + default needs end-to-end coverage so a typo in the
 // constant connection surfaces here.
-func TestPromptMaxPlanLines_Default(t *testing.T) {
-	got, err := promptMaxPlanLines(strings.NewReader("\n"))
+func TestPromptMaxScopeLines_Default(t *testing.T) {
+	got, err := promptMaxScopeLines(strings.NewReader("\n"))
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if got != defaultMaxPlanLines {
-		t.Fatalf("got %d, want %d", got, defaultMaxPlanLines)
+	if got != defaultMaxScopeLines {
+		t.Fatalf("got %d, want %d", got, defaultMaxScopeLines)
 	}
 }
 
-func TestPromptMaxPlanLines_ValidInt(t *testing.T) {
-	got, err := promptMaxPlanLines(strings.NewReader("75\n"))
+func TestPromptMaxScopeLines_ValidInt(t *testing.T) {
+	got, err := promptMaxScopeLines(strings.NewReader("75\n"))
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -476,7 +476,7 @@ func TestPromptReviewPer(t *testing.T) {
 		wantErr bool
 	}{
 		{"1\n", reviewPerTask, false},
-		{"2\n", reviewPerPlan, false},
+		{"2\n", reviewPerScope, false},
 		{"\n", defaultReviewPer, false},
 		{"3\n", "", true},
 		{"task\n", "", true}, // strings are NOT accepted at the line picker
@@ -514,13 +514,13 @@ func TestParseScope(t *testing.T) {
 }
 
 // TestParseReviewPer mirrors TestParseScope for the review cadence
-// validator. Allowlist semantics: anything outside {task, plan} errors.
+// validator. Allowlist semantics: anything outside {task, scope} errors.
 func TestParseReviewPer(t *testing.T) {
 	if s, err := parseReviewPer(reviewPerTask); err != nil || s != reviewPerTask {
 		t.Fatalf("task: %v %v", s, err)
 	}
-	if s, err := parseReviewPer(reviewPerPlan); err != nil || s != reviewPerPlan {
-		t.Fatalf("plan: %v %v", s, err)
+	if s, err := parseReviewPer(reviewPerScope); err != nil || s != reviewPerScope {
+		t.Fatalf("scope: %v %v", s, err)
 	}
 	if _, err := parseReviewPer("commit"); err == nil {
 		t.Fatal("expected error for commit")
@@ -550,11 +550,11 @@ func TestValidatePositiveInt(t *testing.T) {
 // values verbatim. The panicReader is the trip-mark.
 func TestResolveInitConfig_AllFlagsSkipPrompts(t *testing.T) {
 	f := initFlags{
-		agents:       []string{"claude"},
-		scope:        "project",
-		prefixWidth:  3,
-		maxPlanLines: 10,
-		reviewPer:    reviewPerPlan,
+		agents:        []string{"claude"},
+		scope:         "project",
+		prefixWidth:   3,
+		maxScopeLines: 10,
+		reviewPer:     reviewPerScope,
 	}
 	got, err := resolveInitConfig(f, panicReader{}, false)
 	if err != nil {
@@ -562,8 +562,8 @@ func TestResolveInitConfig_AllFlagsSkipPrompts(t *testing.T) {
 	}
 	if got.scope != scopeProject ||
 		got.prefixWidth != 3 ||
-		got.maxPlanLines != 10 ||
-		got.reviewPer != reviewPerPlan {
+		got.maxScopeLines != 10 ||
+		got.reviewPer != reviewPerScope {
 		t.Fatalf("config mismatch: %+v", got)
 	}
 	if len(got.agents) != 1 || got.agents[0].key != "claude" {
@@ -585,7 +585,7 @@ func TestResolveInitConfig_LinePromptsFillUnset(t *testing.T) {
 		t.Fatalf("scope = %v, want project", got.scope)
 	}
 	if got.prefixWidth != defaultPrefixWidth ||
-		got.maxPlanLines != defaultMaxPlanLines ||
+		got.maxScopeLines != defaultMaxScopeLines ||
 		got.reviewPer != defaultReviewPer {
 		t.Fatalf("config = %+v", got)
 	}
@@ -617,7 +617,7 @@ func TestResolveInitConfig_MixedFlagsAndPrompts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
-	if got.prefixWidth != 5 || got.maxPlanLines != 50 || got.reviewPer != reviewPerPlan {
+	if got.prefixWidth != 5 || got.maxScopeLines != 50 || got.reviewPer != reviewPerScope {
 		t.Fatalf("config = %+v", got)
 	}
 	if got.scope != scopeUser {
@@ -634,11 +634,11 @@ func TestResolveInitConfig_MixedFlagsAndPrompts(t *testing.T) {
 // added field is easy to forget here.
 func TestInitFlags_CompleteCoverage(t *testing.T) {
 	full := initFlags{
-		agents:       []string{"claude"},
-		scope:        "project",
-		prefixWidth:  4,
-		maxPlanLines: 30,
-		reviewPer:    reviewPerTask,
+		agents:        []string{"claude"},
+		scope:         "project",
+		prefixWidth:   4,
+		maxScopeLines: 30,
+		reviewPer:     reviewPerTask,
 	}
 	if !full.complete() {
 		t.Fatal("full should be complete")
@@ -647,7 +647,7 @@ func TestInitFlags_CompleteCoverage(t *testing.T) {
 		func(f *initFlags) { f.agents = nil },
 		func(f *initFlags) { f.scope = "" },
 		func(f *initFlags) { f.prefixWidth = 0 },
-		func(f *initFlags) { f.maxPlanLines = 0 },
+		func(f *initFlags) { f.maxScopeLines = 0 },
 		func(f *initFlags) { f.reviewPer = "" },
 	}
 	for i, mut := range mutations {
@@ -664,11 +664,11 @@ func TestInitFlags_CompleteCoverage(t *testing.T) {
 // case per validated field keeps the failure messages legible.
 func TestInitFlags_ToConfig_InvalidValues(t *testing.T) {
 	base := initFlags{
-		agents:       []string{"claude"},
-		scope:        "project",
-		prefixWidth:  4,
-		maxPlanLines: 30,
-		reviewPer:    reviewPerTask,
+		agents:        []string{"claude"},
+		scope:         "project",
+		prefixWidth:   4,
+		maxScopeLines: 30,
+		reviewPer:     reviewPerTask,
 	}
 	cases := []struct {
 		name string
@@ -679,7 +679,7 @@ func TestInitFlags_ToConfig_InvalidValues(t *testing.T) {
 		{"bad review", func(f *initFlags) { f.reviewPer = "commit" }},
 		{"zero prefix", func(f *initFlags) { f.prefixWidth = 0 }},
 		{"neg prefix", func(f *initFlags) { f.prefixWidth = -1 }},
-		{"zero lines", func(f *initFlags) { f.maxPlanLines = 0 }},
+		{"zero lines", func(f *initFlags) { f.maxScopeLines = 0 }},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -771,7 +771,7 @@ func TestListSkills_EmptyDir(t *testing.T) {
 }
 
 // TestWriteIfAbsent is the "create exactly once" primitive: second call
-// MUST NOT clobber. This is what makes the plan scaffold's
+// MUST NOT clobber. This is what makes the scope scaffold's
 // `_data_systems.yaml` and `_config.lock` honor user edits across
 // re-runs of `stax init`.
 func TestWriteIfAbsent(t *testing.T) {
@@ -791,7 +791,7 @@ func TestWriteIfAbsent(t *testing.T) {
 }
 
 // TestWriteIfAbsent_NilContent confirms nil-body produces a zero-byte
-// file (not a broken write) — needed because writePlansScaffold seeds
+// file (not a broken write) — needed because writeScopesScaffold seeds
 // `_data_systems.yaml` with no content as an empty placeholder.
 func TestWriteIfAbsent_NilContent(t *testing.T) {
 	dir := t.TempDir()
@@ -814,20 +814,20 @@ func TestWriteIfAbsent_NilContent(t *testing.T) {
 // if the constants ever move).
 func defaultInitConfig() initConfig {
 	return initConfig{
-		prefixWidth:  defaultPrefixWidth,
-		maxPlanLines: defaultMaxPlanLines,
-		reviewPer:    defaultReviewPer,
+		prefixWidth:   defaultPrefixWidth,
+		maxScopeLines: defaultMaxScopeLines,
+		reviewPer:     defaultReviewPer,
 	}
 }
 
-// TestWritePlansScaffold pins the on-disk protocol format of `_config.lock`:
-// trailing newline, JSON with the three configured fields. Plan tooling
+// TestWriteScopesScaffold pins the on-disk protocol format of `_config.lock`:
+// trailing newline, JSON with the three configured fields. Scope tooling
 // (next-prefix, lint) reads these values, so a layout change here would
 // silently miscalibrate every downstream command.
-func TestWritePlansScaffold(t *testing.T) {
+func TestWriteScopesScaffold(t *testing.T) {
 	dir := t.TempDir()
-	if err := writePlansScaffold(dir, defaultInitConfig()); err != nil {
-		t.Fatalf("writePlansScaffold: %v", err)
+	if err := writeScopesScaffold(dir, defaultInitConfig()); err != nil {
+		t.Fatalf("writeScopesScaffold: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, staxDir, staxSystemsFile)); err != nil {
 		t.Fatalf("missing systems file: %v", err)
@@ -841,53 +841,53 @@ func TestWritePlansScaffold(t *testing.T) {
 		t.Fatalf("expected trailing newline in lock file")
 	}
 	var got struct {
-		PrefixWidth  int    `json:"prefix_width"`
-		MaxPlanLines int    `json:"max_plan_lines"`
-		ReviewPer    string `json:"review_per"`
+		PrefixWidth   int    `json:"prefix_width"`
+		MaxScopeLines int    `json:"max_scope_lines"`
+		ReviewPer     string `json:"review_per"`
 	}
 	if err := json.Unmarshal(body, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	if got.PrefixWidth != defaultPrefixWidth ||
-		got.MaxPlanLines != defaultMaxPlanLines ||
+		got.MaxScopeLines != defaultMaxScopeLines ||
 		got.ReviewPer != defaultReviewPer {
 		t.Fatalf("lock defaults wrong: %+v", got)
 	}
 }
 
-// TestWritePlansScaffold_HonorsConfig is the inverse of the defaults case:
+// TestWriteScopesScaffold_HonorsConfig is the inverse of the defaults case:
 // custom user values from the wizard / flags MUST land in the lock file
 // verbatim rather than getting clobbered by the constants.
-func TestWritePlansScaffold_HonorsConfig(t *testing.T) {
+func TestWriteScopesScaffold_HonorsConfig(t *testing.T) {
 	dir := t.TempDir()
-	cfg := initConfig{prefixWidth: 7, maxPlanLines: 120, reviewPer: reviewPerPlan}
-	if err := writePlansScaffold(dir, cfg); err != nil {
-		t.Fatalf("writePlansScaffold: %v", err)
+	cfg := initConfig{prefixWidth: 7, maxScopeLines: 120, reviewPer: reviewPerScope}
+	if err := writeScopesScaffold(dir, cfg); err != nil {
+		t.Fatalf("writeScopesScaffold: %v", err)
 	}
 	body, err := os.ReadFile(filepath.Join(dir, staxDir, staxLockFile))
 	if err != nil {
 		t.Fatalf("read lock: %v", err)
 	}
 	var got struct {
-		PrefixWidth  int    `json:"prefix_width"`
-		MaxPlanLines int    `json:"max_plan_lines"`
-		ReviewPer    string `json:"review_per"`
+		PrefixWidth   int    `json:"prefix_width"`
+		MaxScopeLines int    `json:"max_scope_lines"`
+		ReviewPer     string `json:"review_per"`
 	}
 	if err := json.Unmarshal(body, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if got.PrefixWidth != 7 || got.MaxPlanLines != 120 || got.ReviewPer != reviewPerPlan {
+	if got.PrefixWidth != 7 || got.MaxScopeLines != 120 || got.ReviewPer != reviewPerScope {
 		t.Fatalf("lock didn't honor cfg: %+v", got)
 	}
 }
 
-// TestWritePlansScaffold_Idempotent is the lock-file semantics check:
+// TestWriteScopesScaffold_Idempotent is the lock-file semantics check:
 // once a user has pinned values (Cargo.lock / package-lock.json
 // analog), a subsequent `stax init` must NOT refresh them. This is what
 // keeps long-lived projects on their original prefix width / line caps.
-func TestWritePlansScaffold_Idempotent(t *testing.T) {
+func TestWriteScopesScaffold_Idempotent(t *testing.T) {
 	dir := t.TempDir()
-	if err := writePlansScaffold(dir, defaultInitConfig()); err != nil {
+	if err := writeScopesScaffold(dir, defaultInitConfig()); err != nil {
 		t.Fatalf("first: %v", err)
 	}
 	// Mutate the lock so we can verify re-run does not overwrite it.
@@ -895,7 +895,7 @@ func TestWritePlansScaffold_Idempotent(t *testing.T) {
 	if err := os.WriteFile(lockPath, []byte("USER\n"), 0o600); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	if err := writePlansScaffold(dir, defaultInitConfig()); err != nil {
+	if err := writeScopesScaffold(dir, defaultInitConfig()); err != nil {
 		t.Fatalf("second: %v", err)
 	}
 	body, _ := os.ReadFile(lockPath)
@@ -1282,10 +1282,10 @@ func TestMergeJSONFile_RealBundle_AdditiveAndIdempotent(t *testing.T) {
   "fastMode": true,
   "hooks": {
     "PostToolUse": [
-      {"matcher": "Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": "stax plans lint"}]}
+      {"matcher": "Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": "stax scopes lint"}]}
     ],
     "Stop": [
-      {"matcher": "", "hooks": [{"type": "command", "command": "stax plans lint"}]}
+      {"matcher": "", "hooks": [{"type": "command", "command": "stax scopes lint"}]}
     ]
   }
 }`)
@@ -1406,7 +1406,7 @@ func TestRunInit_ProjectScope_EndToEnd(t *testing.T) {
 			}
 		}
 	}
-	// Plan scaffold seeded.
+	// Scope scaffold seeded.
 	if _, err := os.Stat(filepath.Join(projectDir, staxDir, staxLockFile)); err != nil {
 		t.Fatalf("missing lock: %v", err)
 	}
@@ -1482,9 +1482,9 @@ func TestRunInit_UserScope_EndToEnd(t *testing.T) {
 	// User-scope MUST also drop the .stax/ scaffold into cwd. Scope
 	// only decides where SKILLS land (project tree vs $HOME); the project
 	// check keyed on `<cwd>/.stax/_config.lock` is what makes cwd usable
-	// with `/scope`, `/ship`, and the `stax plans *` CLI subcommands. A
+	// with `/scope`, `/ship`, and the `stax scopes *` CLI subcommands. A
 	// user-scope install that left cwd un-scaffolded produced skills with
-	// nowhere to anchor plans — every subsequent command tripped the
+	// nowhere to anchor scopes — every subsequent command tripped the
 	// `not a stax project` check.
 	lockPath := filepath.Join(cwd, staxDir, staxLockFile)
 	if _, err := os.Stat(lockPath); err != nil {
@@ -1499,7 +1499,7 @@ func TestRunInit_UserScope_EndToEnd(t *testing.T) {
 // TestRunInit_InteractivePrompt drives the real stdin path: substitutes
 // os.Stdin with a pipe carrying the five line-prompt answers (default
 // agents, project scope, then default acceptances for prefix-width /
-// max-plan-lines / review-per). Five reads must succeed off the
+// max-scope-lines / review-per). Five reads must succeed off the
 // same buffered reader — proves the shared-bufio.Reader fix from the
 // multi-prompt refactor is intact across the expanded sequence.
 func TestRunInit_InteractivePrompt(t *testing.T) {
@@ -1528,14 +1528,14 @@ func TestRunInit_InteractivePrompt(t *testing.T) {
 
 	runInit(nil)
 	if _, err := os.Stat(filepath.Join(projectDir, staxDir, staxLockFile)); err != nil {
-		t.Fatalf("interactive init didn't seed plan scaffold: %v", err)
+		t.Fatalf("interactive init didn't seed scope scaffold: %v", err)
 	}
 }
 
 // TestRunInit_AllFlags drives the fully non-interactive branch of
 // resolveInitConfig: every prompt has a flag twin, and when they are
 // all set runInit never reads stdin (we install a panicReader as
-// os.Stdin to prove it). Asserts that the chosen plan-tooling values
+// os.Stdin to prove it). Asserts that the chosen scope-tooling values
 // end up in `_config.lock` byte-for-byte.
 func TestRunInit_AllFlags(t *testing.T) {
 	pinHome(t)
@@ -1555,8 +1555,8 @@ func TestRunInit_AllFlags(t *testing.T) {
 		"--scope", "project",
 		"--agents", "claude,codex",
 		"--prefix-width", "6",
-		"--max-plan-lines", "42",
-		"--review-per", reviewPerPlan,
+		"--max-scope-lines", "42",
+		"--review-per", reviewPerScope,
 	})
 
 	body, err := os.ReadFile(filepath.Join(projectDir, staxDir, staxLockFile))
@@ -1564,14 +1564,14 @@ func TestRunInit_AllFlags(t *testing.T) {
 		t.Fatalf("read lock: %v", err)
 	}
 	var got struct {
-		PrefixWidth  int    `json:"prefix_width"`
-		MaxPlanLines int    `json:"max_plan_lines"`
-		ReviewPer    string `json:"review_per"`
+		PrefixWidth   int    `json:"prefix_width"`
+		MaxScopeLines int    `json:"max_scope_lines"`
+		ReviewPer     string `json:"review_per"`
 	}
 	if err := json.Unmarshal(body, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if got.PrefixWidth != 6 || got.MaxPlanLines != 42 || got.ReviewPer != reviewPerPlan {
+	if got.PrefixWidth != 6 || got.MaxScopeLines != 42 || got.ReviewPer != reviewPerScope {
 		t.Fatalf("lock didn't honor flags: %+v", got)
 	}
 }
@@ -1579,7 +1579,7 @@ func TestRunInit_AllFlags(t *testing.T) {
 // parseInitFlagsForTest re-creates the FlagSet runInit builds so the
 // validation pass can be exercised without going through os.Exit. Mirrors
 // the flag.NewFlagSet block in runInit exactly — keep them in sync.
-func parseInitFlagsForTest(t *testing.T, args []string) (fs *flag.FlagSet, prefixWidth, maxPlanLines *int, agents *stringSliceFlag, reviewPer *string) {
+func parseInitFlagsForTest(t *testing.T, args []string) (fs *flag.FlagSet, prefixWidth, maxScopeLines *int, agents *stringSliceFlag, reviewPer *string) {
 	t.Helper()
 	fs = flag.NewFlagSet("init", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
@@ -1587,12 +1587,12 @@ func parseInitFlagsForTest(t *testing.T, args []string) (fs *flag.FlagSet, prefi
 	fs.Var(&ag, "agents", "")
 	_ = fs.String("scope", "", "")
 	prefixWidth = fs.Int("prefix-width", 0, "")
-	maxPlanLines = fs.Int("max-plan-lines", 0, "")
+	maxScopeLines = fs.Int("max-scope-lines", 0, "")
 	reviewPer = fs.String("review-per", "", "")
 	if err := fs.Parse(args); err != nil {
 		t.Fatalf("parse %v: %v", args, err)
 	}
-	return fs, prefixWidth, maxPlanLines, &ag, reviewPer
+	return fs, prefixWidth, maxScopeLines, &ag, reviewPer
 }
 
 // TestValidateInitFlags_PassesOnUnsetFlags pins the flag.Visit semantics:
@@ -1613,7 +1613,7 @@ func TestValidateInitFlags_PassesOnValidValues(t *testing.T) {
 	fs, pw, ml, ag, rp := parseInitFlagsForTest(t, []string{
 		"--agents", "claude",
 		"--prefix-width", "4",
-		"--max-plan-lines", "30",
+		"--max-scope-lines", "30",
 		"--review-per", reviewPerTask,
 	})
 	if err := validateInitFlags(fs, pw, ml, ag, rp); err != nil {
@@ -1664,8 +1664,8 @@ func TestValidateInitFlags_RejectsNonPositiveInts(t *testing.T) {
 	}{
 		{"prefix-width=-1", []string{"--prefix-width", "-1"}, "--prefix-width must be positive"},
 		{"prefix-width=0", []string{"--prefix-width", "0"}, "--prefix-width must be positive"},
-		{"max-plan-lines=0", []string{"--max-plan-lines", "0"}, "--max-plan-lines must be positive"},
-		{"max-plan-lines=-5", []string{"--max-plan-lines", "-5"}, "--max-plan-lines must be positive"},
+		{"max-scope-lines=0", []string{"--max-scope-lines", "0"}, "--max-scope-lines must be positive"},
+		{"max-scope-lines=-5", []string{"--max-scope-lines", "-5"}, "--max-scope-lines must be positive"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -1776,7 +1776,7 @@ func TestRunInit_CwdFlag_SeedsRequestedDirectory(t *testing.T) {
 		"--scope", "project",
 		"--agents", "claude",
 		"--prefix-width", "4",
-		"--max-plan-lines", "30",
+		"--max-scope-lines", "30",
 		"--review-per", reviewPerTask,
 	})
 	// Scaffold MUST be under --cwd target, not the outer cwd we started in.

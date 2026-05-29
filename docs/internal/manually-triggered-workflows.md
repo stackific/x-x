@@ -4,7 +4,7 @@ This repo carries a small fleet of GitHub Actions workflows under
 `.github/workflows/exp-*.yml` that exist to vet specific scenarios — a single
 platform, a single agent backend, a single eval scenario — without bolting
 onto `push` / `pull_request` triggers. Each one is launched by hand from the
-Actions tab. Once a workflow's signal is stable, the plan is to fold it into
+Actions tab. Once a workflow's signal is stable, the intent is to fold it into
 a unified workflow with a `mode:` input (see "Merge policy" below).
 
 This doc covers:

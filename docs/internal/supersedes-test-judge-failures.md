@@ -13,8 +13,8 @@ causes per agent harness.
 
 Per `stax.jsonl`, `/ship` performed the supersedes status flip — three
 `Edit` calls against `0001-…md` and `0002-…md` — and spawned four
-subagents. It issued no `Write` for the successor plan's `index.html`.
-Plan-mechanics assertions (`status: superseded`, `superseded_by`,
+subagents. It issued no `Write` for the successor scope's `index.html`.
+Scope-mechanics assertions (`status: superseded`, `superseded_by`,
 `supersedes`) all passed; the workspace contained only `.stax/*`
 when the judge ran. `actions/upload-artifact@v5` strips dotfiles by
 default, so the uploaded `eval-workspace/` is empty.
@@ -41,7 +41,7 @@ The contract: `agents/skills/ship/SKILL.md:62` reserves checkbox flips
 for `/ship`; `:64` reserves the predecessor `status: valid →
 superseded` flip and the `superseded_by` back-link for `/ship`;
 `agents/skills/scope/SKILL.md:45` constrains the planner to writing
-the new plan with `status: valid` and an optional `supersedes:` entry.
+the new scope with `status: valid` and an optional `supersedes:` entry.
 The copilot harness violates all three during `/scope`.
 
 Failure mode: planner over-reach. `/scope` performs executor actions
@@ -50,13 +50,13 @@ lands.
 
 ## Detection gap
 
-Plan-mechanics assertions (`status == "superseded"`, etc.) check the
+Scope-mechanics assertions (`status == "superseded"`, etc.) check the
 post-state, not the caller. They pass identically whether `/scope` or
 `/ship` does the flip. `ArtifactJudge` is the only existing check that
 catches the over-reach — and only because the planner happens to leave
 the wrong artifact.
 
-A direct assertion that every task checkbox in the successor plan
+A direct assertion that every task checkbox in the successor scope
 flipped to `[x]` after `/ship` ran would catch both failure modes
 mechanically, without depending on the LLM judge. Same for an
 assertion that the predecessor's `status` was still `valid` at the

@@ -1,31 +1,31 @@
 ---
 # SPDX-License-Identifier: Apache-2.0
 name: scope
-description: Plan-first workflow for `<cwd>`. Loads the shared planning context, then writes a tightly-scoped plan following EARS-format tasks. Invoke at the start of any planning or design task.
+description: Scope-first workflow for `<cwd>`. Loads the shared planning context, then writes a tightly-scoped scope following EARS-format tasks. Invoke at the start of any planning or design task.
 ---
 
 # scope
 
 ## Identity and absolute rules — read first, obey unconditionally
 
-`/scope` is the **planner**. The only reason to be in this skill is to write a plan file (and, when Step 2a / Step 3 requires it, the predecessor-frontmatter edits or systems-registry edits that make the new plan resolvable). Execution of the plan's `## Tasks` is a separate skill — `/ship` — invoked by the user as a separate command. Every rule below is mandatory.
+`/scope` is the **planner**. The only reason to be in this skill is to write a scope file (and, when Step 2a / Step 3 requires it, the predecessor-frontmatter edits or systems-registry edits that make the new scope resolvable). Execution of the scope's `## Tasks` is a separate skill — `/ship` — invoked by the user as a separate command. Every rule below is mandatory.
 
 **You MUST:**
 
 1. Run every step in this file in the order written (Step 1 → Step 2 if needed → Step 2a if applicable → Step 2b if applicable → Step 3). Stop after Step 3.
-2. After Step 3 writes the new plan file (and any predecessor edits Step 3 requires), report what landed on disk in one to three lines and STOP. Hand control back to the user with a brief tip that `/ship` is the next command if they want to execute.
-3. Keep every edit limited to: (a) the new plan file at `<cwd>/.stax/<prefix>-<slug>.md`; (b) predecessor plan files' frontmatter for `extended_by:` (Step 3) or `supersedes:` declaration (the new plan only — the predecessor's `superseded_by:` flip and `status: valid → superseded` are `/ship`'s job, NOT yours); (c) `<cwd>/.stax/_data_systems.yaml` when Appendix C step 4 approves a new system entry.
+2. After Step 3 writes the new scope file (and any predecessor edits Step 3 requires), report what landed on disk in one to three lines and STOP. Hand control back to the user with a brief tip that `/ship` is the next command if they want to execute.
+3. Keep every edit limited to: (a) the new scope file at `<cwd>/.stax/<prefix>-<slug>.md`; (b) predecessor scope files' frontmatter for `extended_by:` (Step 3) or `supersedes:` declaration (the new scope only — the predecessor's `superseded_by:` flip and `status: valid → superseded` are `/ship`'s job, NOT yours); (c) `<cwd>/.stax/_data_systems.yaml` when Appendix C step 4 approves a new system entry.
 
 **You MUST NOT:**
 
-1. Implement any of the plan's `## Tasks` criteria from within `/scope`. Writing production code, creating non-plan files, installing dependencies, running build/test/lint targets, calling deploy scripts — all forbidden. None of those satisfy "write a plan file." If your sub-plan's "Commands to run" contains anything beyond plan-file writes and the frontmatter/registry edits enumerated above, you have drifted out of `/scope` — revise the sub-plan and stop.
+1. Implement any of the scope's `## Tasks` criteria from within `/scope`. Writing production code, creating non-scope files, installing dependencies, running build/test/lint targets, calling deploy scripts — all forbidden. None of those satisfy "write a scope file." If your sub-scope's "Commands to run" contains anything beyond scope-file writes and the frontmatter/registry edits enumerated above, you have drifted out of `/scope` — revise the sub-scope and stop.
 2. Flip any `## Tasks` checkbox to `[x]`. Checkboxes are flipped exclusively by `/ship` during execution.
-3. Edit a predecessor's `status:` from `valid` to `superseded` or write `superseded_by:` on a predecessor. Those edits land later, when `/ship` finishes executing the successor plan (Step 3.4.1 of `ship`). `/scope`'s only supersede-related write is the `supersedes: [<predecessor-slug>, ...]` field on the **new** plan.
-4. Invoke `/ship` (or any execution skill) from within `/scope`, even via a sub-plan, even when the plan "seems trivial," even when the user says "and execute it." If the user wants execution, they will invoke `/ship` themselves. If they explicitly asked you to both plan and execute in the same turn, the correct response is to write the plan file, report it, and then tell them to invoke `/ship` — do not chain into the executor yourself.
-5. Treat the "Execute" wording in Appendix A step 5 as a license to implement EARS tasks. In `/scope`'s context, "Execute" means "perform the plan-file write you just got approval for" — typically `Write` / `Edit` calls against `<cwd>/.stax/...` and the registry. Nothing else.
+3. Edit a predecessor's `status:` from `valid` to `superseded` or write `superseded_by:` on a predecessor. Those edits land later, when `/ship` finishes executing the successor scope (Step 3.4.1 of `ship`). `/scope`'s only supersede-related write is the `supersedes: [<predecessor-slug>, ...]` field on the **new** scope.
+4. Invoke `/ship` (or any execution skill) from within `/scope`, even via a sub-scope, even when the scope "seems trivial," even when the user says "and execute it." If the user wants execution, they will invoke `/ship` themselves. If they explicitly asked you to both scope and execute in the same turn, the correct response is to write the scope file, report it, and then tell them to invoke `/ship` — do not chain into the executor yourself.
+5. Treat the "Execute" wording in Appendix A step 5 as a license to implement EARS tasks. In `/scope`'s context, "Execute" means "perform the scope-file write you just got approval for" — typically `Write` / `Edit` calls against `<cwd>/.stax/...` and the registry. Nothing else.
 
 The skill is over **only** when one of these is true:
-- (a) Step 3 completed: the new plan file exists at the correct path, any required predecessor frontmatter edits landed, the systems registry edit (if any) landed, `stax plans lint` exits 0, and you reported the result; or
+- (a) Step 3 completed: the new scope file exists at the correct path, any required predecessor frontmatter edits landed, the systems registry edit (if any) landed, `stax scopes lint` exits 0, and you reported the result; or
 - (b) you halted earlier per a Step-1/2a/2b check (missing config lock, structurally underspecified request, unresolved research conflict) and reported the blocker.
 
 ## 1. Load context
@@ -33,82 +33,82 @@ The skill is over **only** when one of these is true:
 Required reads before doing anything else:
 
 - `<cwd>/.stax/_data_systems.yaml` — registry of named systems (id, name, brief). Consultation and propose-new-system rules are in Appendix C.
-- `<cwd>/.stax/_config.lock` — extract `max_plan_lines` (integer). If the lock file is missing, STOP and tell the user this directory isn't set up for stax yet — they need to run `stax init`. If the file exists but the key is absent or non-positive, fall back to `30` (matches `stax plans lint`). Remember the resolved value as the plan line cap for the rest of this turn.
+- `<cwd>/.stax/_config.lock` — extract `max_scope_lines` (integer). If the lock file is missing, STOP and tell the user this directory isn't set up for stax yet — they need to run `stax init`. If the file exists but the key is absent or non-positive, fall back to `30` (matches `stax scopes lint`). Remember the resolved value as the scope line cap for the rest of this turn.
 - The project constitution: any of `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`, or `.clinerules` at <cwd>. Read whichever is present and take it as the override on all defaults in this skill. `AGENTS.md` is the de-facto cross-agent convention (Kilocode, OpenCode, Codex, Cursor, Antigravity, pi, omp); the others are each agent's bespoke filename (`CLAUDE.md` for Claude Code, `GEMINI.md` for Gemini CLI, `.github/copilot-instructions.md` for GitHub Copilot, `.clinerules` for Cline). If none exist, suggest the user create one as a helpful tip and proceed.
 
-The plan-first protocol (full approval loop + sub-plan template) is defined in Appendix A. The EARS criteria rules referenced from Step 3's `## Tasks` are in Appendix B. The named-systems registry rules referenced from Steps 2a / 3 are in Appendix C. All three appendices are part of this SKILL.md and are already in your context — refer back to them when each step calls for them.
+The scope-first protocol (full approval loop + sub-scope template) is defined in Appendix A. The EARS criteria rules referenced from Step 3's `## Tasks` are in Appendix B. The named-systems registry rules referenced from Steps 2a / 3 are in Appendix C. All three appendices are part of this SKILL.md and are already in your context — refer back to them when each step calls for them.
 
 ## 2. Clarify only when structurally underspecified (skip by default)
 
-Skip this step by default. Trigger it only when the request is genuinely underspecified — ambiguous scope, a system that would need to be proposed to the registry, or a real technology choice with no obvious default. Routine plans don't need clarification.
+Skip this step by default. Trigger it only when the request is genuinely underspecified — ambiguous scope, a system that would need to be proposed to the registry, or a real technology choice with no obvious default. Routine scopes don't need clarification.
 
-When clarification IS needed, ask the user all questions in a single use of your harness's structured-question capability — a multi-choice question tool that returns all answers in one round-trip (most modern coding agents expose one). Where your harness has no such tool, fall back to one numbered list of plain questions in a single message and stop. Never bury questions in prose. Do not write the plan in the same turn as the questions.
+When clarification IS needed, ask the user all questions in a single use of your harness's structured-question capability — a multi-choice question tool that returns all answers in one round-trip (most modern coding agents expose one). Where your harness has no such tool, fall back to one numbered list of plain questions in a single message and stop. Never bury questions in prose. Do not write the scope in the same turn as the questions.
 
-## 2a. Check for overlap with valid plans
+## 2a. Check for overlap with valid scopes
 
-Resolve the kebab `id:` of every system the new plan will touch via `<cwd>/.stax/_data_systems.yaml`. Run `stax plans list --status valid --system <id1>,<id2>,... --overflow-keywords <terms>` where `<terms>` is a short comma-separated list of case-insensitive literal substrings chosen to discriminate *this* plan from siblings in the same systems (e.g. `webhook,retry` when several payment-system plans already exist — pick terms that further narrow the system-filtered list, not terms already implied by the systems themselves). `--system` filters server-side, so every emitted row already intersects the new plan's systems — no third-column comparison needed. `--overflow-keywords` is a no-op when the post-`--system` row count is ≤20; above that it narrows further by body substring (falling back to the latest 20 if no term matches). Pass both flags every time.
+Resolve the kebab `id:` of every system the new scope will touch via `<cwd>/.stax/_data_systems.yaml`. Run `stax scopes list --status valid --system <id1>,<id2>,... --overflow-keywords <terms>` where `<terms>` is a short comma-separated list of case-insensitive literal substrings chosen to discriminate *this* scope from siblings in the same systems (e.g. `webhook,retry` when several payment-system scopes already exist — pick terms that further narrow the system-filtered list, not terms already implied by the systems themselves). `--system` filters server-side, so every emitted row already intersects the new scope's systems — no third-column comparison needed. `--overflow-keywords` is a no-op when the post-`--system` row count is ≤20; above that it narrows further by body substring (falling back to the latest 20 if no term matches). Pass both flags every time.
 
-For each emitted row, ask the user — in the same single-turn questions batch from step 2 — whether the new plan **extends** or **supersedes** that plan, referenced by full slug (e.g. `00003-checkout-retry`). Find potential discrepancies between the user's ask vs. existing plans. For more accuracy, you may dig deeper by reading the overlapping plan via `<cwd>/.stax/<overlapping-plan-slug>.md`. Remember the answer per predecessor: a **supersedes** answer becomes a `supersedes:` entry on the new plan; an **extends** answer becomes a back-reference on the predecessor (see step 3 — you will edit the predecessor's frontmatter to append the new plan's slug to its `extended_by` array).
+For each emitted row, ask the user — in the same single-turn questions batch from step 2 — whether the new scope **extends** or **supersedes** that scope, referenced by full slug (e.g. `00003-checkout-retry`). Find potential discrepancies between the user's ask vs. existing scopes. For more accuracy, you may dig deeper by reading the overlapping scope via `<cwd>/.stax/<overlapping-scope-slug>.md`. Remember the answer per predecessor: a **supersedes** answer becomes a `supersedes:` entry on the new scope; an **extends** answer becomes a back-reference on the predecessor (see step 3 — you will edit the predecessor's frontmatter to append the new scope's slug to its `extended_by` array).
 
 ## 2b. Research dependencies and external APIs
 
 Before drafting tasks that reference a specific library, a third-party API, an authentication mechanism, or any external service contract, use your harness's web-search capability (and, where the search points at upstream docs, its URL-fetch capability) to confirm current details. Do NOT trust training-data versions or API forms — both drift.
 
-Mandatory when the plan touches:
+Mandatory when the scope touches:
 - A new package or dependency — web-search the latest stable release before pinning (AGENTS.md hard rule).
 - An external service API (proxy providers, search engines, browser-automation libraries, observability backends, CDN/CI platforms, etc.).
 - An authentication format (proxy URL syntax, OAuth flows, HMAC payload layouts, header conventions).
 - A platform CLI (`gh`, `docker compose`, `uv`, etc.) where flags or output format change between versions.
 
-Cite the upstream URLs in the plan's Approach section as parenthetical `(docs: <url>)` notes so the user can audit. If research surfaces a design conflict with the user's stated intent, do not write the plan in the same turn — loop back to step 2 and clarify via your harness's structured-question capability.
+Cite the upstream URLs in the scope's Approach section as parenthetical `(docs: <url>)` notes so the user can audit. If research surfaces a design conflict with the user's stated intent, do not write the scope in the same turn — loop back to step 2 and clarify via your harness's structured-question capability.
 
-## 3. Write the plan(s)
+## 3. Write the scope(s)
 
-Run `stax plans next-prefix` to obtain `<prefix>`. Pick a one-line `<title>` for the plan, then run `stax plans slugify "<title>"` to obtain `<slug>` (do not slugify by eye — the linter compares the filename against this exact command's output). Write the plan per the **Plan file contract** in Appendix A: path `<cwd>/.stax/<prefix>-<slug>.md`, mandatory frontmatter in this order — `title: <title>` (first), `status: valid`, `systems: [...]`, optional `supersedes` when step 2a determined supersession, `created: <YYYY-MM-DDTHH:MM:SSZ>` (last, **UTC** — use `date -u +%Y-%m-%dT%H:%M:%SZ`).
+Run `stax scopes next-prefix` to obtain `<prefix>`. Pick a one-line `<title>` for the scope, then run `stax scopes slugify "<title>"` to obtain `<slug>` (do not slugify by eye — the linter compares the filename against this exact command's output). Write the scope per the **Scope file contract** in Appendix A: path `<cwd>/.stax/<prefix>-<slug>.md`, mandatory frontmatter in this order — `title: <title>` (first), `status: valid`, `systems: [...]`, optional `supersedes` when step 2a determined supersession, `created: <YYYY-MM-DDTHH:MM:SSZ>` (last, **UTC** — use `date -u +%Y-%m-%dT%H:%M:%SZ`).
 
 For each predecessor the user answered **extends** in step 2a, write the link on **both** sides:
-1. On the new plan, add `extends: [<pred1-slug>, <pred2-slug>, ...]` to the frontmatter (insert it right after any `supersedes:` line, before `created:`).
+1. On the new scope, add `extends: [<pred1-slug>, <pred2-slug>, ...]` to the frontmatter (insert it right after any `supersedes:` line, before `created:`).
 2. On every predecessor, edit its frontmatter to append `<prefix>-<slug>` to its `extended_by:` array (create the array right before `created:` if absent).
 
-The predecessor and the extender both stay `status: valid`. `stax plans lint` enforces bidirectional integrity — a missing back link on either side fails the lint. Treat each predecessor edit as a side effect that goes through the plan-first sub-plan protocol.
+The predecessor and the extender both stay `status: valid`. `stax scopes lint` enforces bidirectional integrity — a missing back link on either side fails the lint. Treat each predecessor edit as a side effect that goes through the scope-first sub-scope protocol.
 
-**Supersedes may require cleanup criteria.** When the new plan has `supersedes:` and the predecessor produced on-disk artifacts that should not survive the supersede, propose EARS criteria in `## Tasks` describing the desired post-successor workspace state — targeting the successor's system, naming the affected paths. Read each predecessor's `[x]` criteria to identify what it produced. Skip if the supersede has no artifact disposition (a pure-refactor supersede where paths are unchanged). The user approves or amends the proposal at the plan-first review.
+**Supersedes may require cleanup criteria.** When the new scope has `supersedes:` and the predecessor produced on-disk artifacts that should not survive the supersede, propose EARS criteria in `## Tasks` describing the desired post-successor workspace state — targeting the successor's system, naming the affected paths. Read each predecessor's `[x]` criteria to identify what it produced. Skip if the supersede has no artifact disposition (a pure-refactor supersede where paths are unchanged). The user approves or amends the proposal at the scope-first review.
 
 **Before drafting the `## Tasks` section, refer to Appendix B (EARS rules).** Every EARS criterion names exactly one system from `<cwd>/.stax/_data_systems.yaml`.
 
-The `systems:` array must list every system named in the plan's EARS tasks, each entry an exact `id:` (kebab key) from `<cwd>/.stax/_data_systems.yaml`. EARS criterion text still uses the corresponding display `name:` — see Appendix C (named-systems registry rules).
+The `systems:` array must list every system named in the scope's EARS tasks, each entry an exact `id:` (kebab key) from `<cwd>/.stax/_data_systems.yaml`. EARS criterion text still uses the corresponding display `name:` — see Appendix C (named-systems registry rules).
 
-If the request covers separable scopes, you may split it into multiple specs — but only when each resulting spec's tasks target a fully disjoint set of systems. If any system would appear in two specs, keep them as one. Run `stax plans next-prefix` once per split spec, in order, so prefixes stay sequential. Do not split for the sake of splitting.
+If the request covers separable scopes, you may split it into multiple specs — but only when each resulting spec's tasks target a fully disjoint set of systems. If any system would appear in two specs, keep them as one. Run `stax scopes next-prefix` once per split spec, in order, so prefixes stay sequential. Do not split for the sake of splitting.
 
 ### Hard rules
 
-- Under `max_plan_lines` total (resolved in Step 1 from `<cwd>/.stax/_config.lock`; default 30). Drafts that exceed the cap will fail `stax plans lint`.
+- Under `max_scope_lines` total (resolved in Step 1 from `<cwd>/.stax/_config.lock`; default 30). Drafts that exceed the cap will fail `stax scopes lint`.
 - Sections only, in this order:
   - `## Goal` — one paragraph.
   - `## Approach` — bullets only, no prose paragraphs.
   - `## Tasks` — EARS format per Appendix B.
-- **Approach is design narrative; Tasks are deliverables.** Approach describes architecture, technology choices, file layout, mirrored references, etc. Tasks are the units `/ship` flips. If Approach names a concrete artifact — a file, endpoint, doc, config row, workflow, dependency add — there MUST be at least one EARS task on the same system that makes the artifact's existence (or behavior) observable. Tasks may exist without a covering Approach bullet (that's fine; not every mechanical criterion needs design narrative). Approach bullets without a covering Task are a planning gap — the bullet's deliverable will not be tracked or written. Exception: project-level meta edits (`AGENTS.md`, `<cwd>/.stax/_data_systems.yaml`, per-agent config files like `.claude/settings.json` / `.codex/hooks.json`, etc.) have no system as their actor and may live in Approach alone — they have no covering Task.
+- **Approach is design narrative; Tasks are deliverables.** Approach describes architecture, technology choices, file layout, mirrored references, etc. Tasks are the units `/ship` flips. If Approach names a concrete artifact — a file, endpoint, doc, config row, workflow, dependency add — there MUST be at least one EARS task on the same system that makes the artifact's existence (or behavior) observable. Tasks may exist without a covering Approach bullet (that's fine; not every mechanical criterion needs design narrative). Approach bullets without a covering Task are a scopening gap — the bullet's deliverable will not be tracked or written. Exception: project-level meta edits (`AGENTS.md`, `<cwd>/.stax/_data_systems.yaml`, per-agent config files like `.claude/settings.json` / `.codex/hooks.json`, etc.) have no system as their actor and may live in Approach alone — they have no covering Task.
 - No "Considerations", "Risks", "Out of Scope", "Future Work", "Background", or preamble.
 - Do not restate the user's request.
 
-## Appendix A: Plan-first protocol
+## Appendix A: Scope-first protocol
 
-Every plan that has side effects — creating, updating, removing, git committing/pushing, modifying a pull request, or deleting specs/tasks/systems — MUST present a plan to the user and obtain explicit approval before calling that tool. This appendix defines the protocol and the plan-file contract.
+Every scope that has side effects — creating, updating, removing, git committing/pushing, modifying a pull request, or deleting specs/tasks/systems — MUST present a scope to the user and obtain explicit approval before calling that tool. This appendix defines the protocol and the scope-file contract.
 
 ### The protocol
 
 0. **Load the context.** Already done in Step 1 — the constitution file and the systems registry are required reads.
 1. **Gather inputs.** Receive inputs from the user, identify the intent, find related content. No state changes yet.
-2. **Build the plan.** Compose the full set of changes you intend to make.
-3. **Present the plan.** Output a clear plan to the user using the template below. End with the literal sentence:
+2. **Build the scope.** Compose the full set of changes you intend to make.
+3. **Present the scope.** Output a clear scope to the user using the template below. End with the literal sentence:
    > Reply `yes` to proceed, or tell me what to change.
 4. **Wait for approval.** Wait until the user replies. Any unambiguous affirmation counts as approval — `yes`, `y`, `yep`, `yeah`, `ok`, `okay`, `sure`, `lgtm`, `sounds good`, `proceed`, `go`, `go ahead`, `do it`, `ship it`, `confirm`, `accept`, `approved`, `affirmative`, `+1`, and similar. Anything ambiguous or that requests a change is a revision — go back to step 2 with the user's feedback.
-5. **Execute.** Run exactly the commands listed in the "Commands to run" section of the sub-plan you just got approval for — nothing else. In `/scope`'s context that means `Write`/`Edit` calls against `<cwd>/.stax/...` and (when Appendix C step 4 fired) `<cwd>/.stax/_data_systems.yaml`, plus the `stax plans lint` validation run. It does NOT mean "implement the EARS criteria the plan describes" — that is `/ship`'s job, invoked by the user later as a separate command. After each command, report what happened in one line.
-6. **Summarize.** When done, give a one-line confirmation per entity created/changed/deleted, then STOP. Do not continue into another planning round, do not chain into `/ship`, do not start implementing the plan's tasks.
+5. **Execute.** Run exactly the commands listed in the "Commands to run" section of the sub-scope you just got approval for — nothing else. In `/scope`'s context that means `Write`/`Edit` calls against `<cwd>/.stax/...` and (when Appendix C step 4 fired) `<cwd>/.stax/_data_systems.yaml`, plus the `stax scopes lint` validation run. It does NOT mean "implement the EARS criteria the scope describes" — that is `/ship`'s job, invoked by the user later as a separate command. After each command, report what happened in one line.
+6. **Summarize.** When done, give a one-line confirmation per entity created/changed/deleted, then STOP. Do not continue into another planning round, do not chain into `/ship`, do not start implementing the scope's tasks.
 
-### Plan template
+### Scope template
 
-The exact structure depends on the skill, but every plan must include:
+The exact structure depends on the skill, but every scope must include:
 
 - **Goal:** one-sentence description of the outcome.
 - **Inputs already gathered:** what the skill found (spec ID, current state, related items).
@@ -117,14 +117,14 @@ The exact structure depends on the skill, but every plan must include:
 - **EARS criteria:** the full text of each acceptance criterion in EARS form, exactly as it will be written (see Appendix B).
 - **Commands to run:** the exact shell commands or tool calls, in order.
 
-### Plan file contract
+### Scope file contract
 
-Every plan lives at `<cwd>/.stax/<prefix>-<slug>.md` where:
+Every scope lives at `<cwd>/.stax/<prefix>-<slug>.md` where:
 
-- `<prefix>` is a zero-padded numeric prefix returned by `stax plans next-prefix`. Width comes from `prefix_width` in `<cwd>/.stax/_config.lock` (seeded by `stax init`; default 4).
-- `<slug>` is a kebab-case summary of the plan's intent, produced by `stax plans slugify "<title>"`.
+- `<prefix>` is a zero-padded numeric prefix returned by `stax scopes next-prefix`. Width comes from `prefix_width` in `<cwd>/.stax/_config.lock` (seeded by `stax init`; default 4).
+- `<slug>` is a kebab-case summary of the scope's intent, produced by `stax scopes slugify "<title>"`.
 
-Every plan starts with YAML frontmatter:
+Every scope starts with YAML frontmatter:
 
 ```yaml
 ---
@@ -143,59 +143,59 @@ created: 2026-05-23T14:30:00Z
 ---
 ```
 
-(All forward/back-link fields shown together for reference only — a real plan typically has at most one such pair.)
+(All forward/back-link fields shown together for reference only — a real scope typically has at most one such pair.)
 
 Frontmatter rules:
 
-- `title` (mandatory, **first** key): one-line human-readable and comprehensive title. The post-prefix portion of the filename MUST equal `stax plans slugify "<title>"`; lint enforces this.
-- `status` (mandatory): one of `valid`, `superseded`, or `deprecated`. New plans always start as `valid`.
-- `systems` (mandatory): inline YAML array listing every system named in the plan's EARS tasks. Each entry must be an exact `id:` (kebab-case key) from `<cwd>/.stax/_data_systems.yaml`. The corresponding display `name:` renders inside EARS criterion text as `the <name>` — see Appendix C.
-- `supersedes` (optional, lives on the **successor**): inline YAML array of full slugs (`<prefix>-<slug>`) that this plan replaces. `/ship` flips each listed predecessor's status to `superseded` and appends this plan's slug to its `superseded_by:` array after this plan finishes.
-- `superseded_by` (optional, lives on the **predecessor**): inline YAML array of full slugs of newer plans that have replaced this one. Maintained by `/ship` at the same time it flips `status: valid → superseded`. Back link to `supersedes:`.
-- `extends` (optional, lives on the **extender**): inline YAML array of full slugs of predecessor plans this one extends. Both predecessor and extender stay `status: valid` — `extends` is a forward pointer, not a state change.
-- `extended_by` (optional, lives on the **predecessor**): inline YAML array of full slugs of newer plans that extend this one. The back link to `extends:`. `scope` maintains both sides whenever the user answers "extends" in step 2a.
-- `created` (mandatory, **last** key): the ISO 8601 **UTC** timestamp when the plan was authored, `YYYY-MM-DDTHH:MM:SSZ`. Filesystem timestamps don't survive git, so this is the only durable creation marker — seconds-resolution UTC keeps plans authored on the same day in deterministic order across contributors in different timezones.
+- `title` (mandatory, **first** key): one-line human-readable and comprehensive title. The post-prefix portion of the filename MUST equal `stax scopes slugify "<title>"`; lint enforces this.
+- `status` (mandatory): one of `valid`, `superseded`, or `deprecated`. New scopes always start as `valid`.
+- `systems` (mandatory): inline YAML array listing every system named in the scope's EARS tasks. Each entry must be an exact `id:` (kebab-case key) from `<cwd>/.stax/_data_systems.yaml`. The corresponding display `name:` renders inside EARS criterion text as `the <name>` — see Appendix C.
+- `supersedes` (optional, lives on the **successor**): inline YAML array of full slugs (`<prefix>-<slug>`) that this scope replaces. `/ship` flips each listed predecessor's status to `superseded` and appends this scope's slug to its `superseded_by:` array after this scope finishes.
+- `superseded_by` (optional, lives on the **predecessor**): inline YAML array of full slugs of newer scopes that have replaced this one. Maintained by `/ship` at the same time it flips `status: valid → superseded`. Back link to `supersedes:`.
+- `extends` (optional, lives on the **extender**): inline YAML array of full slugs of predecessor scopes this one extends. Both predecessor and extender stay `status: valid` — `extends` is a forward pointer, not a state change.
+- `extended_by` (optional, lives on the **predecessor**): inline YAML array of full slugs of newer scopes that extend this one. The back link to `extends:`. `scope` maintains both sides whenever the user answers "extends" in step 2a.
+- `created` (mandatory, **last** key): the ISO 8601 **UTC** timestamp when the scope was authored, `YYYY-MM-DDTHH:MM:SSZ`. Filesystem timestamps don't survive git, so this is the only durable creation marker — seconds-resolution UTC keeps scopes authored on the same day in deterministic order across contributors in different timezones.
 
-`stax plans lint` enforces, for **both** forward/back pairs (`supersedes`↔`superseded_by`, `extends`↔`extended_by`): every slug resolves to a sibling plan; self-references are rejected; every forward link has a matching back link and vice versa.
+`stax scopes lint` enforces, for **both** forward/back pairs (`supersedes`↔`superseded_by`, `extends`↔`extended_by`): every slug resolves to a sibling scope; self-references are rejected; every forward link has a matching back link and vice versa.
 
 Body sections, in this order:
 
 - `## Goal` — one paragraph stating the outcome.
 - `## Approach` — bullets only, no prose paragraphs.
-- `## Tasks` — EARS-format checkbox criteria per Appendix B. `[ ]` is open, `[x]` is done. `/ship` flips checkboxes as it executes; the source of truth for "what is true now" is the union of `[x]` criteria across `status: valid` plans.
+- `## Tasks` — EARS-format checkbox criteria per Appendix B. `[ ]` is open, `[x]` is done. `/ship` flips checkboxes as it executes; the source of truth for "what is true now" is the union of `[x]` criteria across `status: valid` scopes.
 
-### Plan tooling
+### Scope tooling
 
-The `stax plans` subcommands:
+The `stax scopes` subcommands:
 
-- `stax plans next-prefix` — prints the next unused zero-padded prefix from `<cwd>/.stax`. Takes no arguments. Width is read from `<cwd>/.stax/_config.lock` (`prefix_width`) and falls back to `4` when the lock file is missing.
-- `stax plans list [--status NAME[,NAME...]] [--system ID] [--order asc|desc] [--overflow-keywords PATTERN[,PATTERN...]]` — lists plans in `<cwd>/.stax`, one tab-separated row per plan: `<slug>\t<status>\t<id>,<id>,...`.
+- `stax scopes next-prefix` — prints the next unused zero-padded prefix from `<cwd>/.stax`. Takes no arguments. Width is read from `<cwd>/.stax/_config.lock` (`prefix_width`) and falls back to `4` when the lock file is missing.
+- `stax scopes list [--status NAME[,NAME...]] [--system ID] [--order asc|desc] [--overflow-keywords PATTERN[,PATTERN...]]` — lists scopes in `<cwd>/.stax`, one tab-separated row per scope: `<slug>\t<status>\t<id>,<id>,...`.
   - `--status` keeps only matching statuses. Repeatable; comma-separated values OK.
-  - `--system` keeps only plans whose `systems:` array contains the given kebab id (the `id:` key from `_data_systems.yaml`). Repeatable; OR semantics.
+  - `--system` keeps only scopes whose `systems:` array contains the given kebab id (the `id:` key from `_data_systems.yaml`). Repeatable; OR semantics.
   - `--order` sorts by zero-padded prefix; default `desc` (latest first). Pass `--order=asc` when you need oldest-first execution order (e.g. `/ship` work-queue and ground-truth lookup).
-  - `--overflow-keywords` accepts one or more case-insensitive literal substrings and engages only when the post-filter row count exceeds the project's overflow threshold (default 20). Matches against plan **body** only; on overflow with no match, returns the top-threshold rows as a fallback. Always safe to pass — it's a no-op below the threshold.
-- `stax plans lint` — validates every plan file in `<cwd>/.stax` against the contract: filename pattern, line cap (`max_plan_lines`), frontmatter (including `title:` first / `created:` last), status values, registry membership, supersedes resolution, `created:` format, filename-slug ↔ `slugify(title)` equality, required sections, EARS-subject ↔ `systems:` equality. Exit 0 = all pass, exit 1 = at least one failure. Findings go to stdout, one per line, prefixed with the file path; the `<ok>/<failed>` summary goes to stderr.
-- `stax plans slugify "<title>"` — prints the kebab-case slug for the given title. Use it to derive the post-prefix portion of new plan filenames so author and lint agree on the same algorithm.
+  - `--overflow-keywords` accepts one or more case-insensitive literal substrings and engages only when the post-filter row count exceeds the project's overflow threshold (default 20). Matches against scope **body** only; on overflow with no match, returns the top-threshold rows as a fallback. Always safe to pass — it's a no-op below the threshold.
+- `stax scopes lint` — validates every scope file in `<cwd>/.stax` against the contract: filename pattern, line cap (`max_scope_lines`), frontmatter (including `title:` first / `created:` last), status values, registry membership, supersedes resolution, `created:` format, filename-slug ↔ `slugify(title)` equality, required sections, EARS-subject ↔ `systems:` equality. Exit 0 = all pass, exit 1 = at least one failure. Findings go to stdout, one per line, prefixed with the file path; the `<ok>/<failed>` summary goes to stderr.
+- `stax scopes slugify "<title>"` — prints the kebab-case slug for the given title. Use it to derive the post-prefix portion of new scope filenames so author and lint agree on the same algorithm.
 
-All `stax plans` subcommands except `slugify` read width/line-cap from `<cwd>/.stax/_config.lock` (seeded by `stax init`). Files with missing or malformed frontmatter trigger stderr warnings in `stax plans list` and are reported as findings by `stax plans lint`.
+All `stax scopes` subcommands except `slugify` read width/line-cap from `<cwd>/.stax/_config.lock` (seeded by `stax init`). Files with missing or malformed frontmatter trigger stderr warnings in `stax scopes list` and are reported as findings by `stax scopes lint`.
 
 ### Approval discipline
 
-- A single `yes` approves the entire plan as presented. If the user asks for a change ("rename the title", "drop criterion 3"), revise and re-present — the previous approval does not carry forward.
-- Approval covers only the commands listed in the plan. Anything that emerges mid-execution (e.g. a contradiction surfaces and you want to update another spec) requires its own plan and its own approval.
+- A single `yes` approves the entire scope as presented. If the user asks for a change ("rename the title", "drop criterion 3"), revise and re-present — the previous approval does not carry forward.
+- Approval covers only the commands listed in the scope. Anything that emerges mid-execution (e.g. a contradiction surfaces and you want to update another spec) requires its own scope and its own approval.
 - Never bypass this protocol because the change "seems small" or "is just a rename". Side effects are side effects.
 
 ### What the user sees
 
-A plan looks like this when rendered:
+A scope looks like this when rendered:
 
 ```
-## Plan
+## Scope
 
-**Goal:** Add a plan for the new payment retry policy.
+**Goal:** Add a scope for the new payment retry policy.
 
 **Inputs gathered:**
-- 2 existing plans touch payments (.stax/payments-onboard.md, .stax/refund-window.md).
+- 2 existing scopes touch payments (.stax/payments-onboard.md, .stax/refund-window.md).
 - The "Checkout Service" entry in .stax/_data_systems.yaml matches.
 
 **Named systems:** Checkout Service (existing).
@@ -214,7 +214,7 @@ A plan looks like this when rendered:
 Reply `yes` to proceed, or tell me what to change.
 ```
 
-Keep it terse. The user reads the plan, says yes, and the skill runs.
+Keep it terse. The user reads the scope, says yes, and the skill runs.
 
 ## Appendix B: EARS — acceptance criteria language
 
@@ -297,15 +297,15 @@ Read `<cwd>/.stax/_data_systems.yaml` directly and update it as needed.
 For each spec or task you intend to write:
 1. Identify the actor — the specific component, service, or device that performs the response.
 2. Try to match it against an existing entry by name AND `brief`.
-3. If matched: use the existing entry's `name` verbatim in the EARS criterion text (e.g., "the Checkout Service shall …") AND its `id` verbatim in the plan's frontmatter `systems:` array (e.g., `systems: [checkout-service]`). These two are always taken from the same registry entry.
-4. If not matched: STOP. Present the new-system proposal (id + name + one-sentence brief) per the plan-first protocol in Appendix A — `Goal` + `Changes proposed` + `Commands to run` — and end the message with the literal sentence:
+3. If matched: use the existing entry's `name` verbatim in the EARS criterion text (e.g., "the Checkout Service shall …") AND its `id` verbatim in the scope's frontmatter `systems:` array (e.g., `systems: [checkout-service]`). These two are always taken from the same registry entry.
+4. If not matched: STOP. Present the new-system proposal (id + name + one-sentence brief) per the scope-first protocol in Appendix A — `Goal` + `Changes proposed` + `Commands to run` — and end the message with the literal sentence:
    > Reply `yes` to proceed, or tell me what to change.
 
    On approval, add the entry to `<cwd>/.stax/_data_systems.yaml`. Then continue.
 
 ### Source of truth
 
-A system's current contract is the set of `[x]` EARS criteria across plans whose frontmatter is `status: valid` AND whose `systems:` array includes the system's id. Use `stax plans list --status valid --system <id> --order=asc` to enumerate them in chronological order, then read each plan's `## Tasks` for `[x]` criteria naming the system. Plans with `status: superseded` or `status: deprecated` are history and must never be read for current truth.
+A system's current contract is the set of `[x]` EARS criteria across scopes whose frontmatter is `status: valid` AND whose `systems:` array includes the system's id. Use `stax scopes list --status valid --system <id> --order=asc` to enumerate them in chronological order, then read each scope's `## Tasks` for `[x]` criteria naming the system. Scopes with `status: superseded` or `status: deprecated` are history and must never be read for current truth.
 
 ### When the registry is empty
 
@@ -319,7 +319,7 @@ Pick the most specific match. If two entries genuinely apply (e.g. a frontend co
 
 Use natural English. Briefs should answer "what does this system do, and what's its boundary?" in 10–25 words.
 
-Try to be one level more granular when choosing a system name: if you choose the root API project as the system, most of the plans/tasks will be around that. But if you choose a module inside of the API project, you could generate more specific plans/tasks specifically targeted to that module. You can still use the API project, but choose it for more umbrella-level activities (logging, configuration, compliance, etc.).
+Try to be one level more granular when choosing a system name: if you choose the root API project as the system, most of the scopes/tasks will be around that. But if you choose a module inside of the API project, you could generate more specific scopes/tasks specifically targeted to that module. You can still use the API project, but choose it for more umbrella-level activities (logging, configuration, compliance, etc.).
 
 A few do-and-don't examples:
 
@@ -336,19 +336,19 @@ A few do-and-don't examples:
 
 - Never invent a system name on the fly that's not in the registry. Either match an entry or propose one and wait for approval.
 - Never write `the system shall …`, `it shall …`, `the application shall …`, `the service shall …`, `the platform shall …`. Those are banned per EARS.
-- Never write the slug/id into EARS criterion text. EARS uses the display name (`"the Checkout Service shall …"`); the id is for the plan's frontmatter `systems:` array and `--system <id>` lookups only.
+- Never write the slug/id into EARS criterion text. EARS uses the display name (`"the Checkout Service shall …"`); the id is for the scope's frontmatter `systems:` array and `--system <id>` lookups only.
 
 ## Before returning control — verification checklist
 
 Before declaring this `/scope` invocation complete (i.e., before the final summary line that hands control back to the user), verify every one of the following. If any is false, you have violated the skill contract — say which item failed, undo what you did wrong if possible, and stop.
 
-1. A new plan file exists at `<cwd>/.stax/<prefix>-<slug>.md` with frontmatter in the order `title:` → `status:` → `systems:` → (optional `supersedes:` / `extends:`) → `created:`, followed by `## Goal` / `## Approach` / `## Tasks` sections.
-2. `stax plans lint` exits 0 against `<cwd>/.stax/` after your writes.
-3. For every `extends:` entry on the new plan, the named predecessor's frontmatter now has the new plan's slug in its `extended_by:` array (Step 3 mandates the bidirectional link).
-4. For every `supersedes:` entry on the new plan, you did NOT touch the predecessor's `status:` (it stays `valid` until `/ship` flips it later) and you did NOT add `superseded_by:` (also `/ship`'s job).
-5. You did NOT write any non-plan files. Specifically: zero source files, zero test files, zero build/config artifacts, zero shell-script outputs. The only paths under your write footprint this turn are `<cwd>/.stax/<new>.md`, `<cwd>/.stax/<predecessor>.md` (if `extends:`), and `<cwd>/.stax/_data_systems.yaml` (if Appendix C step 4 fired).
-6. You did NOT flip any `## Tasks` checkbox to `[x]`. Every checkbox in the new plan is `[ ]` (unflipped).
-7. You did NOT run any build, test, lint, install, or deploy command. The only commands you ran were `stax plans next-prefix`, `stax plans slugify`, `stax plans list` (Step 2a overlap check), `stax plans lint`, and `date -u +%Y-%m-%dT%H:%M:%SZ`.
-8. You did NOT invoke `/ship` (or any executor skill, or any equivalent agent workflow that runs the plan's tasks). The plan is written; it is now the user's call whether to run `/ship`.
+1. A new scope file exists at `<cwd>/.stax/<prefix>-<slug>.md` with frontmatter in the order `title:` → `status:` → `systems:` → (optional `supersedes:` / `extends:`) → `created:`, followed by `## Goal` / `## Approach` / `## Tasks` sections.
+2. `stax scopes lint` exits 0 against `<cwd>/.stax/` after your writes.
+3. For every `extends:` entry on the new scope, the named predecessor's frontmatter now has the new scope's slug in its `extended_by:` array (Step 3 mandates the bidirectional link).
+4. For every `supersedes:` entry on the new scope, you did NOT touch the predecessor's `status:` (it stays `valid` until `/ship` flips it later) and you did NOT add `superseded_by:` (also `/ship`'s job).
+5. You did NOT write any non-scope files. Specifically: zero source files, zero test files, zero build/config artifacts, zero shell-script outputs. The only paths under your write footprint this turn are `<cwd>/.stax/<new>.md`, `<cwd>/.stax/<predecessor>.md` (if `extends:`), and `<cwd>/.stax/_data_systems.yaml` (if Appendix C step 4 fired).
+6. You did NOT flip any `## Tasks` checkbox to `[x]`. Every checkbox in the new scope is `[ ]` (unflipped).
+7. You did NOT run any build, test, lint, install, or deploy command. The only commands you ran were `stax scopes next-prefix`, `stax scopes slugify`, `stax scopes list` (Step 2a overlap check), `stax scopes lint`, and `date -u +%Y-%m-%dT%H:%M:%SZ`.
+8. You did NOT invoke `/ship` (or any executor skill, or any equivalent agent workflow that runs the scope's tasks). The scope is written; it is now the user's call whether to run `/ship`.
 
-If items 5–8 fail, the failure mode is "drift into the executor's job." That is not a small mistake — it produces wrong artifacts (the supersedes scenario surfaces this: a `/scope` that executed plan-1 inline before plan-2 was even authored leaves the workspace with predecessor artifacts that subsequent plans then don't overwrite). Plan-only is non-negotiable.
+If items 5–8 fail, the failure mode is "drift into the executor's job." That is not a small mistake — it produces wrong artifacts (the supersedes scenario surfaces this: a `/scope` that executed scope-1 inline before scope-2 was even authored leaves the workspace with predecessor artifacts that subsequent scopes then don't overwrite). Scope-only is non-negotiable.

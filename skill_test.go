@@ -180,7 +180,7 @@ func hookFixtureJSON(t *testing.T) (bundle, user string) {
 	bundle = `{
   "hooks": {
     "PostToolUse": [
-      {"matcher": "Write|Edit", "hooks": [{"type": "command", "command": "stax plans lint"}]}
+      {"matcher": "Write|Edit", "hooks": [{"type": "command", "command": "stax scopes lint"}]}
     ]
   }
 }
@@ -189,7 +189,7 @@ func hookFixtureJSON(t *testing.T) (bundle, user string) {
   "fastMode": true,
   "hooks": {
     "PostToolUse": [
-      {"matcher": "Write|Edit", "hooks": [{"type": "command", "command": "stax plans lint"}]},
+      {"matcher": "Write|Edit", "hooks": [{"type": "command", "command": "stax scopes lint"}]},
       {"matcher": "Bash",       "hooks": [{"type": "command", "command": "my-tool"}]}
     ],
     "UserPromptSubmit": [
@@ -243,8 +243,8 @@ func TestSubtractHooks_DropsDeepEqualRecord(t *testing.T) {
 // command string fails deep-equality with the bundle, and must therefore
 // survive the un-merge untouched. The unit of ownership is the leaf record.
 func TestSubtractHooks_PreservesUserTweakedVariant(t *testing.T) {
-	bundle := decodeJSON(t, `{"hooks":{"PostToolUse":[{"matcher":"Write|Edit","hooks":[{"type":"command","command":"stax plans lint"}]}]}}`).(map[string]any)[configHooksKey]
-	user := decodeJSON(t, `{"hooks":{"PostToolUse":[{"matcher":"Write|Edit","hooks":[{"type":"command","command":"stax plans lint --verbose"}]}]}}`).(map[string]any)[configHooksKey]
+	bundle := decodeJSON(t, `{"hooks":{"PostToolUse":[{"matcher":"Write|Edit","hooks":[{"type":"command","command":"stax scopes lint"}]}]}}`).(map[string]any)[configHooksKey]
+	user := decodeJSON(t, `{"hooks":{"PostToolUse":[{"matcher":"Write|Edit","hooks":[{"type":"command","command":"stax scopes lint --verbose"}]}]}}`).(map[string]any)[configHooksKey]
 
 	got, changed := subtractHooks(user, bundle)
 	if changed {
@@ -287,7 +287,7 @@ func TestSubtractHooks_NoOpWhenNotMap(t *testing.T) {
 // driven by the bundled keys (no fabrication of empty arrays in user when
 // it lacks an event key the bundle ships).
 func TestSubtractHooks_BundledEventKeyMissingInUser(t *testing.T) {
-	bundle := decodeJSON(t, `{"hooks":{"Stop":[{"matcher":"","hooks":[{"type":"command","command":"stax plans lint"}]}]}}`).(map[string]any)[configHooksKey]
+	bundle := decodeJSON(t, `{"hooks":{"Stop":[{"matcher":"","hooks":[{"type":"command","command":"stax scopes lint"}]}]}}`).(map[string]any)[configHooksKey]
 	user := decodeJSON(t, `{"hooks":{"PostToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"mine"}]}]}}`).(map[string]any)[configHooksKey]
 
 	got, changed := subtractHooks(user, bundle)

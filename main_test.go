@@ -87,9 +87,9 @@ func TestPrintAbout_IncludesUsage(t *testing.T) {
 		"stax init",
 		"stax skills remove --user",
 		"stax skills remove --project",
-		"stax plans next-prefix",
-		"stax plans list",
-		"stax plans lint",
+		"stax scopes next-prefix",
+		"stax scopes list",
+		"stax scopes lint",
 		"stax --version",
 		// The shared --cwd flag is advertised in a single footer block
 		// (one line, not per-subcommand) so the catalog stays scannable.

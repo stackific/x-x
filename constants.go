@@ -38,8 +38,8 @@ const (
 	//   - User scope: $HOME/<staxDir>/ holds the materialized embed
 	//     (<staxDir>/agentsEmbedRoot/) and the update-check config
 	//     (<staxDir>/staxConfigFile).
-	//   - Project scope: <cwd>/<staxDir>/ holds the plan-tooling scaffold
-	//     (staxLockFile, staxSystemsFile, *.md plan files).
+	//   - Project scope: <cwd>/<staxDir>/ holds the scope-tooling scaffold
+	//     (staxLockFile, staxSystemsFile, *.md scope file).
 	// The two scopes share the directory NAME but never the content — the
 	// user-scope tree is binary-owned, the project-scope tree is user-owned.
 	staxDir = ".stax"
@@ -56,7 +56,7 @@ const (
 	// directive in agents.go.
 	agentsEmbedRoot = "agents"
 
-	// staxLockFile pins the plan-tooling defaults inside the project-scope
+	// staxLockFile pins the scope-tooling defaults inside the project-scope
 	// staxDir. Treated as a lock file (Cargo.lock, package-lock.json
 	// semantics): init writes it once and never refreshes it on
 	// subsequent runs.
@@ -67,11 +67,11 @@ const (
 	// it as a zero-byte placeholder if absent.
 	staxSystemsFile = "_data_systems.yaml"
 
-	// planFileExt is the on-disk extension every plan file carries. Pulled
-	// out as a constant so plan.go's filename-format regexes, glob, and
+	// scopeFileExt is the on-disk extension every scope file carries. Pulled
+	// out as a constant so scope.go's filename-format regexes, glob, and
 	// suffix-trimming all reference the same value — adding a future
-	// alternative extension (e.g. ".plan.md") is then a one-line change.
-	planFileExt = ".md"
+	// alternative extension (e.g. ".scope.md") is then a one-line change.
+	scopeFileExt = ".md"
 )
 
 // agentTarget describes one downstream destination managed by `stax init`.
@@ -349,41 +349,41 @@ const configJSONExt = ".json"
 // this constant + the matching property in `agents/<agent>/*.json`.
 const configHooksKey = "hooks"
 
-// Plan-tooling defaults pinned into <staxDir>/<staxLockFile> by
-// writePlansScaffold during `stax init`. The `stax plans` subcommands read
+// Scope-tooling defaults pinned into <staxDir>/<staxLockFile> by
+// writeScopesScaffold during `stax init`. The `stax scopes` subcommands read
 // these values from the lock file at runtime; the binary is the standard
 // source for new projects while existing projects keep whatever they
 // pinned on their first `stax init`. Bump these numbers to change behavior
 // going forward without disturbing prior installs.
 const (
-	// defaultPrefixWidth is the zero-padded width of plan-file numeric
+	// defaultPrefixWidth is the zero-padded width of scope-file numeric
 	// prefixes (e.g. width 4 → "0001-foo.md"). Bump to widen prefixes.
 	defaultPrefixWidth = 4
 
-	// defaultMaxPlanLines is the line-count ceiling `stax plans lint`
-	// enforces on a single plan file (frontmatter + body, inclusive).
-	defaultMaxPlanLines = 30
+	// defaultMaxScopeLines is the line-count ceiling `stax scopes lint`
+	// enforces on a single scope file (frontmatter + body, inclusive).
+	defaultMaxScopeLines = 30
 
-	// plansListOverflowThreshold is the row count above which
-	// `stax plans list` activates the optional `--overflow-keywords` narrow.
-	// At or below this count every matching plan is returned regardless
+	// scopesListOverflowThreshold is the row count above which
+	// `stax scopes list` activates the optional `--overflow-keywords` narrow.
+	// At or below this count every matching scope is returned regardless
 	// of whether keywords were supplied. Tuned for LLM consumption — a
 	// list this short fits comfortably in context without narrowing.
 	// Bump this number to relax the trigger, or pass `--overflow-keywords`
 	// from a caller that wants the optional narrowing to engage.
-	plansListOverflowThreshold = 20
+	scopesListOverflowThreshold = 20
 
 	// defaultReviewPer controls whether the planner pauses for review
-	// after every "task" or after every "plan" (other valid value).
+	// after every "task" or after every "scope" (other valid value).
 	defaultReviewPer = reviewPerTask
 
-	// reviewPerTask / reviewPerPlan are the two valid values for
+	// reviewPerTask / reviewPerScope are the two valid values for
 	// the review_per key. Named constants so the init prompt, flag
 	// validator, and downstream consumers all reference the same string —
 	// typo-resistant by construction. Add a new value here, then expose it
 	// in the picker and the --review-per validator.
-	reviewPerTask = "task"
-	reviewPerPlan = "plan"
+	reviewPerTask  = "task"
+	reviewPerScope = "scope"
 )
 
 // skipFromEmbed lists embed-relative paths (forward-slash, relative to
@@ -436,7 +436,7 @@ var ownedSkills = []string{
 //
 //nolint:unused // documentation registry; will be surfaced in `stax skills remove` UX.
 var ownedFiles = []string{
-	// Plan-tooling scaffold seeded by writePlansScaffold (project scope only).
+	// Scope-tooling scaffold seeded by writeScopesScaffold (project scope only).
 	staxDir + "/" + staxSystemsFile,
 	staxDir + "/" + staxLockFile,
 	// Per-agent config files copied from agents/<agent>/ by installAgentConfig.
@@ -528,13 +528,10 @@ const (
 // can both reference one source of truth — renaming an endpoint is
 // then a one-line edit here plus the mirror in the shell harness.
 //
-// `scope` in the user-facing API is the same artifact the CLI calls a
-// `plan` — `.stax/<prefix>-<slug>.md`. The naming split is deliberate:
-// the bundled skill that authors these files is `/scope`, so the web
-// UI surfaces them under the same name. Backend code keeps the
-// historical `plan` term because the CLI subcommands (`stax plans
-// next-prefix`, etc.) and the on-disk filename conventions are
-// stable; only the HTTP API and frontend page routes use `scope`.
+// `scope` is the project's single name for `.stax/<prefix>-<slug>.md`
+// files across every surface: the `/scope` bundled skill that authors
+// them, the `stax scopes *` CLI subcommands that manage them, the HTTP
+// API that serves them, and the web UI that renders them.
 const (
 	apiStatsPath   = "/api/stats"
 	apiSystemsPath = "/api/systems"

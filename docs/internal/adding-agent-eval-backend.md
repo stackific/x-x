@@ -28,10 +28,10 @@ section below maps to something already shipped there.
     `extended_by:` link mechanic, planner only
   - `test_claude_reminders_supersedes_todo.py` — full e2e with
     supersedes mechanic + artifact verification
-  - `test_claude_todo.py` — original single-plan baseline
+  - `test_claude_todo.py` — original single-scope baseline
   OpenCode ships the same four scenarios under `test_opencode_*.py`.
 - Two DeepEval `GEval` judges backed by DeepSeek-flash:
-  `PlanJudge` (plan-file validity) and `ArtifactJudge` (produced
+  `ScopeJudge` (scope-file validity) and `ArtifactJudge` (produced
   artifact correctness).
 
 ## Architecture: shared vs agent-specific
@@ -40,7 +40,7 @@ section below maps to something already shipped there.
 
 | File | Why agent-agnostic |
 |---|---|
-| `skills_evals/judges/{plan,artifact}_judge.py` | Score plan/artifact files against rubrics; don't care which agent produced them. |
+| `skills_evals/judges/{scope,artifact}_judge.py` | Score scope/artifact files against rubrics; don't care which agent produced them. |
 | `skills_evals/models.py` | DeepSeek wrapper for the judge LLM. Same judge model regardless of the agent under test. |
 | `skills_evals/workspace.py` | `collect_plan_files` / `collect_produced_files` / `collect_tree` / `load_all_plans` — read the filesystem; agent-agnostic. Includes the noise/scaffold exclusion + size-cap logic. |
 | `skills_evals/_logging.py` | Timestamped stderr logger. |
@@ -245,7 +245,7 @@ sharpening (improve the criteria, don't lower the bar).
 
 ### Don't bypass the auto-yes loop with prescriptive prompts
 
-Telling the agent "Add `supersedes: [<slug>]` to your plan
+Telling the agent "Add `supersedes: [<slug>]` to your scope
 frontmatter" bypasses the planner's natural workflow. Tests should
 validate the agent's natural behavior, not script it.
 
@@ -297,7 +297,7 @@ main worktree, not the branch you're editing.
 
 - `agents/skills/scope/SKILL.md` — what the planner skill expects
   from the agent; Appendix A inside that file documents the
-  bidirectional plan-link contract (extends/supersedes)
+  bidirectional scope-link contract (extends/supersedes)
 - `agents/skills/ship/SKILL.md` — what the executor skill expects
   (review modes, verify-before-flip, etc.)
 - `skills-evals/README.md` — local dev setup

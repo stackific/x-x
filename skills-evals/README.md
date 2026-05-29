@@ -6,7 +6,7 @@ skills against Claude Code. Each test:
 1. Spawns `claude` in stream-json mode against DeepSeek.
 2. Invokes `/scope <task>` and auto-replies `yes` to every confirmation
    prompt until the planner stops asking.
-3. Scores the produced plan file with a DeepEval `GEval` judge.
+3. Scores the produced scope file with a DeepEval `GEval` judge.
 4. Invokes `/ship`, auto-replies `yes` until the executor stops asking.
 5. Scores the produced artifacts with a second `GEval` judge.
 
@@ -20,11 +20,11 @@ skills-evals/
 ├── pyproject.toml                       # uv project (deepeval, openai, python-dotenv, pytest)
 ├── src/skills_evals/
 │   ├── claude_driver.py                 # stream-json subprocess + auto-yes loop
-│   ├── workspace.py                     # collects plan/produced artifacts as text
+│   ├── workspace.py                     # collects scope/produced artifacts as text
 │   ├── models.py                        # DeepSeek wrapper for DeepEval
 │   └── judges/
 │       ├── base.py                      # Judge ABC + Judgment dataclass
-│       ├── plan_judge.py                # GEval on the plan file
+│       ├── scope_judge.py                # GEval on the scope file
 │       └── artifact_judge.py            # GEval on /ship's produced files
 └── tests/
     ├── conftest.py                      # .env load + DeepSeek/Anthropic routing + workspace fixture

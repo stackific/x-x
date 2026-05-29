@@ -84,7 +84,7 @@ func mustSubFS(parent embed.FS, dir string) fs.FS {
 // systemEntry is the JSON shape for one row in the /api/systems
 // response. id / name come straight from _data_systems.yaml's entries
 // (parseRegistry's byID map carries the same pairs). scopes is the
-// number of plans in the project that declare this system in their
+// number of scopes in the project that declare this system in their
 // frontmatter `systems:` array — surfaced in the list view so each
 // card can show "N scope(s)" without a per-row /api/systems?id=
 // round-trip.
@@ -116,12 +116,12 @@ type systemsResponse struct {
 	Systems []systemEntry `json:"systems"`
 }
 
-// planDetail is one matching plan in the /api/systems?id=<slug> response:
+// scopeSummary is one matching scope in the /api/systems?id=<slug> response:
 // just the frontmatter fields the UI needs to render the row (title,
-// status badge, created date for relative-time formatting). The plan
+// status badge, created date for relative-time formatting). The scope
 // body is intentionally not included — /api/scope?id=<slug> serves the
-// full markdown body for any plan a user actually opens.
-type planDetail struct {
+// full markdown body for any scope a user actually opens.
+type scopeSummary struct {
 	Slug         string `json:"slug"`
 	Title        string `json:"title"`
 	Status       string `json:"status"`
@@ -130,13 +130,13 @@ type planDetail struct {
 }
 
 // systemDetailResponse is the body of /api/systems?id=<slug> on a hit:
-// the system's id and display name plus every plan whose frontmatter
+// the system's id and display name plus every scope whose frontmatter
 // `systems:` array contains the id, sorted by filename slug (which is
 // chronological because the prefix is zero-padded sequential).
 type systemDetailResponse struct {
-	ID    string       `json:"id"`
-	Name  string       `json:"name"`
-	Plans []planDetail `json:"plans"`
+	ID     string         `json:"id"`
+	Name   string         `json:"name"`
+	Scopes []scopeSummary `json:"scopes"`
 }
 
 // apiErrorResponse is the body emitted for non-2xx JSON responses. Kept
@@ -149,11 +149,11 @@ type apiErrorResponse struct {
 // fields the /scopes list view needs to render each card: slug
 // (deep-link target for /scope?id=...), title, status (rendered as a
 // chip), created (ISO 8601 UTC string the UI formats client-side), and
-// the kebab-case ids of every system the plan declares (each rendered
+// the kebab-case ids of every system the scope declares (each rendered
 // as a link to /system?id=...). The full markdown body is intentionally
 // NOT surfaced — that's the /api/scope?id=<slug> detail endpoint's
 // responsibility, and embedding it in every list row would inflate the
-// payload before the user opens any one plan.
+// payload before the user opens any one scope.
 type scopeListItem struct {
 	Slug         string   `json:"slug"`
 	Title        string   `json:"title"`
@@ -173,10 +173,10 @@ type scopesListResponse struct {
 
 // scopeRelation is one row in the supersedes / supersededBy arrays on
 // the scopeDetail response. We surface both the slug (so the UI can
-// build a /scope?id=<slug> deep-link) AND the linked plan's title so
+// build a /scope?id=<slug> deep-link) AND the linked scope's title so
 // the rendered chip shows human text instead of a kebab filename.
-// title is read from the predecessor / successor plan's frontmatter
-// when readPlanRelations enriches the slug list — empty when the
+// title is read from the predecessor / successor scope's frontmatter
+// when readScopeRelations enriches the slug list — empty when the
 // linked file is missing or has no parseable title.
 type scopeRelation struct {
 	Slug  string `json:"slug"`
@@ -190,7 +190,7 @@ type scopeRelation struct {
 // frontmatter, so the UI can compose /system?id=<id> links without
 // having to re-parse anything. supersedes / supersededBy mirror the
 // frontmatter relationship arrays as {slug, title} pairs — each
-// linked plan's title is read from its own frontmatter so the UI can
+// linked scope's title is read from its own frontmatter so the UI can
 // render human-readable chips instead of bare slugs.
 type scopeDetail struct {
 	Slug         string          `json:"slug"`
@@ -205,10 +205,10 @@ type scopeDetail struct {
 }
 
 // forceH6Headings is a goldmark AST transformer that pins every
-// rendered markdown heading to <h6>. Plans contain `## Goal`,
+// rendered markdown heading to <h6>. Scopes contain `## Goal`,
 // `## Approach`, `## Tasks` section headers and the surrounding page
 // chrome (chip, breadcrumb, page title) already supplies the visual
-// hierarchy — rendering plan headings as raw <h2> would dominate the
+// hierarchy — rendering scope headings as raw <h2> would dominate the
 // detail page. Pinning to <h6> keeps the heading anchor (auto-id) and
 // semantic outline behavior intact while letting CSS style them as
 // quiet subheads.
@@ -233,13 +233,13 @@ func (forceH6Headings) Transform(doc *ast.Document, _ text.Reader, _ parser.Cont
 	})
 }
 
-// markdownRenderer is the shared goldmark instance used to render plan
+// markdownRenderer is the shared goldmark instance used to render scope
 // bodies into HTML. Built once at package scope because the renderer is
 // safe for concurrent use and constructing one per request would burn
-// cycles for no benefit. GFM is enabled so plan tasks render as
+// cycles for no benefit. GFM is enabled so scope tasks render as
 // checkbox-styled list items; raw HTML in the markdown is escaped (no
-// WithUnsafe) because plan files come from a user-editable tree. The
-// forceH6Headings transformer pins every heading level to <h6> so plan
+// WithUnsafe) because scope file come from a user-editable tree. The
+// forceH6Headings transformer pins every heading level to <h6> so scope
 // section headers don't overwhelm the surrounding page chrome.
 var markdownRenderer = goldmark.New(
 	goldmark.WithExtensions(extension.GFM),
@@ -362,11 +362,11 @@ func handleAPIStats(w http.ResponseWriter, _ *http.Request) {
 //     normal state for the UI to render an empty panel against, not an
 //     error to surface as a non-2xx.
 //   - detail mode (`?id=<slug>`): returns the named system plus every
-//     plan whose frontmatter `systems:` array contains the id, with
-//     each plan's markdown body pre-rendered to HTML. An unknown id
+//     scope whose frontmatter `systems:` array contains the id, with
+//     each scope's markdown body pre-rendered to HTML. An unknown id
 //     produces a 404 with a JSON error so the UI can show a not-found
 //     state instead of an empty list (which would be indistinguishable
-//     from "system exists but has no plans yet").
+//     from "system exists but has no scopes yet").
 //
 // Both modes read from cwd, which is the de-facto project root for the
 // running stax process (set via --cwd in runDefault or inherited from
@@ -391,10 +391,10 @@ func handleAPISystems(w http.ResponseWriter, r *http.Request) {
 // branch. Takes the project's stax directory and a system id; returns
 // the populated response plus a found bool. A false found means the id
 // is not declared in .stax/_data_systems.yaml — handleAPISystems
-// translates that into a 404. plans is empty (not nil) when the id is
-// known but no plan declares it, so the JSON encodes an explicit `[]`.
+// translates that into a 404. scopes is empty (not nil) when the id is
+// known but no scope declares it, so the JSON encodes an explicit `[]`.
 //
-// Plan order is by frontmatter `created` descending — newest plans
+// Scope order is by frontmatter `created` descending — newest scopes
 // first. Sorting by `created:` (not by filename slug) matches the
 // same expectation /api/scopes serves and decouples the displayed
 // order from prefix-vs-date drift on backdated edits or hand-
@@ -408,36 +408,36 @@ func readSystemDetail(staxDir, id string) (systemDetailResponse, bool) {
 		return systemDetailResponse{}, false
 	}
 
-	files, _ := filepath.Glob(filepath.Join(staxDir, "*"+planFileExt))
-	plans := make([]planDetail, 0, len(files))
+	files, _ := filepath.Glob(filepath.Join(staxDir, "*"+scopeFileExt))
+	scopes := make([]scopeSummary, 0, len(files))
 	for _, f := range files {
-		detail, ok := readPlanForAPI(f, id)
+		detail, ok := readScopeForAPI(f, id)
 		if !ok {
 			continue
 		}
-		plans = append(plans, detail)
+		scopes = append(scopes, detail)
 	}
-	sort.Slice(plans, func(i, j int) bool {
-		if plans[i].Created != plans[j].Created {
-			return plans[i].Created > plans[j].Created
+	sort.Slice(scopes, func(i, j int) bool {
+		if scopes[i].Created != scopes[j].Created {
+			return scopes[i].Created > scopes[j].Created
 		}
-		return plans[i].Slug > plans[j].Slug
+		return scopes[i].Slug > scopes[j].Slug
 	})
-	return systemDetailResponse{ID: id, Name: name, Plans: plans}, true
+	return systemDetailResponse{ID: id, Name: name, Scopes: scopes}, true
 }
 
-// readPlanForAPI reads one plan file and, if its frontmatter declares
-// the supplied id in its `systems:` array, returns the planDetail row.
+// readScopeForAPI reads one scope file and, if its frontmatter declares
+// the supplied id in its `systems:` array, returns the scopeSummary row.
 // Returns (_, false) for files that fail to parse or lack the id —
-// individual bad plans never abort the whole /api/systems?id=... call.
-func readPlanForAPI(planPath, id string) (planDetail, bool) {
-	row, ok := parsePlan(planPath, io.Discard)
+// individual bad scopes never abort the whole /api/systems?id=... call.
+func readScopeForAPI(planPath, id string) (scopeSummary, bool) {
+	row, ok := parseScopeFile(planPath, io.Discard)
 	if !ok || !slices.Contains(row.systems, id) {
-		return planDetail{}, false
+		return scopeSummary{}, false
 	}
-	title, created := readPlanTitleAndCreated(planPath)
-	body, _ := readPlanBody(planPath)
-	return planDetail{
+	title, created := readScopeTitleAndCreated(planPath)
+	body, _ := readScopeBody(planPath)
+	return scopeSummary{
 		Slug:         row.slug,
 		Title:        title,
 		Status:       row.status,
@@ -446,15 +446,15 @@ func readPlanForAPI(planPath, id string) (planDetail, bool) {
 	}, true
 }
 
-// readPlanTitleAndCreated extracts the `title:` and `created:`
-// frontmatter values from a plan file. Missing or unreadable files
+// readScopeTitleAndCreated extracts the `title:` and `created:`
+// frontmatter values from a scope file. Missing or unreadable files
 // yield empty strings — the caller has already validated through
-// parsePlan that the file is structurally sound, so this is purely an
+// parseScopeFile that the file is structurally sound, so this is purely an
 // optional-fields read. Frontmatter parsing duplicates the open/close
-// fence walk from parsePlan because parsePlan does not surface these
+// fence walk from parseScopeFile because parseScopeFile does not surface these
 // two fields.
-func readPlanTitleAndCreated(planPath string) (title, created string) {
-	if !isSafePlanPath(planPath) {
+func readScopeTitleAndCreated(planPath string) (title, created string) {
+	if !isSafeScopePath(planPath) {
 		return "", ""
 	}
 	data, err := fs.ReadFile(os.DirFS(filepath.Dir(planPath)), filepath.Base(planPath))
@@ -480,17 +480,17 @@ func readPlanTitleAndCreated(planPath string) (title, created string) {
 }
 
 // handleAPIScopes serves /api/scopes — the list view that backs the
-// /scopes web page. Returns one row per plan file in cwd's .stax/
+// /scopes web page. Returns one row per scope file in cwd's .stax/
 // directory, carrying the slug (deep-link target), the title, and the
-// kebab-case ids of every system the plan declares (rendered by the
+// kebab-case ids of every system the scope declares (rendered by the
 // UI as links into /system?id=<id>). Missing .stax/ or a cwd that is
 // not a stax project produce a 200 with an empty array, matching the
 // "empty state is not an error" contract /api/systems uses.
 //
-// Plans whose frontmatter is malformed (missing status, missing
-// systems, no closing fence) are skipped silently — parsePlan logs to
-// io.Discard here so a broken plan never aborts the whole list. The
-// `stax plans lint` subcommand is the user-facing way to surface those
+// Scopes whose frontmatter is malformed (missing status, missing
+// systems, no closing fence) are skipped silently — parseScopeFile logs to
+// io.Discard here so a broken scope never aborts the whole list. The
+// `stax scopes lint` subcommand is the user-facing way to surface those
 // per-file findings.
 func handleAPIScopes(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, scopesListResponse{
@@ -499,9 +499,9 @@ func handleAPIScopes(w http.ResponseWriter, _ *http.Request) {
 }
 
 // handleAPIScope serves /api/scope?id=<slug> — the detail view that
-// backs the /scope?id=<slug> web page. Returns the full plan body
+// backs the /scope?id=<slug> web page. Returns the full scope body
 // pre-rendered to HTML plus every frontmatter field the detail UI
-// needs. Missing or unparseable plan files produce a 404 with a
+// needs. Missing or unparseable scope file produce a 404 with a
 // `{error}` body so the UI can show a not-found state.
 func handleAPIScope(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
@@ -518,27 +518,27 @@ func handleAPIScope(w http.ResponseWriter, r *http.Request) {
 }
 
 // readScopesForAPI is the testable body of handleAPIScopes: walks
-// staxDir for plan files and returns one row per parseable plan,
+// staxDir for scope files and returns one row per parseable scope,
 // sorted by frontmatter `created` timestamp descending — newest first.
 // Sorting by `created:` (not by filename slug) is what the UI's "latest"
 // affordances expect; the slug's numeric prefix only matches creation
 // order when prefix assignment is monotonic with `created:`, which the
-// `stax plans next-prefix` workflow guarantees for fresh plans but not
-// for backdated edits or hand-renumbered files. Ties on `created:`
+// `stax scopes next-prefix` workflow guarantees for fresh scopes but
+// not for backdated edits or hand-renumbered files. Ties on `created:`
 // fall back to slug descending so the higher-prefix wins, matching the
 // old filename-sort behavior in the common monotonic case. Missing
 // staxDir returns an empty slice so the UI's empty state surfaces
 // naturally.
 func readScopesForAPI(staxDir string) []scopeListItem {
-	files, _ := filepath.Glob(filepath.Join(staxDir, "*"+planFileExt))
+	files, _ := filepath.Glob(filepath.Join(staxDir, "*"+scopeFileExt))
 	out := make([]scopeListItem, 0, len(files))
 	for _, f := range files {
-		row, ok := parsePlan(f, io.Discard)
+		row, ok := parseScopeFile(f, io.Discard)
 		if !ok {
 			continue
 		}
-		title, created := readPlanTitleAndCreated(f)
-		body, _ := readPlanBody(f)
+		title, created := readScopeTitleAndCreated(f)
+		body, _ := readScopeBody(f)
 		out = append(out, scopeListItem{
 			Slug:         row.slug,
 			Title:        title,
@@ -594,7 +594,7 @@ func handleAPISearch(w http.ResponseWriter, r *http.Request) {
 //
 // Match rules:
 //   - scope matches when needle appears in slug, title, status, any
-//     declared system id, OR the plan body (case-insensitive)
+//     declared system id, OR the scope body (case-insensitive)
 //   - system matches when needle appears in id or display name
 //     (case-insensitive)
 //
@@ -623,7 +623,7 @@ func runSearch(staxDir, query string) searchResponse {
 
 // scopeMatchesQuery decides whether one scope row matches the lowercase
 // needle. Checks the cheap frontmatter fields first and only reads the
-// plan body when none of them hit — body reads are the most expensive
+// scope body when none of them hit — body reads are the most expensive
 // step in the search loop, so deferring them keeps queries that hit on
 // title or system id fast. Pointer receiver because scopeListItem hit
 // gocritic's hugeParam threshold (96 bytes).
@@ -638,7 +638,7 @@ func scopeMatchesQuery(staxDir string, s *scopeListItem, needle string) bool {
 			return true
 		}
 	}
-	body, ok := readPlanBody(filepath.Join(staxDir, s.Slug+planFileExt))
+	body, ok := readScopeBody(filepath.Join(staxDir, s.Slug+scopeFileExt))
 	if !ok {
 		return false
 	}
@@ -657,7 +657,7 @@ func systemMatchesQuery(sys systemEntry, needle string) bool {
 }
 
 // readScopeDetail is the testable body of handleAPIScope: reads one
-// plan file by slug, returns the populated detail plus a found bool.
+// scope file by slug, returns the populated detail plus a found bool.
 // false means the file doesn't exist, doesn't parse, or its body
 // can't be rendered — callers translate that into a 404.
 func readScopeDetail(staxDir, slug string) (scopeDetail, bool) {
@@ -665,20 +665,20 @@ func readScopeDetail(staxDir, slug string) (scopeDetail, bool) {
 	// input (the `?id=<slug>` query parameter) can never reach
 	// os.ReadFile with shell metacharacters or `..` segments. A failed
 	// match returns the same not-found shape an unknown slug would.
-	if !planSlugRe.MatchString(slug) {
+	if !scopeSlugRe.MatchString(slug) {
 		return scopeDetail{}, false
 	}
-	planPath := filepath.Join(staxDir, slug+planFileExt)
-	row, ok := parsePlan(planPath, io.Discard)
+	planPath := filepath.Join(staxDir, slug+scopeFileExt)
+	row, ok := parseScopeFile(planPath, io.Discard)
 	if !ok {
 		return scopeDetail{}, false
 	}
-	body, ok := readPlanBody(planPath)
+	body, ok := readScopeBody(planPath)
 	if !ok {
 		return scopeDetail{}, false
 	}
-	title, created := readPlanTitleAndCreated(planPath)
-	supersedes, supersededBy := readPlanRelations(staxDir, planPath)
+	title, created := readScopeTitleAndCreated(planPath)
+	supersedes, supersededBy := readScopeRelations(staxDir, planPath)
 	var buf bytes.Buffer
 	if err := markdownRenderer.Convert([]byte(body), &buf); err != nil {
 		return scopeDetail{}, false
@@ -696,16 +696,16 @@ func readScopeDetail(staxDir, slug string) (scopeDetail, bool) {
 	}, true
 }
 
-// readPlanRelations extracts the inline `supersedes:` and
-// `superseded_by:` arrays from a plan's frontmatter, then resolves
-// each entry to a {slug, title} pair by reading the linked plan's
-// own frontmatter. Both relations are optional — a plan that's
+// readScopeRelations extracts the inline `supersedes:` and
+// `superseded_by:` arrays from a scope's frontmatter, then resolves
+// each entry to a {slug, title} pair by reading the linked scope's
+// own frontmatter. Both relations are optional — a scope that's
 // neither replaced anything nor been replaced returns (nil, nil).
 // Per-entry title-lookup failures degrade gracefully: an unreadable
-// linked plan falls back to slug-as-title so the chip still has
+// linked scope falls back to slug-as-title so the chip still has
 // something to render.
-func readPlanRelations(staxDir, planPath string) (supersedes, supersededBy []scopeRelation) {
-	if !isSafePlanPath(planPath) {
+func readScopeRelations(staxDir, planPath string) (supersedes, supersededBy []scopeRelation) {
+	if !isSafeScopePath(planPath) {
 		return nil, nil
 	}
 	data, err := fs.ReadFile(os.DirFS(filepath.Dir(planPath)), filepath.Base(planPath))
@@ -731,10 +731,10 @@ func readPlanRelations(staxDir, planPath string) (supersedes, supersededBy []sco
 }
 
 // enrichRelationSlugs turns each raw slug into a {slug, title} pair by
-// reading the linked plan's frontmatter title. Slugs that don't match
-// planSlugRe are rejected up front so a malformed frontmatter array
-// can't push a tainted path through to the linked-plan reader.
-// Linked plans whose file is missing or whose title is empty fall
+// reading the linked scope's frontmatter title. Slugs that don't match
+// scopeSlugRe are rejected up front so a malformed frontmatter array
+// can't push a tainted path through to the linked-scope reader.
+// Linked scopes whose file is missing or whose title is empty fall
 // back to slug-as-title — the UI still gets a renderable chip.
 func enrichRelationSlugs(staxDir string, slugs []string) []scopeRelation {
 	if len(slugs) == 0 {
@@ -742,10 +742,10 @@ func enrichRelationSlugs(staxDir string, slugs []string) []scopeRelation {
 	}
 	out := make([]scopeRelation, 0, len(slugs))
 	for _, slug := range slugs {
-		if !planSlugRe.MatchString(slug) {
+		if !scopeSlugRe.MatchString(slug) {
 			continue
 		}
-		title, _ := readPlanTitleAndCreated(filepath.Join(staxDir, slug+planFileExt))
+		title, _ := readScopeTitleAndCreated(filepath.Join(staxDir, slug+scopeFileExt))
 		if title == "" {
 			title = slug
 		}
@@ -757,7 +757,7 @@ func enrichRelationSlugs(staxDir string, slugs []string) []scopeRelation {
 // readSystemsForAPI is the testable body of handleAPISystems: takes
 // the project's stax directory, returns a deterministically-sorted
 // slice of systemEntry. Each row carries the parsed `Scopes` count —
-// the number of plans in the same directory that declare this system
+// the number of scopes in the same directory that declare this system
 // in their frontmatter `systems:` array. Missing or unparseable
 // registry files surface as an empty slice, matching the "200 with
 // empty array" contract handleAPISystems guarantees to callers. Sorted
@@ -774,18 +774,18 @@ func readSystemsForAPI(staxDir string) []systemEntry {
 	return out
 }
 
-// countScopesPerSystem walks every plan file in staxDir and tallies
-// how many plans declare each system in their frontmatter `systems:`
-// array. Plans that fail to parse contribute nothing — same warn-and-
-// skip policy parsePlan applies elsewhere; per-row tally errors should
+// countScopesPerSystem walks every scope file in staxDir and tallies
+// how many scopes declare each system in their frontmatter `systems:`
+// array. Scopes that fail to parse contribute nothing — same warn-and-
+// skip policy parseScopeFile applies elsewhere; per-row tally errors should
 // never abort the /api/systems response. Returns a map keyed by
 // system id; missing or unparseable staxDir yields an empty map so
 // callers can index into it safely.
 func countScopesPerSystem(staxDir string) map[string]int {
 	out := make(map[string]int)
-	files, _ := filepath.Glob(filepath.Join(staxDir, "*"+planFileExt))
+	files, _ := filepath.Glob(filepath.Join(staxDir, "*"+scopeFileExt))
 	for _, f := range files {
-		row, ok := parsePlan(f, io.Discard)
+		row, ok := parseScopeFile(f, io.Discard)
 		if !ok {
 			continue
 		}

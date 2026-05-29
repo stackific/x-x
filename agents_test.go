@@ -149,7 +149,7 @@ func TestCopyEmbeddedFile_CreatesParentDirs(t *testing.T) {
 	if _, err := embeddedAgents.Open(srcEmbed); err != nil {
 		t.Skipf("embed missing %s (no bundled manifest to round-trip): %v", srcEmbed, err)
 	}
-	dest := filepath.Join(home, "deep", "nested", "out"+planFileExt)
+	dest := filepath.Join(home, "deep", "nested", "out"+scopeFileExt)
 	if err := copyEmbeddedFile(srcEmbed, dest); err != nil {
 		t.Fatalf("copyEmbeddedFile: %v", err)
 	}

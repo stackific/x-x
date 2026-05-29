@@ -19,43 +19,43 @@ import (
 	"strings"
 )
 
-// runPlans dispatches `stax plans <subcommand>`. Future plan-tooling commands
+// runScopes dispatches `stax scopes <subcommand>`. Future scope-tooling commands
 // (e.g. `lint`) can be added here without restructuring, the same way
 // `runSkills` is structured.
-func runPlans(args []string) {
+func runScopes(args []string) {
 	if len(args) == 0 {
 		printPlansUsage(os.Stderr)
 		os.Exit(2)
 	}
 	switch args[0] {
 	case "next-prefix":
-		runPlansNextPrefix(args[1:])
+		runScopesNextPrefix(args[1:])
 	case "list":
-		runPlansList(args[1:])
+		runScopesList(args[1:])
 	case "lint":
-		runPlansLint(args[1:])
+		runScopesLint(args[1:])
 	case "slugify":
-		runPlansSlugify(args[1:])
+		runScopesSlugify(args[1:])
 	default:
-		fmt.Fprintf(os.Stderr, "unknown plans subcommand: %s\n", args[0])
+		fmt.Fprintf(os.Stderr, "unknown scopes subcommand: %s\n", args[0])
 		printPlansUsage(os.Stderr)
 		os.Exit(2)
 	}
 }
 
-// printPlansUsage writes the `stax plans` help block to w. Mirrors the
+// printPlansUsage writes the `stax scopes` help block to w. Mirrors the
 // printSkillsUsage structure (one-line subcommand summaries) so the two help
 // surfaces stay visually aligned; both ride on a writer parameter rather
 // than os.Stderr directly so future `--help` paths can redirect to stdout.
 func printPlansUsage(w io.Writer) {
-	_, _ = fmt.Fprintln(w, "Usage: stax plans <subcommand>")
-	_, _ = fmt.Fprintln(w, "  next-prefix   Print the next unused zero-padded plan prefix")
-	_, _ = fmt.Fprintln(w, "  list          List plans with slug, status, and declared systems")
-	_, _ = fmt.Fprintln(w, "  lint          Validate every plan file against the project schema")
-	_, _ = fmt.Fprintln(w, "  slugify       Print the kebab-case slug for a plan title")
+	_, _ = fmt.Fprintln(w, "Usage: stax scopes <subcommand>")
+	_, _ = fmt.Fprintln(w, "  next-prefix   Print the next unused zero-padded scope prefix")
+	_, _ = fmt.Fprintln(w, "  list          List scopes with slug, status, and declared systems")
+	_, _ = fmt.Fprintln(w, "  lint          Validate every scope file against the project schema")
+	_, _ = fmt.Fprintln(w, "  slugify       Print the kebab-case slug for a scope title")
 }
 
-// runPlansNextPrefix prints the next available zero-padded plan prefix in
+// runScopesNextPrefix prints the next available zero-padded scope prefix in
 // staxDir (the standard ".stax" under cwd). Takes no arguments — the
 // directory is not user-configurable; staxDir is the single source of truth.
 //
@@ -63,28 +63,28 @@ func printPlansUsage(w io.Writer) {
 // back to defaultPrefixWidth when the lock file is missing or malformed.
 // Missing staxDir is treated as empty (next prefix = 1), so the command is
 // safe to run before `stax init` has seeded the scaffold.
-func runPlansNextPrefix(args []string) {
+func runScopesNextPrefix(args []string) {
 	os.Exit(planNextPrefix(args, staxDir, os.Stdout, os.Stderr))
 }
 
-// planNextPrefix is the testable body of runPlansNextPrefix: flag-set
+// planNextPrefix is the testable body of runScopesNextPrefix: flag-set
 // parsing, project marker check, format, write — all without touching os.Exit
 // directly. Returns the desired exit code (0 happy, 2 usage error /
 // not-a-project). Pulled out so unit tests can drive the full flow
 // (argument rejection, project-marker-check banner, zero-pad format) without
 // shelling out a subprocess.
 func planNextPrefix(args []string, staxDir string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("plans next-prefix", flag.ContinueOnError)
+	fs := flag.NewFlagSet("scopes next-prefix", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	cwdFlag := fs.String("cwd", "", "change to this directory before running (like git -C)")
 	fs.Usage = func() {
-		_, _ = fmt.Fprintln(stderr, "Usage: stax plans next-prefix [--cwd PATH]")
+		_, _ = fmt.Fprintln(stderr, "Usage: stax scopes next-prefix [--cwd PATH]")
 	}
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() > 0 {
-		_, _ = fmt.Fprintf(stderr, "stax plans next-prefix takes no arguments (got %q)\n", fs.Arg(0))
+		_, _ = fmt.Fprintf(stderr, "stax scopes next-prefix takes no arguments (got %q)\n", fs.Arg(0))
 		return 2
 	}
 	if err := applyCwd(*cwdFlag); err != nil {
@@ -125,7 +125,7 @@ func loadPrefixWidth(staxDir string) int {
 
 // scanHighestPrefix returns the largest numeric prefix found among entry
 // names in staxDir whose name pattern matches `<width digits>-<rest>.md` —
-// the same filename pattern listPlans accepts. Anchoring on `-` and the
+// the same filename pattern listScopes accepts. Anchoring on `-` and the
 // `.md` extension (not just `\d{width}`) keeps next-prefix consistent
 // with what list / lint will recognize: a 5-digit-prefixed file when
 // width=4 doesn't match either pattern and must not be counted, otherwise
@@ -136,7 +136,7 @@ func scanHighestPrefix(staxDir string, width int) int {
 	if err != nil {
 		return 0
 	}
-	re := regexp.MustCompile(fmt.Sprintf(`^(\d{%d})-.+%s$`, width, regexp.QuoteMeta(planFileExt)))
+	re := regexp.MustCompile(fmt.Sprintf(`^(\d{%d})-.+%s$`, width, regexp.QuoteMeta(scopeFileExt)))
 	highest := 0
 	for _, e := range entries {
 		m := re.FindStringSubmatch(e.Name())
@@ -154,49 +154,49 @@ func scanHighestPrefix(staxDir string, width int) int {
 	return highest
 }
 
-// runPlansList prints one tab-separated row per plan in staxDir whose
+// runScopesList prints one tab-separated row per scope in staxDir whose
 // filename matches `<prefix-digits>-<slug>.md`. Each row is
 // `<slug>\t<status>\t<sys1>,<sys2>,...`. Flags:
 //
 //	--status NAME[,NAME...]            repeatable; keeps only matching statuses
 //	--system ID                        repeatable; OR semantics; matches the
-//	                                   kebab-case `id:` values that plans carry
+//	                                   kebab-case `id:` values that scopes carry
 //	                                   in their frontmatter `systems:` array
 //	--order asc|desc                   prefix sort direction (default desc = latest first)
 //	--overflow-keywords TERM[,...]     case-insensitive substring(s) (OR); engages
 //	                                   only when the post-filter row count exceeds
-//	                                   plansListOverflowThreshold (see constants.go)
+//	                                   scopesListOverflowThreshold (see constants.go)
 //
 // Files matching the filename pattern but missing frontmatter, `status:`,
 // or `systems:` produce stderr warnings and are skipped. Missing staxDir
 // is treated as empty (no rows, no error) so the command is safe to run
 // before `stax init` has seeded the scaffold.
-func runPlansList(args []string) {
+func runScopesList(args []string) {
 	os.Exit(planList(args, staxDir, os.Stdout, os.Stderr))
 }
 
-// planList is the testable body of runPlansList. Same exit-code contract
-// as the wrapper (0 happy, 1 listPlans IO error, 2 usage / not-a-project
+// planList is the testable body of runScopesList. Same exit-code contract
+// as the wrapper (0 happy, 1 listScopes IO error, 2 usage / not-a-project
 // / bad --order). Pulled out so the filter chain + sort + overflow path
 // can be exercised end-to-end at unit level — the e2e suites cover the
 // same surface but a unit test fails faster on a contract regression.
 func planList(args []string, staxDir string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("plans list", flag.ContinueOnError)
+	fs := flag.NewFlagSet("scopes list", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	var statusFlag, systemFlag, keywordsFlag stringSliceFlag
 	orderFlag := fs.String("order", "desc", "sort by prefix: asc|desc (default desc = latest first)")
 	cwdFlag := fs.String("cwd", "", "change to this directory before running (like git -C)")
-	fs.Var(&statusFlag, "status", "keep only plans whose status matches (repeatable, comma-separated)")
-	fs.Var(&systemFlag, "system", "keep only plans whose systems contain this id (repeatable; OR semantics; matches the kebab `id:` from _data_systems.yaml)")
-	fs.Var(&keywordsFlag, "overflow-keywords", "case-insensitive substring(s) narrowing the output when the post-filter count exceeds plansListOverflowThreshold (repeatable; OR semantics; matched against plan body only)")
+	fs.Var(&statusFlag, "status", "keep only scopes whose status matches (repeatable, comma-separated)")
+	fs.Var(&systemFlag, "system", "keep only scopes whose systems contain this id (repeatable; OR semantics; matches the kebab `id:` from _data_systems.yaml)")
+	fs.Var(&keywordsFlag, "overflow-keywords", "case-insensitive substring(s) narrowing the output when the post-filter count exceeds scopesListOverflowThreshold (repeatable; OR semantics; matched against scope body only)")
 	fs.Usage = func() {
-		_, _ = fmt.Fprintln(stderr, "Usage: stax plans list [--status NAME[,NAME...]] [--system ID] [--order asc|desc] [--overflow-keywords PATTERN[,PATTERN...]] [--cwd PATH]")
+		_, _ = fmt.Fprintln(stderr, "Usage: stax scopes list [--status NAME[,NAME...]] [--system ID] [--order asc|desc] [--overflow-keywords PATTERN[,PATTERN...]] [--cwd PATH]")
 	}
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() > 0 {
-		_, _ = fmt.Fprintf(stderr, "stax plans list takes no positional arguments (got %q)\n", fs.Arg(0))
+		_, _ = fmt.Fprintf(stderr, "stax scopes list takes no positional arguments (got %q)\n", fs.Arg(0))
 		return 2
 	}
 	if err := applyCwd(*cwdFlag); err != nil {
@@ -210,7 +210,7 @@ func planList(args []string, staxDir string, stdout, stderr io.Writer) int {
 
 	order, err := parseOrder(*orderFlag)
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "stax plans list: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "stax scopes list: %v\n", err)
 		return 2
 	}
 	keywords := normalizeKeywords(keywordsFlag)
@@ -218,17 +218,17 @@ func planList(args []string, staxDir string, stdout, stderr io.Writer) int {
 	systemSet := toFilterSet(systemFlag)
 
 	width := loadPrefixWidth(staxDir)
-	rows, err := listPlans(staxDir, width, stderr)
+	rows, err := listScopes(staxDir, width, stderr)
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "stax plans list: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "stax scopes list: %v\n", err)
 		return 1
 	}
 
 	// Apply --status / --system filters first so the overflow trigger
 	// keys off the post-filter count (matching the user-visible result).
 	filtered := filterPlanRows(rows, statusSet, systemSet)
-	sortPlanRows(filtered, order)
-	filtered = applyOverflowNarrow(filtered, keywords, staxDir, plansListOverflowThreshold)
+	sortScopeRows(filtered, order)
+	filtered = applyOverflowNarrow(filtered, keywords, staxDir, scopesListOverflowThreshold)
 
 	for _, r := range filtered {
 		_, _ = fmt.Fprintf(stdout, "%s\t%s\t%s\n", r.slug, r.status, strings.Join(r.systems, ","))
@@ -236,18 +236,18 @@ func planList(args []string, staxDir string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// plansListOrder enumerates the two values --order accepts. Defined as a
-// typed int (not strings) so the sort-by-value switch in sortPlanRows
+// scopesListOrder enumerates the two values --order accepts. Defined as a
+// typed int (not strings) so the sort-by-value switch in sortScopeRows
 // can't be invoked with an arbitrary, unvalidated string.
-type plansListOrder int
+type scopesListOrder int
 
 const (
-	orderAsc  plansListOrder = 1
-	orderDesc plansListOrder = 2
+	orderAsc  scopesListOrder = 1
+	orderDesc scopesListOrder = 2
 )
 
 // parseOrder validates the --order CLI value and returns its enum.
-func parseOrder(s string) (plansListOrder, error) {
+func parseOrder(s string) (scopesListOrder, error) {
 	switch s {
 	case "asc":
 		return orderAsc, nil
@@ -258,11 +258,11 @@ func parseOrder(s string) (plansListOrder, error) {
 	}
 }
 
-// sortPlanRows sorts rows in-place by slug — which, because slugs carry
+// sortScopeRows sorts rows in-place by slug — which, because slugs carry
 // the zero-padded numeric prefix, equals prefix-numeric order. Ascending
 // or descending per the order argument; desc is the CLI default (latest
 // first).
-func sortPlanRows(rows []planRow, order plansListOrder) {
+func sortScopeRows(rows []scopeRow, order scopesListOrder) {
 	if order == orderAsc {
 		sort.Slice(rows, func(i, j int) bool { return rows[i].slug < rows[j].slug })
 		return
@@ -293,8 +293,8 @@ func normalizeKeywords(tokens []string) []string {
 //   - len(rows) exceeds threshold, AND
 //   - the caller passed at least one keyword.
 //
-// Match semantics: case-insensitive literal substring against the plan
-// body — no regex, no word boundary. A plan matches if its body contains
+// Match semantics: case-insensitive literal substring against the scope
+// body — no regex, no word boundary. A scope matches if its body contains
 // any of the keywords (OR across keywords).
 //
 // Behavior in the engaged path:
@@ -305,13 +305,13 @@ func normalizeKeywords(tokens []string) []string {
 //     result.
 //
 // Otherwise rows are returned unchanged.
-func applyOverflowNarrow(rows []planRow, keywords []string, staxDir string, threshold int) []planRow {
+func applyOverflowNarrow(rows []scopeRow, keywords []string, staxDir string, threshold int) []scopeRow {
 	if len(rows) <= threshold || len(keywords) == 0 {
 		return rows
 	}
-	matched := make([]planRow, 0, len(rows))
+	matched := make([]scopeRow, 0, len(rows))
 	for _, r := range rows {
-		body, ok := readPlanBody(filepath.Join(staxDir, r.slug+planFileExt))
+		body, ok := readScopeBody(filepath.Join(staxDir, r.slug+scopeFileExt))
 		if !ok {
 			continue
 		}
@@ -329,12 +329,12 @@ func applyOverflowNarrow(rows []planRow, keywords []string, staxDir string, thre
 	return rows[:threshold]
 }
 
-// readPlanBody returns the post-frontmatter body of the plan file at
+// readScopeBody returns the post-frontmatter body of the scope file at
 // path. (false) on missing/unreadable/malformed-frontmatter files so the
-// caller can skip them; lintPlanFile surfaces those as per-file findings
+// caller can skip them; lintScopeFile surfaces those as per-file findings
 // on its own pass.
-func readPlanBody(path string) (string, bool) {
-	if !isSafePlanPath(path) {
+func readScopeBody(path string) (string, bool) {
+	if !isSafeScopePath(path) {
 		return "", false
 	}
 	data, err := iofs.ReadFile(os.DirFS(filepath.Dir(path)), filepath.Base(path))
@@ -387,7 +387,7 @@ func toFilterSet(vs []string) map[string]bool {
 // anySystemMatches reports whether any element of haystack appears in
 // needles. Used to implement OR semantics for the `--system` filter —
 // both sides are kebab-case ids (the `id:` field from _data_systems.yaml,
-// which is also what plan frontmatter `systems:` arrays carry).
+// which is also what scope frontmatter `systems:` arrays carry).
 func anySystemMatches(haystack []string, needles map[string]bool) bool {
 	for _, h := range haystack {
 		if needles[h] {
@@ -401,11 +401,11 @@ func anySystemMatches(haystack []string, needles map[string]bool) bool {
 // systems intersect systemSet. Either filter is treated as "no filter"
 // when its set is empty (len==0 OR nil), matching the CLI semantics where
 // an absent --status / --system flag means "all". Pulled out of
-// runPlansList so the filter chain is unit-testable on its own — without
+// runScopesList so the filter chain is unit-testable on its own — without
 // this helper the only path through status+system filtering was via the
 // e2e harness.
-func filterPlanRows(rows []planRow, statusSet, systemSet map[string]bool) []planRow {
-	filtered := make([]planRow, 0, len(rows))
+func filterPlanRows(rows []scopeRow, statusSet, systemSet map[string]bool) []scopeRow {
+	filtered := make([]scopeRow, 0, len(rows))
 	for _, r := range rows {
 		if len(statusSet) > 0 && !statusSet[r.status] {
 			continue
@@ -418,8 +418,8 @@ func filterPlanRows(rows []planRow, statusSet, systemSet map[string]bool) []plan
 	return filtered
 }
 
-// planRow is one parsed plan file ready for emission.
-type planRow struct {
+// scopeRow is one parsed scope file ready for emission.
+type scopeRow struct {
 	slug    string
 	status  string
 	systems []string
@@ -428,19 +428,19 @@ type planRow struct {
 // Frontmatter regexes — anchored multi-line. Only inline-array `systems:`
 // is recognized; block form (`- entry` on subsequent lines) is rejected.
 var (
-	planStatusRe  = regexp.MustCompile(`(?m)^status:\s*(\S+)\s*$`)
-	planSystemsRe = regexp.MustCompile(`(?m)^systems:\s*\[([^\]]*)\]\s*$`)
+	scopeStatusRe  = regexp.MustCompile(`(?m)^status:\s*(\S+)\s*$`)
+	scopeSystemsRe = regexp.MustCompile(`(?m)^systems:\s*\[([^\]]*)\]\s*$`)
 )
 
-// listPlans walks staxDir, parses every file whose name matches
+// listScopes walks staxDir, parses every file whose name matches
 // `<width digits>-<anything>.md`, and returns the parsed rows in
 // prefix-ascending order. Warnings for filename-matching files with
 // malformed/missing frontmatter go to warnW so the caller can route them
 // (CLI sends them to stderr; tests can capture them).
 //
-// Missing staxDir is treated as "no plans" (returns nil, nil) so callers
+// Missing staxDir is treated as "no scopes" (returns nil, nil) so callers
 // don't need to special-case the pre-init state.
-func listPlans(staxDir string, width int, warnW io.Writer) ([]planRow, error) {
+func listScopes(staxDir string, width int, warnW io.Writer) ([]scopeRow, error) {
 	entries, err := os.ReadDir(staxDir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -449,11 +449,11 @@ func listPlans(staxDir string, width int, warnW io.Writer) ([]planRow, error) {
 		return nil, err
 	}
 
-	// `<width digits>-<at least one char><planFileExt>`. The trailing
-	// extension is part of the contract enforced by `plans lint`; we match
+	// `<width digits>-<at least one char><scopeFileExt>`. The trailing
+	// extension is part of the contract enforced by `scopes lint`; we match
 	// the same pattern so stray docs (README.md, _data_systems.yaml) are
 	// silently ignored.
-	nameRe := regexp.MustCompile(fmt.Sprintf(`^\d{%d}-.+%s$`, width, regexp.QuoteMeta(planFileExt)))
+	nameRe := regexp.MustCompile(fmt.Sprintf(`^\d{%d}-.+%s$`, width, regexp.QuoteMeta(scopeFileExt)))
 
 	// Collect matching names first so we can sort once before parsing.
 	// Sorting after parsing would still work (slugs preserve the prefix)
@@ -467,9 +467,9 @@ func listPlans(staxDir string, width int, warnW io.Writer) ([]planRow, error) {
 	}
 	sort.Strings(names)
 
-	rows := make([]planRow, 0, len(names))
+	rows := make([]scopeRow, 0, len(names))
 	for _, name := range names {
-		row, ok := parsePlan(filepath.Join(staxDir, name), warnW)
+		row, ok := parseScopeFile(filepath.Join(staxDir, name), warnW)
 		if !ok {
 			continue
 		}
@@ -478,19 +478,19 @@ func listPlans(staxDir string, width int, warnW io.Writer) ([]planRow, error) {
 	return rows, nil
 }
 
-// parsePlan reads one plan file and extracts (slug, status, systems).
+// parseScopeFile reads one scope file and extracts (slug, status, systems).
 // Returns (_, false) and emits a stderr-style warning to warnW when the
 // file lacks frontmatter or is missing a required field — warn-and-skip
-// so a single bad file never aborts the whole `plans list` walk.
-func parsePlan(path string, warnW io.Writer) (planRow, bool) {
-	if !isSafePlanPath(path) {
+// so a single bad file never aborts the whole `scopes list` walk.
+func parseScopeFile(path string, warnW io.Writer) (scopeRow, bool) {
+	if !isSafeScopePath(path) {
 		_, _ = fmt.Fprintf(warnW, "warning: %s: contains a parent-directory segment; skipping\n", path)
-		return planRow{}, false
+		return scopeRow{}, false
 	}
 	data, err := iofs.ReadFile(os.DirFS(filepath.Dir(path)), filepath.Base(path))
 	if err != nil {
 		_, _ = fmt.Fprintf(warnW, "warning: %s: %v; skipping\n", path, err)
-		return planRow{}, false
+		return scopeRow{}, false
 	}
 	text := string(data)
 
@@ -499,7 +499,7 @@ func parsePlan(path string, warnW io.Writer) (planRow, bool) {
 	// as "no frontmatter".
 	if !strings.HasPrefix(text, "---\n") && !strings.HasPrefix(text, "---\r\n") {
 		_, _ = fmt.Fprintf(warnW, "warning: %s has no frontmatter; skipping\n", path)
-		return planRow{}, false
+		return scopeRow{}, false
 	}
 	// Look for the closing `\n---` somewhere after the opening fence. The
 	// 3-byte offset skips the opening `---` so we never match it as the
@@ -507,24 +507,24 @@ func parsePlan(path string, warnW io.Writer) (planRow, bool) {
 	end := strings.Index(text[3:], "\n---")
 	if end < 0 {
 		_, _ = fmt.Fprintf(warnW, "warning: %s has unterminated frontmatter; skipping\n", path)
-		return planRow{}, false
+		return scopeRow{}, false
 	}
 	fm := text[3 : 3+end]
 
-	statusMatch := planStatusRe.FindStringSubmatch(fm)
+	statusMatch := scopeStatusRe.FindStringSubmatch(fm)
 	if statusMatch == nil {
 		_, _ = fmt.Fprintf(warnW, "warning: %s missing required `status:` field; skipping\n", path)
-		return planRow{}, false
+		return scopeRow{}, false
 	}
-	systemsMatch := planSystemsRe.FindStringSubmatch(fm)
+	systemsMatch := scopeSystemsRe.FindStringSubmatch(fm)
 	if systemsMatch == nil {
 		_, _ = fmt.Fprintf(warnW, "warning: %s missing required `systems:` field; skipping\n", path)
-		return planRow{}, false
+		return scopeRow{}, false
 	}
 
 	systems := parseInlineSystems(systemsMatch[1])
-	slug := strings.TrimSuffix(filepath.Base(path), planFileExt)
-	return planRow{slug: slug, status: statusMatch[1], systems: systems}, true
+	slug := strings.TrimSuffix(filepath.Base(path), scopeFileExt)
+	return scopeRow{slug: slug, status: statusMatch[1], systems: systems}, true
 }
 
 // parseInlineSystems splits the body of an inline `systems: [a, b, "c"]`
@@ -542,9 +542,9 @@ func parseInlineSystems(raw string) []string {
 	return out
 }
 
-// ---------- plans lint ----------
+// ---------- scopes lint ----------
 
-// Allowed plan statuses. allowedStatusesSorted is the alphabetised form
+// Allowed scope statuses. allowedStatusesSorted is the alphabetised form
 // rendered in finding messages so the user always sees the same set in
 // the same order.
 var (
@@ -557,7 +557,7 @@ var (
 var requiredSections = []string{"## Goal", "## Approach", "## Tasks"}
 
 // Lint-only regexes. Frontmatter status/systems regexes are reused from
-// the listPlans path (planStatusRe / planSystemsRe) so both subcommands
+// the listScopes path (scopeStatusRe / scopeSystemsRe) so both subcommands
 // agree on structure.
 var (
 	planSupersedesRe   = regexp.MustCompile(`(?m)^supersedes:\s*\[([^\]]*)\]\s*$`)
@@ -593,7 +593,7 @@ var (
 	// about the `id` and `name` keys; everything else (e.g. `brief`) is
 	// matched and discarded by setRegistryField.
 	registryKVLineRe = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_-]*):\s*(.*)$`)
-	// planSlugRe matches the post-prefix portion of a plan filename:
+	// scopeSlugRe matches the post-prefix portion of a scope filename:
 	// one-or-more digits, a single hyphen, then a kebab-case slug
 	// (lowercase letters, digits, hyphens only). The /api/scope?id=<slug>
 	// handler validates user input against this regex before joining
@@ -601,10 +601,10 @@ var (
 	// the value contains no path separators, no `..` segments, and no
 	// shell-meaningful characters, which is what closes the CodeQL
 	// "uncontrolled data in path expression" finding.
-	planSlugRe = regexp.MustCompile(`^\d+-[a-z0-9-]+$`)
+	scopeSlugRe = regexp.MustCompile(`^\d+-[a-z0-9-]+$`)
 )
 
-// isSafePlanPath rejects any plan-file path that contains a `..`
+// isSafeScopePath rejects any scope-file path that contains a `..`
 // segment after lexical cleaning, so a tainted slug (or future
 // path-derived input) can never escape the project's `.stax/`
 // directory at the os.ReadFile boundary. Absolute paths are allowed
@@ -613,7 +613,7 @@ var (
 // `.stax/<file>.md`. The single thing we forbid is parent-directory
 // traversal — `..` is the only path component that could pull the
 // read out of the directory the caller intends.
-func isSafePlanPath(planPath string) bool {
+func isSafeScopePath(planPath string) bool {
 	cleaned := filepath.ToSlash(filepath.Clean(planPath))
 	for _, seg := range strings.Split(cleaned, "/") {
 		if seg == ".." {
@@ -623,52 +623,52 @@ func isSafePlanPath(planPath string) bool {
 	return true
 }
 
-// loadMaxPlanLines mirrors loadPrefixWidth for the max_plan_lines key in
-// _config.lock. Falls back to defaultMaxPlanLines on any failure.
+// loadMaxPlanLines mirrors loadPrefixWidth for the max_scope_lines key in
+// _config.lock. Falls back to defaultMaxScopeLines on any failure.
 func loadMaxPlanLines(staxDir string) int {
 	data, err := os.ReadFile(filepath.Join(staxDir, staxLockFile)) // #nosec G304 -- staxDir is project-local.
 	if err != nil {
-		return defaultMaxPlanLines
+		return defaultMaxScopeLines
 	}
 	var cfg struct {
-		MaxPlanLines int `json:"max_plan_lines"`
+		MaxScopeLines int `json:"max_scope_lines"`
 	}
-	if err := json.Unmarshal(data, &cfg); err != nil || cfg.MaxPlanLines <= 0 {
-		return defaultMaxPlanLines
+	if err := json.Unmarshal(data, &cfg); err != nil || cfg.MaxScopeLines <= 0 {
+		return defaultMaxScopeLines
 	}
-	return cfg.MaxPlanLines
+	return cfg.MaxScopeLines
 }
 
-// runPlansLint validates every *.md file in staxDir against the plan schema.
+// runScopesLint validates every *.md file in staxDir against the scope schema.
 // Takes no arguments — always operates on the standard .stax/ scaffold.
 // Output contract:
 //
 //   - Per-file findings → stdout, one per line, prefixed with file path.
 //   - A passing file emits `<path>: ok`.
 //   - Summary `<ok> ok, <fail> failed` → stderr.
-//   - Missing staxDir → 0 plans, exit 0.
+//   - Missing staxDir → 0 scopes, exit 0.
 //   - Exit 0 if every file passed, exit 1 if any failed.
-func runPlansLint(args []string) {
+func runScopesLint(args []string) {
 	os.Exit(planLint(args, staxDir, os.Stdout, os.Stderr))
 }
 
-// planLint is the testable body of runPlansLint. Exit-code contract:
+// planLint is the testable body of runScopesLint. Exit-code contract:
 // 0 every file passed (or zero files), 1 at least one failed, 2 usage
 // error or not-an-stax-project. Pulled out so unit tests can drive the
 // per-file loop + summary line + exit-on-fail counter without
 // shelling out a subprocess.
 func planLint(args []string, staxDir string, stdout, stderr io.Writer) int {
-	fs := flag.NewFlagSet("plans lint", flag.ContinueOnError)
+	fs := flag.NewFlagSet("scopes lint", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	cwdFlag := fs.String("cwd", "", "change to this directory before running (like git -C)")
 	fs.Usage = func() {
-		_, _ = fmt.Fprintln(stderr, "Usage: stax plans lint [--cwd PATH]")
+		_, _ = fmt.Fprintln(stderr, "Usage: stax scopes lint [--cwd PATH]")
 	}
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() > 0 {
-		_, _ = fmt.Fprintf(stderr, "stax plans lint takes no arguments (got %q)\n", fs.Arg(0))
+		_, _ = fmt.Fprintf(stderr, "stax scopes lint takes no arguments (got %q)\n", fs.Arg(0))
 		return 2
 	}
 	if err := applyCwd(*cwdFlag); err != nil {
@@ -686,17 +686,17 @@ func planLint(args []string, staxDir string, stdout, stderr io.Writer) int {
 	reg := parseRegistry(registryPath)
 
 	// Glob only errors on bad pattern; ours is fixed. Missing staxDir → empty.
-	files, _ := filepath.Glob(filepath.Join(staxDir, "*"+planFileExt))
+	files, _ := filepath.Glob(filepath.Join(staxDir, "*"+scopeFileExt))
 	sort.Strings(files)
 	knownSlugs := make(map[string]bool, len(files))
 	for _, f := range files {
-		knownSlugs[strings.TrimSuffix(filepath.Base(f), planFileExt)] = true
+		knownSlugs[strings.TrimSuffix(filepath.Base(f), scopeFileExt)] = true
 	}
 	relations := scanPlansRelations(files)
 
 	okCount, failCount := 0, 0
 	for _, path := range files {
-		findings := lintPlanFile(path, width, maxLines, reg, knownSlugs, relations, registryPath)
+		findings := lintScopeFile(path, width, maxLines, reg, knownSlugs, relations, registryPath)
 		if len(findings) > 0 {
 			failCount++
 			for _, f := range findings {
@@ -726,7 +726,7 @@ func planLint(args []string, staxDir string, stdout, stderr io.Writer) int {
 
 // registry pairs the two lookup directions parseRegistry produces:
 //
-//	byID   — "is this id from a plan's frontmatter `systems:` array
+//	byID   — "is this id from a scope's frontmatter `systems:` array
 //	         actually declared in _data_systems.yaml?" (lint frontmatter
 //	         membership). Maps id → display name.
 //	byName — "what id does this EARS subject (a display name like
@@ -750,7 +750,7 @@ type registry struct {
 //
 // Missing/unreadable file → empty registry; caller decides how to flag it.
 // Entries that carry only `id:` or only `name:` are dropped silently —
-// the broken plan referencing such a slug will surface its own lint
+// the broken scope referencing such a slug will surface its own lint
 // finding instead.
 func parseRegistry(path string) registry {
 	empty := registry{
@@ -864,14 +864,14 @@ func isIndented(line string) bool {
 	return c == ' ' || c == '\t'
 }
 
-// lintPlanFile runs every per-file lint check and returns a list of
+// lintScopeFile runs every per-file lint check and returns a list of
 // finding strings (empty = pass). Each finding is human-readable and
 // stateless — callers prepend the file path. registryPath is passed in
 // (rather than recomputed) so the "system not in registry" message uses
 // the same string the lint hook logged at startup. reg carries both
 // directions of the registry lookup (id→name and name→id) so the
 // frontmatter check and the EARS-subject resolution share one parse.
-func lintPlanFile(path string, width, maxLines int, reg registry, knownSlugs map[string]bool, relations plansRelations, registryPath string) []string {
+func lintScopeFile(path string, width, maxLines int, reg registry, knownSlugs map[string]bool, relations scopesRelations, registryPath string) []string {
 	findings := lintFilename(filepath.Base(path), width)
 
 	data, err := os.ReadFile(path) // #nosec G304 -- path is a staxDir glob result.
@@ -888,7 +888,7 @@ func lintPlanFile(path string, width, maxLines int, reg registry, knownSlugs map
 		return findings
 	}
 
-	slug := strings.TrimSuffix(filepath.Base(path), planFileExt)
+	slug := strings.TrimSuffix(filepath.Base(path), scopeFileExt)
 	title, titleFindings := lintTitle(fm)
 	findings = append(findings, titleFindings...)
 	findings = append(findings, lintStatus(fm)...)
@@ -909,18 +909,18 @@ func lintPlanFile(path string, width, maxLines int, reg registry, knownSlugs map
 	return findings
 }
 
-// lintFilename returns at most one finding for a non-conforming plan-file
-// name. Pulled out so lintPlanFile's main flow reads as a sequence of
+// lintFilename returns at most one finding for a non-conforming scope-file
+// name. Pulled out so lintScopeFile's main flow reads as a sequence of
 // per-section checks.
 func lintFilename(name string, width int) []string {
-	re := regexp.MustCompile(fmt.Sprintf(`^\d{%d}-[a-z0-9][a-z0-9-]*%s$`, width, regexp.QuoteMeta(planFileExt)))
+	re := regexp.MustCompile(fmt.Sprintf(`^\d{%d}-[a-z0-9][a-z0-9-]*%s$`, width, regexp.QuoteMeta(scopeFileExt)))
 	if re.MatchString(name) {
 		return nil
 	}
-	return []string{fmt.Sprintf("filename %q does not match <prefix>-<slug>%s (prefix width %d, kebab-case slug)", name, planFileExt, width)}
+	return []string{fmt.Sprintf("filename %q does not match <prefix>-<slug>%s (prefix width %d, kebab-case slug)", name, scopeFileExt, width)}
 }
 
-// lintLineCount enforces the project line cap on a plan file. The +1
+// lintLineCount enforces the project line cap on a scope file. The +1
 // adjustment captures the last line of a file without a trailing newline
 // so two files with the same visible content produce the same count.
 func lintLineCount(text string, maxLines int) []string {
@@ -954,7 +954,7 @@ func splitFrontmatter(text string) (fm, body string, findings []string, stop boo
 // allowlist. Missing field and non-allowed value are reported as two
 // distinct findings — the user sees exactly which problem to fix.
 func lintStatus(fm string) []string {
-	m := planStatusRe.FindStringSubmatch(fm)
+	m := scopeStatusRe.FindStringSubmatch(fm)
 	if m == nil {
 		return []string{"missing required `status:` field"}
 	}
@@ -970,7 +970,7 @@ func lintStatus(fm string) []string {
 // EARS-equality check alongside any findings. Block-form `systems:` is
 // rejected by the regex; only inline-array form is recognized.
 func lintSystems(fm string, reg registry, registryPath string) (declared, findings []string) {
-	m := planSystemsRe.FindStringSubmatch(fm)
+	m := scopeSystemsRe.FindStringSubmatch(fm)
 	if m == nil {
 		return nil, []string{"missing required `systems:` field (must be inline array)"}
 	}
@@ -988,7 +988,7 @@ func lintSystems(fm string, reg registry, registryPath string) (declared, findin
 
 // lintRelationArray is the shared structure for `supersedes:`, `extends:`,
 // `extended_by:`, `superseded_by:`: each entry must resolve to a sibling
-// plan, and self-references are rejected. Field name is passed in so the
+// scope, and self-references are rejected. Field name is passed in so the
 // finding strings are field-specific.
 func lintRelationArray(selfSlug, fm, field string, re *regexp.Regexp, knownSlugs map[string]bool) []string {
 	m := re.FindStringSubmatch(fm)
@@ -998,18 +998,18 @@ func lintRelationArray(selfSlug, fm, field string, re *regexp.Regexp, knownSlugs
 	var findings []string
 	for _, slug := range parseInlineSystems(m[1]) {
 		if slug == selfSlug {
-			findings = append(findings, fmt.Sprintf("%s cannot reference the plan itself", field))
+			findings = append(findings, fmt.Sprintf("%s cannot reference the scope itself", field))
 			continue
 		}
 		if !knownSlugs[slug] {
-			findings = append(findings, fmt.Sprintf("%s %q does not match any plan file in the same directory", field, slug))
+			findings = append(findings, fmt.Sprintf("%s %q does not match any scope file in the same directory", field, slug))
 		}
 	}
 	return findings
 }
 
 // lintBidirectional enforces that a forward-link / back-link pair is
-// symmetric across every plan. For each slug X in `fwd[self]`, X's
+// symmetric across every scope. For each slug X in `fwd[self]`, X's
 // `back` set must contain self; and for each slug Y in `back[self]`,
 // Y's `fwd` set must contain self. Reports both directions so the user
 // sees exactly which side is missing the link. fwdField / backField are
@@ -1019,35 +1019,35 @@ func lintBidirectional(self string, fwd, back map[string]map[string]bool, fwdFie
 	var findings []string
 	for x := range fwd[self] {
 		if !back[x][self] {
-			findings = append(findings, fmt.Sprintf("%s %q but %q does not list this plan in its `%s:` array", fwdField, x, x, backField))
+			findings = append(findings, fmt.Sprintf("%s %q but %q does not list this scope in its `%s:` array", fwdField, x, x, backField))
 		}
 	}
 	for y := range back[self] {
 		if !fwd[y][self] {
-			findings = append(findings, fmt.Sprintf("%s %q but %q does not list this plan in its `%s:` array", backField, y, y, fwdField))
+			findings = append(findings, fmt.Sprintf("%s %q but %q does not list this scope in its `%s:` array", backField, y, y, fwdField))
 		}
 	}
 	sort.Strings(findings)
 	return findings
 }
 
-// plansRelations bundles the four cross-plan adjacency maps the linter
+// scopesRelations bundles the four cross-scope adjacency maps the linter
 // consults for forward/back-link integrity. Each entry is `slug → set of
-// slugs in that plan's <field>:` array. Zero values are usable — nil-map
+// slugs in that scope's <field>:` array. Zero values are usable — nil-map
 // lookups return false, which is the correct "no link" answer.
-type plansRelations struct {
+type scopesRelations struct {
 	extends      map[string]map[string]bool
 	extendedBy   map[string]map[string]bool
 	supersedes   map[string]map[string]bool
 	supersededBy map[string]map[string]bool
 }
 
-// scanPlansRelations walks every plan file once and populates the four
-// adjacency maps in plansRelations. Files that can't be read or have
-// malformed frontmatter contribute nothing — lintPlanFile surfaces those
+// scanPlansRelations walks every scope file once and populates the four
+// adjacency maps in scopesRelations. Files that can't be read or have
+// malformed frontmatter contribute nothing — lintScopeFile surfaces those
 // as per-file findings on its own pass.
-func scanPlansRelations(files []string) plansRelations {
-	r := plansRelations{
+func scanPlansRelations(files []string) scopesRelations {
+	r := scopesRelations{
 		extends:      make(map[string]map[string]bool, len(files)),
 		extendedBy:   make(map[string]map[string]bool, len(files)),
 		supersedes:   make(map[string]map[string]bool, len(files)),
@@ -1058,7 +1058,7 @@ func scanPlansRelations(files []string) plansRelations {
 		if err != nil {
 			continue
 		}
-		slug := strings.TrimSuffix(filepath.Base(path), planFileExt)
+		slug := strings.TrimSuffix(filepath.Base(path), scopeFileExt)
 		fm, _, _, stop := splitFrontmatter(string(data))
 		if stop {
 			continue
@@ -1164,7 +1164,7 @@ func lintFilenameMatchesTitle(name string, width int, title string) []string {
 	if title == "" {
 		return nil
 	}
-	re := regexp.MustCompile(fmt.Sprintf(`^\d{%d}-(.+)%s$`, width, regexp.QuoteMeta(planFileExt)))
+	re := regexp.MustCompile(fmt.Sprintf(`^\d{%d}-(.+)%s$`, width, regexp.QuoteMeta(scopeFileExt)))
 	m := re.FindStringSubmatch(name)
 	if m == nil {
 		return nil
@@ -1202,7 +1202,7 @@ func lintRequiredSections(body string) []string {
 //     id set exactly. The equality rule keeps frontmatter honest —
 //     declared systems can't drift from what the tasks actually exercise.
 //
-// declared carries the kebab ids parsed from the plan's frontmatter; EARS
+// declared carries the kebab ids parsed from the scope's frontmatter; EARS
 // subjects are translated to ids before the set comparison so both sides
 // share the same coordinate system.
 func lintEarsTasks(body string, declared []string, reg registry, registryPath string) []string {
@@ -1261,7 +1261,7 @@ func setDifference(a, b map[string]bool) []string {
 	return out
 }
 
-// ---------- plans slugify ----------
+// ---------- scopes slugify ----------
 
 // slugifySepRe matches one-or-more runs of non-slug bytes after lowercasing.
 // Anything outside [a-z0-9] collapses into a single `-`; leading/trailing
@@ -1269,7 +1269,7 @@ func setDifference(a, b map[string]bool) []string {
 // `^[a-z0-9][a-z0-9-]*$` enforced by lintFilename.
 var slugifySepRe = regexp.MustCompile(`[^a-z0-9]+`)
 
-// slugify converts a plan title into the kebab-case slug used as the
+// slugify converts a scope title into the kebab-case slug used as the
 // post-prefix portion of the filename. Returns an empty string when the
 // input has no [a-z0-9] characters to anchor the slug — callers treat that
 // as an error.
@@ -1284,14 +1284,14 @@ func slugify(title string) string {
 // (no value after the bare form) it writes a usage error to stderr
 // and returns ok=false so the caller can exit 2 immediately. Multiple
 // occurrences keep the last value, mirroring flag.String's last-wins
-// semantics for the other plan subcommands.
+// semantics for the other scope subcommands.
 func extractCwdFromHead(args []string, stderr io.Writer) (cwd string, rest []string, ok bool) {
 	rest = args
 	for len(rest) > 0 {
 		switch {
 		case rest[0] == "--cwd":
 			if len(rest) < 2 {
-				_, _ = fmt.Fprintln(stderr, "stax plans slugify: --cwd requires a value")
+				_, _ = fmt.Fprintln(stderr, "stax scopes slugify: --cwd requires a value")
 				return "", nil, false
 			}
 			cwd = rest[1]
@@ -1306,11 +1306,11 @@ func extractCwdFromHead(args []string, stderr io.Writer) (cwd string, rest []str
 	return cwd, rest, true
 }
 
-// runPlansSlugify takes a single positional argument (the title) and prints
+// runScopesSlugify takes a single positional argument (the title) and prints
 // its kebab-case slug to stdout. Exits 2 on missing/extra arguments or when
 // the title contains no characters that survive slugification. No project
 // check — slugify is a pure transform and is useful before `stax init`.
-// runPlansSlugify is the only subcommand that takes a single positional.
+// runScopesSlugify is the only subcommand that takes a single positional.
 // flag.Parse can't help here — the title may legitimately start with `-`
 // (e.g. "---draft note"), and flag.Parse would reject it as an unknown
 // flag. Instead we hand-parse the leading flag-like tokens we care about:
@@ -1319,11 +1319,11 @@ func extractCwdFromHead(args []string, stderr io.Writer) (cwd string, rest []str
 // subcommand even though slugify itself is cwd-independent), `-h`/`--help`
 // print usage, `--` is a legacy separator stripped if present, and
 // everything else is treated as the title.
-func runPlansSlugify(args []string) {
+func runScopesSlugify(args []string) {
 	os.Exit(planSlugify(args, os.Stdout, os.Stderr))
 }
 
-// planSlugify is the testable body of runPlansSlugify. Exit-code
+// planSlugify is the testable body of runScopesSlugify. Exit-code
 // contract: 0 happy (or -h/--help), 2 usage error (missing/extra args,
 // bad --cwd, or unsluggable title). No staxDir argument because slugify
 // is a pure transform — useful before `stax init`, so it deliberately
@@ -1337,7 +1337,7 @@ func planSlugify(args []string, stdout, stderr io.Writer) int {
 	if len(args) >= 1 {
 		switch args[0] {
 		case "-h", "--help":
-			_, _ = fmt.Fprintln(stderr, `Usage: stax plans slugify [--cwd PATH] "<title>"`)
+			_, _ = fmt.Fprintln(stderr, `Usage: stax scopes slugify [--cwd PATH] "<title>"`)
 			return 0
 		case "--":
 			args = args[1:]
@@ -1348,14 +1348,14 @@ func planSlugify(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if len(args) != 1 {
-		_, _ = fmt.Fprintln(stderr, `Usage: stax plans slugify [--cwd PATH] "<title>"`)
-		_, _ = fmt.Fprintln(stderr, `stax plans slugify takes exactly one positional argument: the title (quote it)`)
+		_, _ = fmt.Fprintln(stderr, `Usage: stax scopes slugify [--cwd PATH] "<title>"`)
+		_, _ = fmt.Fprintln(stderr, `stax scopes slugify takes exactly one positional argument: the title (quote it)`)
 		return 2
 	}
 	title := args[0]
 	slug := slugify(title)
 	if slug == "" {
-		_, _ = fmt.Fprintf(stderr, "stax plans slugify: title %q has no slug-able characters\n", title)
+		_, _ = fmt.Fprintf(stderr, "stax scopes slugify: title %q has no slug-able characters\n", title)
 		return 2
 	}
 	_, _ = fmt.Fprintln(stdout, slug)

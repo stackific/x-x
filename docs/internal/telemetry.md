@@ -89,7 +89,7 @@ Each row shows the event name, what CLI action fires it, and the event-specific 
 
 The receiver must be able to audit the producer for these guarantees by inspecting the CLI source:
 
-- **No file contents.** No plan file body, no SKILL.md body, no settings.json body, no source code.
+- **No file contents.** No scope file body, no SKILL.md body, no settings.json body, no source code.
 - **No absolute paths.** Param values are bounded enumerations (`project`/`user`), comma-joined registry keys (`claude,codex`), or small integers. No `/Users/...`, no `/home/...`, no `C:\Users\...`.
 - **No project identifiers.** No git remote URL, no working-directory path, no commit hash, no branch name.
 - **No agent CLI output.** No content the underlying agent (Claude / Codex / etc.) emitted.
