@@ -596,27 +596,36 @@ func writeIfAbsent(path string, content []byte) error {
 // so it can be reasoned about and tested in isolation if a test ever
 // gets written.
 //
-// `scope` is consulted via t.skillsRelFor so agents with a per-scope
+// `scope` is consulted via t.skillsRelsFor so agents with a per-scope
 // skill path (e.g. Copilot CLI: `.agents/skills` at project,
-// `~/.copilot/skills` at user) land in the right directory.
+// `~/.copilot/skills` at user) land in the right directory, and so
+// agents that ship skills into multiple user-scope discovery roots
+// (Google Antigravity: `~/.gemini/antigravity-cli/skills` AND
+// `~/.gemini/config/skills`) get every destination written in one pass.
 func installForTarget(t *agentTarget, skills []string, scopeRoot, skillsSource, agentsRoot string, useSymlink bool, scope initScope) {
 	// Pass 1: skills. Each skill lives at <scopeRoot>/<skillsRel>/<skill>/.
-	skillsDir := filepath.Join(scopeRoot, t.skillsRelFor(scope))
-	if err := os.MkdirAll(skillsDir, 0o700); err != nil {
-		// Can't even create the parent skills dir for this agent.
-		// Log + skip — other agents may still succeed.
-		fmt.Fprintf(os.Stderr, "  %-13s skipped: %v\n", t.name, err)
-		return
-	}
-	fmt.Printf("  %-13s %s\n", t.name, skillsDir)
-	for _, skill := range skills {
-		src := filepath.Join(skillsSource, skill)
-		dest := filepath.Join(skillsDir, skill)
-		// Per-skill error is logged but does not abort. This is important:
-		// a single skill collision (user-owned dir) shouldn't prevent
-		// other skills from installing.
-		if err := installSkill(src, dest, useSymlink); err != nil {
-			fmt.Fprintf(os.Stderr, "    %s: %v\n", skill, err)
+	// skillsRelsFor returns one entry for symmetric agents and the project
+	// scope; multi-entry only at user scope for agents with cross-tool
+	// discovery roots (Antigravity).
+	for _, rel := range t.skillsRelsFor(scope) {
+		skillsDir := filepath.Join(scopeRoot, rel)
+		if err := os.MkdirAll(skillsDir, 0o700); err != nil {
+			// Can't even create the parent skills dir for this destination.
+			// Log + continue — other destinations (and other agents) may
+			// still succeed.
+			fmt.Fprintf(os.Stderr, "  %-13s skipped: %v\n", t.name, err)
+			continue
+		}
+		fmt.Printf("  %-13s %s\n", t.name, skillsDir)
+		for _, skill := range skills {
+			src := filepath.Join(skillsSource, skill)
+			dest := filepath.Join(skillsDir, skill)
+			// Per-skill error is logged but does not abort. This is important:
+			// a single skill collision (user-owned dir) shouldn't prevent
+			// other skills from installing.
+			if err := installSkill(src, dest, useSymlink); err != nil {
+				fmt.Fprintf(os.Stderr, "    %s: %v\n", skill, err)
+			}
 		}
 	}
 

@@ -82,7 +82,8 @@ Every prompt has a flag — pass any subset to skip the matching prompt, or pass
 
 | Key | Display name | Workspace path | User-scope path |
 | --- | --- | --- | --- |
-| `claude` | Claude Code | `.claude/skills/` | `~/.claude/skills/` |
+| `antigravity` | Google Antigravity | `.agents/skills/` | `~/.gemini/antigravity-cli/skills/` and `~/.gemini/config/skills/` |
+| `claude` | Anthropic Claude Code | `.claude/skills/` | `~/.claude/skills/` |
 | `cline` | Cline | `.cline/skills/` | `~/.cline/skills/` |
 | `codex` | Codex CLI | `.agents/skills/` | `~/.agents/skills/` |
 | `continue` | Continue | `.continue/skills/` | `~/.continue/skills/` |
@@ -94,12 +95,13 @@ Every prompt has a flag — pass any subset to skip the matching prompt, or pass
 | `pi` | Pi | `.agents/skills/` | `~/.agents/skills/` |
 | `zed` | Zed | `.agents/skills/` | `~/.agents/skills/` |
 
-Paths follow each agent's own docs ([Cline](https://docs.cline.bot/customization/overview), [Continue](https://docs.continue.dev/customize/overview), [Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills), [Cursor](https://docs.cursor.com/agent), [Pi](https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/docs/skills.md), [Oh My Pi](https://github.com/can1357/oh-my-pi/blob/main/docs/skills.md), [Zed](https://zed.dev/docs/ai/agent-panel)).
+Paths follow each agent's own docs ([Antigravity](https://antigravity.google/docs/skills), [Cline](https://docs.cline.bot/customization/overview), [Continue](https://docs.continue.dev/customize/overview), [Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills), [Cursor](https://docs.cursor.com/agent), [Pi](https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/docs/skills.md), [Oh My Pi](https://github.com/can1357/oh-my-pi/blob/main/docs/skills.md), [Zed](https://zed.dev/docs/ai/agent-panel)).
 
 Key path conventions:
 
-- `.agents/skills/` is the cross-agent open spec. Codex, Copilot, Oh My Pi, Pi, Zed read it natively at both scopes.
+- `.agents/skills/` is the cross-agent open spec. Antigravity, Codex, Copilot, Oh My Pi, Pi, Zed read it natively at workspace scope.
 - Cursor honors `.agents/skills/` at workspace scope but diverges at user scope (Cursor → `~/.cursor/skills/`).
+- Google Antigravity is the only `--agents` row that ships into TWO user-scope skills roots in one install — `~/.gemini/antigravity-cli/skills/` (read by the Antigravity CLI `agy`) AND `~/.gemini/config/skills/` (read by the Antigravity CLI and the Antigravity Desktop app, mirroring `~/.gemini/config/`'s shared-config role).
 - Cline, Continue, Kilo, Claude, and OpenCode use their own per-agent paths.
 
 #### Install behavior

@@ -90,6 +90,16 @@ Set-Variable -Option Constant -Name COPILOT_SKILLS_REL          -Value '.agents\
 # Copilot hook surface — scope-asymmetric (`userConfigRel` set in Go).
 Set-Variable -Option Constant -Name COPILOT_CONFIG_REL           -Value '.github\hooks'
 Set-Variable -Option Constant -Name COPILOT_USER_CONFIG_REL      -Value '.copilot\hooks'
+# Google Antigravity — dual user-scope skill destinations plus scope-
+# symmetric JSON hooks at `.gemini\settings.json`. The CLI-local skills
+# root is consumed by the Antigravity CLI (`agy`); the shared skills
+# root is read by both the CLI and the Antigravity Desktop app. See the
+# matching bash mirror block + the agentTargets row comment for the full
+# rationale.
+Set-Variable -Option Constant -Name ANTIGRAVITY_SKILLS_REL             -Value '.agents\skills'
+Set-Variable -Option Constant -Name ANTIGRAVITY_USER_SKILLS_REL_CLI    -Value '.gemini\antigravity-cli\skills'
+Set-Variable -Option Constant -Name ANTIGRAVITY_USER_SKILLS_REL_SHARED -Value '.gemini\config\skills'
+Set-Variable -Option Constant -Name ANTIGRAVITY_CONFIG_REL             -Value '.gemini'
 Set-Variable -Option Constant -Name KILO_SKILLS_REL             -Value '.kilocode\skills'
 Set-Variable -Option Constant -Name OMP_SKILLS_REL              -Value '.agents\skills'
 Set-Variable -Option Constant -Name OPENCODE_SKILLS_REL         -Value '.opencode\commands'
@@ -3622,6 +3632,395 @@ try {
   Assert-IsFile  'user stax.ts present' $userPath
   $projPath = Join-Path $projPIu (Join-Path $PI_CONFIG_REL 'stax.ts')
   Assert-NotExists 'project-scope stax.ts empty after user install' $projPath
+} finally { Pop-Location }
+
+# ---------- Google Antigravity: dual user-scope skills + JSON hooks ----------
+#
+# Behavior-neutral twins of the bash cases. Same install/un-merge contract:
+# project scope lands skills at `.agents\skills\` and hooks at
+# `.gemini\settings.json`; user scope writes skills to BOTH
+# `~\.gemini\antigravity-cli\skills\` and `~\.gemini\config\skills\` plus
+# hooks at `~\.gemini\settings.json`. The fact that one install drops
+# skills into two user-scope discovery roots is the multi-destination
+# `userSkillsRels` behavior — same code path as POSIX, just Windows path
+# separators.
+
+Start-Case 'Antigravity: init --scope project lands skills + settings.json'
+Reset-UserHome
+$projAG = New-FreshProject
+Push-Location $projAG
+try {
+  Invoke-XX init --scope project --agents antigravity `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  Assert-Eq 'exit 0' $RunRC 0
+  foreach ($skill in $OWNED_SKILLS) {
+    $sd = Join-Path $projAG (Join-Path $ANTIGRAVITY_SKILLS_REL $skill)
+    Assert-IsDir  "project skill $skill" $sd
+    Assert-IsFile "project SKILL.md $skill" (Join-Path $sd $SKILL_MANIFEST_FILE)
+  }
+  $settingsPath = Join-Path $projAG (Join-Path $ANTIGRAVITY_CONFIG_REL 'settings.json')
+  Assert-IsFile 'project settings.json present' $settingsPath
+  $agBody = Get-Content -Raw -LiteralPath $settingsPath
+  Assert-Contains 'hooks key present'   $agBody '"hooks"'
+  Assert-Contains 'PostToolUse present' $agBody '"PostToolUse"'
+  Assert-Contains 'Stop present'        $agBody '"Stop"'
+  Assert-Contains 'lint command'        $agBody 'stax work-items lint'
+  # User-scope paths must NOT have been touched by a project-scope install.
+  $userCliSkill = Join-Path $env:USERPROFILE (Join-Path $ANTIGRAVITY_USER_SKILLS_REL_CLI $SKILL_SCOPE_DIR)
+  Assert-NotExists 'user-scope CLI skills empty after project install' $userCliSkill
+  $userSharedSkill = Join-Path $env:USERPROFILE (Join-Path $ANTIGRAVITY_USER_SKILLS_REL_SHARED $SKILL_SCOPE_DIR)
+  Assert-NotExists 'user-scope shared skills empty after project install' $userSharedSkill
+  $userSettings = Join-Path $env:USERPROFILE (Join-Path $ANTIGRAVITY_CONFIG_REL 'settings.json')
+  Assert-NotExists 'user-scope settings.json empty after project install' $userSettings
+} finally { Pop-Location }
+
+Start-Case 'Antigravity: init --scope user lands skills at BOTH user roots + settings.json'
+Reset-UserHome
+$projAGu = New-FreshProject
+Push-Location $projAGu
+try {
+  Invoke-XX init --scope user --agents antigravity `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  Assert-Eq 'exit 0' $RunRC 0
+  foreach ($skill in $OWNED_SKILLS) {
+    $cliRoot = Join-Path $env:USERPROFILE (Join-Path $ANTIGRAVITY_USER_SKILLS_REL_CLI $skill)
+    Assert-IsDir  "CLI-local skill $skill" $cliRoot
+    Assert-IsFile "CLI-local SKILL.md $skill" (Join-Path $cliRoot $SKILL_MANIFEST_FILE)
+    $sharedRoot = Join-Path $env:USERPROFILE (Join-Path $ANTIGRAVITY_USER_SKILLS_REL_SHARED $skill)
+    Assert-IsDir  "shared skill $skill" $sharedRoot
+    Assert-IsFile "shared SKILL.md $skill" (Join-Path $sharedRoot $SKILL_MANIFEST_FILE)
+  }
+  $userSettings = Join-Path $env:USERPROFILE (Join-Path $ANTIGRAVITY_CONFIG_REL 'settings.json')
+  Assert-IsFile 'user settings.json present' $userSettings
+  $projSkill = Join-Path $projAGu (Join-Path $ANTIGRAVITY_SKILLS_REL $SKILL_SCOPE_DIR)
+  Assert-NotExists 'project skills empty after user install' $projSkill
+  $projSettings = Join-Path $projAGu (Join-Path $ANTIGRAVITY_CONFIG_REL 'settings.json')
+  Assert-NotExists 'project settings.json empty after user install' $projSettings
+} finally { Pop-Location }
+
+Start-Case 'Antigravity: init re-run merges into edited settings.json'
+Reset-UserHome
+$projAGm = New-FreshProject
+Push-Location $projAGm
+try {
+  Invoke-XX init --scope project --agents antigravity `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  Assert-Eq 'first init exit 0' $RunRC 0
+  $agSettings = Join-Path $projAGm (Join-Path $ANTIGRAVITY_CONFIG_REL 'settings.json')
+  $editedJson = @"
+{
+  "userOnlyKey": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {"type": "command", "command": "USER-ANTIGRAVITY-HOOK"}
+        ]
+      }
+    ]
+  }
+}
+"@
+  Set-Content -LiteralPath $agSettings -Value $editedJson -Encoding ascii
+  Remove-Item -Force -LiteralPath (Join-Path $projAGm $STAX_LOCK_PATH)
+  Invoke-XX init --scope project --agents antigravity `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  $agmBody = Get-Content -Raw -LiteralPath $agSettings
+  Assert-Contains 'user scalar survives merge' $agmBody 'userOnlyKey'
+  Assert-Contains 'user hook survives merge'   $agmBody 'USER-ANTIGRAVITY-HOOK'
+  Assert-Contains 'bundled hook landed'        $agmBody 'stax work-items lint'
+} finally { Pop-Location }
+
+Start-Case 'Antigravity: skill remove --project un-merges bundled records'
+Reset-UserHome
+$projAGr = New-FreshProject
+Push-Location $projAGr
+try {
+  Invoke-XX init --scope project --agents antigravity `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  $agSettings = Join-Path $projAGr (Join-Path $ANTIGRAVITY_CONFIG_REL 'settings.json')
+  # Bundled records here MUST stay byte-equal to agents/antigravity/settings.json
+  # — TestE2EHookFixtureMirrorsBundle pins this from the Go side against the
+  # matching bash heredoc. Drift in one mirror is caught at unit-test speed.
+  $seedJson = @"
+{
+  "userOnlyKey": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {"type": "command", "command": "stax work-items lint"}
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {"type": "command", "command": "USER-ANTIGRAVITY-HOOK"}
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {"type": "command", "command": "stax work-items lint"}
+        ]
+      }
+    ]
+  }
+}
+"@
+  Set-Content -LiteralPath $agSettings -Value $seedJson -Encoding ascii
+  Invoke-XX skills remove --project
+  Assert-Eq 'exit 0' $RunRC 0
+  $agrBody = Get-Content -Raw -LiteralPath $agSettings
+  Assert-NotContains 'bundled command gone'         $agrBody 'stax work-items lint'
+  Assert-Contains    'user antigravity hook survives' $agrBody 'USER-ANTIGRAVITY-HOOK'
+  Assert-Contains    'user scalar survives un-merge'  $agrBody 'userOnlyKey'
+  $projSkill = Join-Path $projAGr (Join-Path $ANTIGRAVITY_SKILLS_REL $SKILL_SCOPE_DIR)
+  Assert-NotExists 'project skill scope dir gone' $projSkill
+} finally { Pop-Location }
+
+Start-Case 'Antigravity: skill remove --user clears both skills roots'
+Reset-UserHome
+$projAGru = New-FreshProject
+Push-Location $projAGru
+try {
+  Invoke-XX init --scope user --agents antigravity `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  # User-authored siblings in each user-scope root — the allowlist must
+  # leave them alone while removing the bundled `scope` / `ship` dirs.
+  $cliSibling = Join-Path $env:USERPROFILE (Join-Path $ANTIGRAVITY_USER_SKILLS_REL_CLI 'my-skill')
+  $sharedSibling = Join-Path $env:USERPROFILE (Join-Path $ANTIGRAVITY_USER_SKILLS_REL_SHARED 'my-skill')
+  New-Item -ItemType Directory -Force -Path $cliSibling | Out-Null
+  New-Item -ItemType Directory -Force -Path $sharedSibling | Out-Null
+  New-Item -ItemType File -Force -Path (Join-Path $cliSibling $SKILL_MANIFEST_FILE) | Out-Null
+  New-Item -ItemType File -Force -Path (Join-Path $sharedSibling $SKILL_MANIFEST_FILE) | Out-Null
+  Invoke-XX skills remove --user
+  Assert-Eq 'exit 0' $RunRC 0
+  foreach ($skill in $OWNED_SKILLS) {
+    $cliPath = Join-Path $env:USERPROFILE (Join-Path $ANTIGRAVITY_USER_SKILLS_REL_CLI $skill)
+    Assert-NotExists "CLI-local $skill gone" $cliPath
+    $sharedPath = Join-Path $env:USERPROFILE (Join-Path $ANTIGRAVITY_USER_SKILLS_REL_SHARED $skill)
+    Assert-NotExists "shared $skill gone" $sharedPath
+  }
+  Assert-IsDir 'user-authored sibling preserved (CLI root)'    $cliSibling
+  Assert-IsDir 'user-authored sibling preserved (shared root)' $sharedSibling
+} finally { Pop-Location }
+
+# ---------- Antigravity: surgical merge / un-merge contract (PS1 twins) ----------
+#
+# Behavior-neutral mirrors of the bash cases that pin the JSON-merge
+# contract for Antigravity. Same shape Claude / Codex / Copilot get on
+# the PS1 side — every agent that rides the JSON-merge primitive gets
+# its own cross-platform coverage, because a regression in the
+# dispatch / extension / scope-resolution layer could break ONE agent
+# without breaking another.
+
+Start-Case 'Antigravity: init re-run is idempotent on merged settings.json'
+Reset-UserHome
+$projAGidem = New-FreshProject
+Push-Location $projAGidem
+try {
+  Invoke-XX init --scope project --agents antigravity `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  $agSettings = Join-Path $projAGidem (Join-Path $ANTIGRAVITY_CONFIG_REL 'settings.json')
+  Set-Content -LiteralPath $agSettings -Value '{"model": "gemini-2.5-pro"}' -Encoding ascii
+  Remove-Item -Force -LiteralPath (Join-Path $projAGidem $STAX_LOCK_PATH)
+  Invoke-XX init --scope project --agents antigravity `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  $snap1 = Get-Content -Raw -LiteralPath $agSettings
+  Remove-Item -Force -LiteralPath (Join-Path $projAGidem $STAX_LOCK_PATH)
+  Invoke-XX init --scope project --agents antigravity `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  $snap2 = Get-Content -Raw -LiteralPath $agSettings
+  Assert-Eq 'settings.json idempotent across re-runs' $snap1 $snap2
+} finally { Pop-Location }
+
+Start-Case 'Antigravity: init re-run merge: hook arrays are unioned'
+Reset-UserHome
+$projAGarr = New-FreshProject
+Push-Location $projAGarr
+try {
+  Invoke-XX init --scope project --agents antigravity `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  $agSettings = Join-Path $projAGarr (Join-Path $ANTIGRAVITY_CONFIG_REL 'settings.json')
+  $userArrJson = @"
+{
+  "hooks": {
+    "PostToolUse": [
+      {"matcher": "Read", "hooks": [{"type": "command", "command": "my-tool"}]}
+    ]
+  }
+}
+"@
+  Set-Content -LiteralPath $agSettings -Value $userArrJson -Encoding ascii
+  Remove-Item -Force -LiteralPath (Join-Path $projAGarr $STAX_LOCK_PATH)
+  Invoke-XX init --scope project --agents antigravity `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  $arrBody = Get-Content -Raw -LiteralPath $agSettings
+  Assert-Contains 'user matcher Read survives'              $arrBody '"matcher": "Read"'
+  Assert-Contains 'user command my-tool survives'           $arrBody '"command": "my-tool"'
+  Assert-Contains 'bundled matcher Write|Edit lands'        $arrBody '"matcher": "Write|Edit"'
+  Assert-Contains 'bundled command stax work-items lint lands' $arrBody '"command": "stax work-items lint"'
+} finally { Pop-Location }
+
+Start-Case 'Antigravity: init re-run merge: user scalar wins on conflict'
+Reset-UserHome
+$projAGscalar = New-FreshProject
+Push-Location $projAGscalar
+try {
+  Invoke-XX init --scope project --agents antigravity `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  $agSettings = Join-Path $projAGscalar (Join-Path $ANTIGRAVITY_CONFIG_REL 'settings.json')
+  Set-Content -LiteralPath $agSettings -Value '{"model": "gemini-3-flash", "hooks": {}}' -Encoding ascii
+  Remove-Item -Force -LiteralPath (Join-Path $projAGscalar $STAX_LOCK_PATH)
+  Invoke-XX init --scope project --agents antigravity `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  $scalarBody = Get-Content -Raw -LiteralPath $agSettings
+  Assert-Contains 'user model scalar preserved' $scalarBody '"model": "gemini-3-flash"'
+  Assert-Contains 'bundled hooks still added'   $scalarBody 'stax work-items lint'
+} finally { Pop-Location }
+
+Start-Case 'Antigravity: init re-run merge: malformed JSON preserves user bytes'
+Reset-UserHome
+$projAGbad = New-FreshProject
+Push-Location $projAGbad
+try {
+  Invoke-XX init --scope project --agents antigravity `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  $agSettings = Join-Path $projAGbad (Join-Path $ANTIGRAVITY_CONFIG_REL 'settings.json')
+  Set-Content -LiteralPath $agSettings -Value 'not valid json {' -Encoding ascii
+  Remove-Item -Force -LiteralPath (Join-Path $projAGbad $STAX_LOCK_PATH)
+  Invoke-XX init --scope project --agents antigravity `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  Assert-Eq 'exit 0 despite parse failure' $RunRC 0
+  Assert-Eq 'malformed file untouched' (Get-Content -Raw -LiteralPath $agSettings) 'not valid json {'
+  Assert-Contains 'stderr warns about merge failure' $RunErr 'merge failed'
+} finally { Pop-Location }
+
+Start-Case 'Antigravity: init re-run merge: empty existing file is seeded'
+Reset-UserHome
+$projAGempty = New-FreshProject
+Push-Location $projAGempty
+try {
+  Invoke-XX init --scope project --agents antigravity `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  $agSettings = Join-Path $projAGempty (Join-Path $ANTIGRAVITY_CONFIG_REL 'settings.json')
+  Set-Content -LiteralPath $agSettings -Value '' -Encoding ascii
+  Remove-Item -Force -LiteralPath (Join-Path $projAGempty $STAX_LOCK_PATH)
+  Invoke-XX init --scope project --agents antigravity `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  $emptyBody = Get-Content -Raw -LiteralPath $agSettings
+  Assert-Contains 'empty file gained hooks key'    $emptyBody '"hooks"'
+  Assert-Contains 'empty file gained bundled hook' $emptyBody 'stax work-items lint'
+} finally { Pop-Location }
+
+Start-Case 'Antigravity: init re-run keeps user-authored sibling skills'
+Reset-UserHome
+$projAGsib = New-FreshProject
+Push-Location $projAGsib
+try {
+  Invoke-XX init --scope project --agents antigravity `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  $sibDir = Join-Path $projAGsib (Join-Path $ANTIGRAVITY_SKILLS_REL 'my-custom')
+  New-Item -ItemType Directory -Force -Path $sibDir | Out-Null
+  $sibManifest = Join-Path $sibDir $SKILL_MANIFEST_FILE
+  Set-Content -LiteralPath $sibManifest -Value 'MINE' -Encoding ascii
+  Remove-Item -Force -LiteralPath (Join-Path $projAGsib $STAX_LOCK_PATH)
+  Invoke-XX init --scope project --agents antigravity `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  Assert-Eq 'exit 0' $RunRC 0
+  Assert-IsFile 'sibling antigravity skill survives re-run' $sibManifest
+  Assert-IsDir  ('bundled ' + $SKILL_SHIP_DIR + ' present after re-run') `
+      (Join-Path $projAGsib (Join-Path $ANTIGRAVITY_SKILLS_REL $SKILL_SHIP_DIR))
+} finally { Pop-Location }
+
+Start-Case 'Antigravity: skill remove leaves foreign content under .gemini alone'
+Reset-UserHome
+$projAGrmi = New-FreshProject
+Push-Location $projAGrmi
+try {
+  Invoke-XX init --scope project --agents antigravity `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  $configDir = Join-Path $projAGrmi $ANTIGRAVITY_CONFIG_REL
+  $notesDir  = Join-Path $configDir 'notes'
+  New-Item -ItemType Directory -Force -Path $notesDir | Out-Null
+  Set-Content -LiteralPath (Join-Path $configDir 'GEMINI.md')   -Value 'USER' -Encoding ascii
+  Set-Content -LiteralPath (Join-Path $notesDir 'note.txt')     -Value 'USER' -Encoding ascii
+  $skillsDir = Join-Path $projAGrmi $ANTIGRAVITY_SKILLS_REL
+  Set-Content -LiteralPath (Join-Path $skillsDir 'STRAY.md')    -Value 'USER' -Encoding ascii
+  Invoke-XX skills remove --project
+  Assert-Eq 'exit 0' $RunRC 0
+  $kept = @(
+    (Join-Path $ANTIGRAVITY_CONFIG_REL 'GEMINI.md'),
+    (Join-Path $ANTIGRAVITY_CONFIG_REL (Join-Path 'notes' 'note.txt')),
+    (Join-Path $ANTIGRAVITY_SKILLS_REL 'STRAY.md'),
+    $STAX_LOCK_PATH,
+    $STAX_SYSTEMS_PATH
+  )
+  foreach ($rel in $kept) {
+    Assert-IsFile ('skill remove kept ' + $rel) (Join-Path $projAGrmi $rel)
+  }
+  foreach ($skill in $OWNED_SKILLS) {
+    Assert-NotExists ('skill remove dropped ' + $ANTIGRAVITY_SKILLS_REL + '/' + $skill) `
+        (Join-Path $projAGrmi (Join-Path $ANTIGRAVITY_SKILLS_REL $skill))
+  }
+} finally { Pop-Location }
+
+Start-Case 'Antigravity: skill remove preserves user-tweaked variant of a bundled record'
+Reset-UserHome
+$projAGunt = New-FreshProject
+Push-Location $projAGunt
+try {
+  Invoke-XX init --scope project --agents antigravity `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  $agSettings = Join-Path $projAGunt (Join-Path $ANTIGRAVITY_CONFIG_REL 'settings.json')
+  # `--verbose` suffix breaks deep-equality with the bundle — the record
+  # MUST survive un-merge because ownership is the leaf record, not the
+  # matcher or event key.
+  $tweakedJson = @"
+{
+  "hooks": {
+    "PostToolUse": [
+      {"matcher": "Write|Edit", "hooks": [{"type": "command", "command": "stax work-items lint --verbose"}]}
+    ]
+  }
+}
+"@
+  Set-Content -LiteralPath $agSettings -Value $tweakedJson -Encoding ascii
+  Invoke-XX skills remove --project
+  Assert-Eq 'exit 0' $RunRC 0
+  $tweakedBody = Get-Content -Raw -LiteralPath $agSettings
+  Assert-Contains 'tweaked matcher kept' $tweakedBody 'Write|Edit'
+  Assert-Contains 'tweaked command kept' $tweakedBody 'stax work-items lint --verbose'
+} finally { Pop-Location }
+
+Start-Case 'Antigravity: init --scope user re-run merges edited settings.json'
+Reset-UserHome
+$projAGumerge = New-FreshProject
+Push-Location $projAGumerge
+try {
+  Invoke-XX init --scope user --agents antigravity `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  $userSettings = Join-Path $env:USERPROFILE (Join-Path $ANTIGRAVITY_CONFIG_REL 'settings.json')
+  Set-Content -LiteralPath $userSettings -Value '{"USER": "EDIT", "model": "gemini-3-pro"}' -Encoding ascii
+  Remove-Item -Force -LiteralPath (Join-Path $projAGumerge $STAX_LOCK_PATH)
+  Invoke-XX init --scope user --agents antigravity `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  Assert-Eq 'exit 0' $RunRC 0
+  $userBody = Get-Content -Raw -LiteralPath $userSettings
+  Assert-Contains 'user-scope settings.json keeps USER key' $userBody '"USER": "EDIT"'
+  Assert-Contains 'user-scope settings.json keeps model'    $userBody '"model": "gemini-3-pro"'
+  Assert-Contains 'user-scope settings.json gains hook'     $userBody 'stax work-items lint'
+  foreach ($skill in $OWNED_SKILLS) {
+    Assert-IsFile ('user-scope CLI ' + $skill + ' after merge re-run') `
+        (Join-Path $env:USERPROFILE (Join-Path $ANTIGRAVITY_USER_SKILLS_REL_CLI (Join-Path $skill $SKILL_MANIFEST_FILE)))
+    Assert-IsFile ('user-scope shared ' + $skill + ' after merge re-run') `
+        (Join-Path $env:USERPROFILE (Join-Path $ANTIGRAVITY_USER_SKILLS_REL_SHARED (Join-Path $skill $SKILL_MANIFEST_FILE)))
+  }
 } finally { Pop-Location }
 
 # ---------- Windows-specific: PATH separator + drive letters ----------

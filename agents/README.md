@@ -7,7 +7,7 @@ file you add here becomes available to a freshly-installed `stax` binary
 without re-releasing it.
 
 Layout follows the cross-agent `SKILL.md` open standard so the same skills
-can be reused by Claude Code, Codex CLI, Cursor, Pi, OpenCode, and other
+can be reused by Anthropic Claude Code, Codex CLI, Cursor, Pi, OpenCode, and other
 agents that honor the convention:
 
 ```

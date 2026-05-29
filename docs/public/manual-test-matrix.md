@@ -33,9 +33,10 @@ cell is visible at a glance.
 
 | Agent | macOS / Linux — project | macOS / Linux — user | Windows — project | Windows — user | Last verified |
 |---|:-:|:-:|:-:|:-:|:-:|
-| Anthropic Claude | ⏳ | ⏳ | ⏳ | ⏳ | |
+| Anthropic Claude Code | ⏳ | ⏳ | ⏳ | ⏳ | |
 | OpenAI Codex | ⏳ | ⏳ | ⏳ | ⏳ | |
 | GitHub Copilot | ⏳ | ⏳ | ⏳ | ⏳ | |
+| Google Antigravity | ⏳ | ⏳ | ⏳ | ⏳ | |
 | OpenCode | ⏳ | ⏳ | ⏳ | ⏳ | |
 | Pi | ⏳ | ⏳ | ⏳ | ⏳ | |
 | Oh My Pi | ⏳ | ⏳ | ⏳ | ⏳ | |
@@ -51,12 +52,17 @@ cell is visible at a glance.
    expected install path.
 2. The `SKILL.md` files actually land at the agent's documented
    discovery directory (path per the quick-reference table below).
+   For Google Antigravity at user scope: BOTH
+   `~/.gemini/antigravity-cli/skills/` (CLI-local) AND
+   `~/.gemini/config/skills/` (shared with Antigravity Desktop) must
+   contain the bundled skills.
 3. The agent's `/scope` and `/ship` commands resolve to those skills
    in a real session — i.e. typing `/scope ...` invokes the planner,
    typing `/ship` invokes the executor, without manual prompting.
 4. `stax skills remove --scope <scope>` exits 0 and deletes ONLY the
    stax-shipped skill directories (any user-authored sibling skills
-   survive).
+   survive). For Antigravity at user scope, the wipe covers both
+   user-scope skill roots.
 
 ### Notes
 
@@ -68,9 +74,10 @@ cell is visible at a glance.
 
 | Agent | macOS / Linux — project | macOS / Linux — user | Windows — project | Windows — user | Last verified |
 |---|:-:|:-:|:-:|:-:|:-:|
-| Anthropic Claude | ⏳ | ⏳ | ⏳ | ⏳ | |
+| Anthropic Claude Code | ⏳ | ⏳ | ⏳ | ⏳ | |
 | OpenAI Codex | ⏳ | ⏳ | ⏳ | ⏳ | |
 | GitHub Copilot | ⏳ | ⏳ | ⏳ | ⏳ | |
+| Google Antigravity | ⏳ | ⏳ | ⏳ | ⏳ | |
 | OpenCode | ⏳ | ⏳ | ⏳ | ⏳ | |
 | Pi | ⏳ | ⏳ | ⏳ | ⏳ | |
 | Oh My Pi | ➖ | ➖ | ➖ | ➖ | |
@@ -85,15 +92,19 @@ cell is visible at a glance.
 1. `stax init --agents <key> --scope <scope>` lands the bundle at
    the agent's documented hook location (path per the quick-reference
    table below).
-2. JSON-merge agents (Claude, Codex, Copilot): re-running `init`
-   over a user-edited config preserves the user's top-level keys +
-   user-authored hook records, and merges our records additively.
+2. JSON-merge agents (Claude, Codex, Copilot, Google Antigravity):
+   re-running `init` over a user-edited config preserves the user's
+   top-level keys + user-authored hook records, and merges our
+   records additively.
 3. TS-plugin agents (OpenCode, Pi): bundled `stax.ts` is
    byte-identical to `agents/<key>/stax.ts` after install, and a
    user edit to it survives a subsequent `init`.
 4. In a real session: the agent fires the relevant hook event
    (PostToolUse / postToolUse / tool_result / etc. depending on
-   agent vocabulary) and `stax work-items lint` actually runs.
+   agent vocabulary) and `stax work-items lint` actually runs. For
+   Antigravity, BOTH the Antigravity CLI (`agy`) and the Antigravity
+   Desktop app must fire the hook from the shared
+   `~/.gemini/settings.json` file at user scope.
 5. `stax skills remove --scope <scope>` un-merges JSON records (or
    deletes byte-equal TS plugins) and leaves user-authored hooks
    intact.
@@ -108,9 +119,10 @@ cell is visible at a glance.
 
 | Agent | Skills (project) | Skills (user) | Hooks (project) | Hooks (user) |
 |---|---|---|---|---|
-| Anthropic Claude | `.claude/skills/` | `~/.claude/skills/` | `.claude/settings.json` | `~/.claude/settings.json` |
+| Anthropic Claude Code | `.claude/skills/` | `~/.claude/skills/` | `.claude/settings.json` | `~/.claude/settings.json` |
 | OpenAI Codex | `.agents/skills/` | `~/.agents/skills/` | `.codex/hooks.json` | `~/.codex/hooks.json` |
 | GitHub Copilot | `.agents/skills/` | `~/.agents/skills/` | `.github/hooks/stax.json` | `~/.copilot/hooks/stax.json` |
+| Google Antigravity | `.agents/skills/` | `~/.gemini/antigravity-cli/skills/` AND `~/.gemini/config/skills/` | `.gemini/settings.json` | `~/.gemini/settings.json` |
 | OpenCode | `.opencode/commands/` | `~/.opencode/commands/` | `.opencode/plugins/stax.ts` | `~/.config/opencode/plugins/stax.ts` |
 | Pi | `.agents/skills/` | `~/.agents/skills/` | `.pi/extensions/stax.ts` | `~/.pi/agent/extensions/stax.ts` |
 | Oh My Pi | `.agents/skills/` | `~/.agents/skills/` | _n/a_ | _n/a_ |
@@ -119,6 +131,13 @@ cell is visible at a glance.
 | Cursor | `.agents/skills/` | `~/.cursor/skills/` | _n/a_ | _n/a_ |
 | Kilo Code | `.kilocode/skills/` | `~/.kilocode/skills/` | _n/a_ | _n/a_ |
 | Zed | `.agents/skills/` | `~/.agents/skills/` | _n/a_ | _n/a_ |
+
+Google Antigravity is the only row that ships skills into two user-scope
+destinations in one install: the Antigravity CLI's CLI-local skills root
+(`~/.gemini/antigravity-cli/skills/`) AND the Antigravity-tool-family's
+shared skills root (`~/.gemini/config/skills/`, read by both the CLI and
+the Antigravity Desktop app). Verify presence at both when running the
+checklist's user-scope row.
 
 The single source of truth for these paths is `agentTargets` in
 `constants.go`. If a value here drifts from there, the Go side wins.

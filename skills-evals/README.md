@@ -1,7 +1,7 @@
 # skills-evals
 
 End-to-end evaluations of the `stax` planner (`/scope`) + executor (`/ship`)
-skills against Claude Code. Each test:
+skills against Anthropic Claude Code. Each test:
 
 1. Spawns `claude` in stream-json mode against DeepSeek.
 2. Invokes `/scope <task>` and auto-replies `yes` to every confirmation
@@ -40,7 +40,7 @@ skills-evals/
   DEEPSEEK_API_KEY=sk-...
   ```
   The fixture loads `.env` and uses the same key for the judge LLM
-  (DeepSeek direct) and the Claude Code backend (DeepSeek via
+  (DeepSeek direct) and the Anthropic Claude Code backend (DeepSeek via
   `ANTHROPIC_*` env vars).
 
 ## Run

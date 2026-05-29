@@ -50,7 +50,7 @@ The user may switch modes at any point ("review per work-item" / "review per tas
 Required reads before doing anything else:
 
 - `<cwd>/.stax/_data_systems.yaml` — registry of named systems (id, name, brief). If missing, STOP and tell the user this directory isn't set up for stax yet — they need to run `stax init`.
-- The project constitution: any of `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, or `.clinerules` at <cwd>. Read whichever is present and take it as the override on all defaults in this skill. `AGENTS.md` is the de-facto cross-agent convention (Kilocode, OpenCode, Codex, Cursor, pi, omp); the others are each agent's bespoke filename (`CLAUDE.md` for Claude Code, `.github/copilot-instructions.md` for GitHub Copilot, `.clinerules` for Cline). If none exist, suggest the user create one as a helpful tip and proceed.
+- The project constitution: any of `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, or `.clinerules` at <cwd>. Read whichever is present and take it as the override on all defaults in this skill. `AGENTS.md` is the de-facto cross-agent convention (Kilocode, OpenCode, Codex, Cursor, pi, omp); the others are each agent's bespoke filename (`CLAUDE.md` for Anthropic Claude Code, `.github/copilot-instructions.md` for GitHub Copilot, `.clinerules` for Cline). If none exist, suggest the user create one as a helpful tip and proceed.
 
 The work-item-first protocol (used by Step 3.3.2 when presenting sub-plans) is defined inline in Appendix A at the bottom of this file. Read it before the first approval prompt.
 

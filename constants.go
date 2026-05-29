@@ -87,47 +87,56 @@ const (
 //	                interactive multi-select. Must be lowercase, no spaces.
 //	name          — human-readable label printed in the progress log and in
 //	                the interactive agent picker.
-//	skillsRel     — destination for agents/skills/*; relative to scope root.
-//	                Used for BOTH workItems by default. For agents whose CLI
-//	                reads from different paths at project vs user scope
-//	                (e.g. GitHub Copilot CLI: `.agents/skills` at project,
-//	                `~/.copilot/skills` at user), populate userSkillsRel too.
-//	userSkillsRel — optional override for user scope ($HOME-relative). When
-//	                empty the install/remove code falls back to skillsRel
-//	                in both workItems. When set, project scope still uses
-//	                skillsRel and user scope uses this field.
-//	configSrc     — subdir under ~/<staxDir>/agents/ holding agent-specific
-//	                files (e.g. "claude" for agents/claude/settings.json).
-//	                Empty means this agent has no per-agent config to install.
-//	configRel     — destination for the configSrc files, relative to scope root
-//	                (e.g. ".claude" so that agents/claude/settings.json lands
-//	                at <root>/.claude/settings.json).
-//	userConfigRel — optional override for user scope ($HOME-relative). When
-//	                empty the install/remove code falls back to configRel in
-//	                both workItems. Set when an agent reads hooks from a
-//	                DIFFERENT directory at user scope (e.g. Copilot CLI:
-//	                `.github/hooks` at project, `~/.copilot/hooks` at user).
+//	skillsRel      — destination for agents/skills/*; relative to scope root.
+//	                 Used for BOTH workItems by default. For agents whose CLI
+//	                 reads from different paths at project vs user scope
+//	                 (e.g. GitHub Copilot CLI: `.agents/skills` at project,
+//	                 `~/.copilot/skills` at user), populate userSkillsRels too.
+//	userSkillsRels — optional list of user-scope skill paths ($HOME-relative).
+//	                 When nil/empty the install/remove code falls back to
+//	                 skillsRel at user scope. When set, project scope still
+//	                 uses skillsRel and user scope uses every path in this
+//	                 slice. Most agents that override at user scope use a
+//	                 single path (Cursor: `~/.cursor/skills`); Google
+//	                 Antigravity ships skills into TWO user-scope paths so
+//	                 both the Antigravity CLI's CLI-local skills root
+//	                 (`~/.gemini/antigravity-cli/skills`) and the
+//	                 Antigravity-Desktop-shared skills root
+//	                 (`~/.gemini/config/skills`) discover the bundle.
+//	configSrc      — subdir under ~/<staxDir>/agents/ holding agent-specific
+//	                 files (e.g. "claude" for agents/claude/settings.json).
+//	                 Empty means this agent has no per-agent config to install.
+//	configRel      — destination for the configSrc files, relative to scope
+//	                 root (e.g. ".claude" so that agents/claude/settings.json
+//	                 lands at <root>/.claude/settings.json).
+//	userConfigRel  — optional override for user scope ($HOME-relative). When
+//	                 empty the install/remove code falls back to configRel in
+//	                 both workItems. Set when an agent reads hooks from a
+//	                 DIFFERENT directory at user scope (e.g. Copilot CLI:
+//	                 `.github/hooks` at project, `~/.copilot/hooks` at user).
 type agentTarget struct {
-	key           string
-	name          string
-	skillsRel     string
-	userSkillsRel string
-	configSrc     string
-	configRel     string
-	userConfigRel string
+	key            string
+	name           string
+	skillsRel      string
+	userSkillsRels []string
+	configSrc      string
+	configRel      string
+	userConfigRel  string
 }
 
-// skillsRelFor returns the scope-correct skill install path for one agent.
-// project scope always uses skillsRel; user scope prefers userSkillsRel when
-// set, falling back to skillsRel otherwise. Centralized so install AND
-// remove paths can't diverge. Pointer receiver because agentTarget hit
-// gocritic's hugeParam threshold (96 bytes) after the userSkillsRel field
-// was added.
-func (t *agentTarget) skillsRelFor(scope initScope) string {
-	if scope == scopeUser && t.userSkillsRel != "" {
-		return t.userSkillsRel
+// skillsRelsFor returns the scope-correct skill install paths for one agent.
+// project scope always returns a single-element slice with skillsRel; user
+// scope returns userSkillsRels when non-empty, else falls back to a
+// single-element slice with skillsRel. Returning a slice (not a single
+// string) lets agents like Google Antigravity install the same skill into
+// multiple user-scope discovery roots at once. Install AND remove paths use
+// this helper so they can't diverge. Pointer receiver because agentTarget
+// hit gocritic's hugeParam threshold after the userSkillsRels field landed.
+func (t *agentTarget) skillsRelsFor(scope initScope) []string {
+	if scope == scopeUser && len(t.userSkillsRels) > 0 {
+		return t.userSkillsRels
 	}
-	return t.skillsRel
+	return []string{t.skillsRel}
 }
 
 // configRelFor returns the scope-correct per-agent config install path.
@@ -170,7 +179,7 @@ func agentByKey(key string) *agentTarget {
 // stable identifier the picker emits — keep it short, lowercase, and
 // unique across the registry.
 var agentTargets = []agentTarget{
-	{"claude", "Anthropic Claude", ".claude/skills", "", "claude", ".claude", ""},
+	{"claude", "Anthropic Claude Code", ".claude/skills", nil, "claude", ".claude", ""},
 	// Cline (cline.bot) reads skills from `.cline/skills/` at project scope
 	// and `~/.cline/skills/` at user scope, per the official 2026 config
 	// docs at docs.cline.bot/customization/overview. The cross-agent
@@ -183,36 +192,36 @@ var agentTargets = []agentTarget{
 	// `<root>/.cline/skills/<name>/` unchanged.
 	// Skills-only for now — no settings.json / hooks file bundled for
 	// cline; configSrc and configRel stay empty.
-	{"cline", "Cline", ".cline/skills", "", "", "", ""},
+	{"cline", "Cline", ".cline/skills", nil, "", "", ""},
 	// Codex CLI scans .agents/skills/ at every level (cwd → repo root → $HOME),
 	// per the cross-agent SKILL.md open standard. The legacy ~/.codex/skills
 	// is also recognized at user scope but not at project scope, so .agents
 	// is the one path that works in both modes. Per-agent config (hooks.json,
 	// config.toml, etc.) still lives under .codex/ — see Codex docs:
 	// https://developers.openai.com/codex/hooks for the lookup order.
-	{"codex", "OpenAI Codex", ".agents/skills", "", "codex", ".codex", ""},
+	{"codex", "OpenAI Codex", ".agents/skills", nil, "codex", ".codex", ""},
 	// Continue (continue.dev) reads skills from `.continue/skills/` at
 	// project scope and `~/.continue/skills/` at user scope, per the
 	// continue.dev customization docs (the IDE extension scans both
 	// roots on session start). Symmetric across workItems — no
-	// userSkillsRel override needed. Continue does NOT honor the
+	// userSkillsRels override needed. Continue does NOT honor the
 	// cross-agent `.agents/skills` path, so installing there would
 	// land files Continue never discovers; the install must use
 	// `.continue/skills` exclusively. Skills-only — Continue's
 	// settings live at `~/.continue/config.yaml` and are user-owned
 	// end-to-end, outside the stax install scope.
-	{"continue", "Continue", ".continue/skills", "", "", "", ""},
+	{"continue", "Continue", ".continue/skills", nil, "", "", ""},
 	// Cursor reads skills from `.agents/skills/` at workspace scope
 	// (the cross-agent open spec path, shared with Codex/Copilot/Pi/
 	// omp/Zed) and from `~/.cursor/skills/` at global scope — Cursor
 	// does NOT honor the cross-agent `~/.agents/skills` fallback at
-	// user scope, so the row needs a `userSkillsRel` override. The
+	// user scope, so the row needs a `userSkillsRels` override. The
 	// install
 	// is skills-only; Cursor's settings (`~/.cursor/settings.json`,
 	// MCP config, the cursor-agent hosted backend auth via
 	// CURSOR_API_KEY) are all user-owned end-to-end and outside the
 	// stax install scope.
-	{"cursor", "Cursor", ".agents/skills", ".cursor/skills", "", "", ""},
+	{"cursor", "Cursor", ".agents/skills", []string{".cursor/skills"}, "", "", ""},
 	// GitHub Copilot CLI reads skills from `.agents/skills/`, `.claude/skills/`,
 	// or `.github/skills/` at project scope, and `~/.copilot/skills/` or
 	// `~/.agents/skills/` at user scope (per Copilot CLI's May 2026 docs at
@@ -230,17 +239,47 @@ var agentTargets = []agentTarget{
 	// Skills-only for now — no settings.json / hooks file shipped yet;
 	// that's a follow-up once the manual eval workflow tells us which
 	// Copilot CLI lifecycle hooks make sense to register.
-	{"copilot", "GitHub Copilot", ".agents/skills", "", "copilot", ".github/hooks", ".copilot/hooks"},
+	{"copilot", "GitHub Copilot", ".agents/skills", nil, "copilot", ".github/hooks", ".copilot/hooks"},
+	// Google Antigravity (antigravity.google) — the agent layer is shared
+	// between the Antigravity Desktop app (VS Code-based) and the Antigravity
+	// CLI (`agy`), per antigravity.google/docs/gcli-migration and the May
+	// 2026 transition announcement. Skill + hook discovery diverges across
+	// the two surfaces at user scope, so this row is the only one in the
+	// registry that ships skills to MULTIPLE user-scope destinations in a
+	// single install:
+	//
+	//   project scope → `.agents/skills/<name>/SKILL.md` (cross-agent open
+	//     spec, identical to Codex/Copilot/Pi/omp/Zed at workspace scope).
+	//     Antigravity workspaces honor this path per the docs codelab.
+	//   user scope →
+	//     `~/.gemini/antigravity-cli/skills/<name>/` — global skills for the
+	//       Antigravity CLI only (read by `agy`).
+	//     `~/.gemini/config/skills/<name>/` — shared skills across the
+	//       Antigravity tool family (read by both `agy` and the Desktop
+	//       app), mirroring the role `~/.gemini/config/` plays for shared
+	//       `mcp_config.json`.
+	//
+	// Hooks land in `settings.json` under a top-level "hooks" key — same
+	// schema as Claude Code's settings.json. The agent layer reads both
+	// `.gemini/settings.json` at project scope and `~/.gemini/settings.json`
+	// at user scope (Antigravity-compatible precedence inherited from
+	// Gemini CLI), so configRel/userConfigRel are symmetric and
+	// userConfigRel is left empty.
+	{
+		"antigravity", "Google Antigravity", ".agents/skills",
+		[]string{".gemini/antigravity-cli/skills", ".gemini/config/skills"},
+		"antigravity", ".gemini", "",
+	},
 	// Kilo Code (kilocode.ai) reads skills from `.kilocode/skills/` at
 	// project scope and `~/.kilocode/skills/` at user scope, per
 	// kilocode.ai's customization docs and the published `.kilocode/`
 	// config tree convention. The cross-agent `.agents/skills` path is
 	// NOT a documented Kilo lookup, so installing there would land
 	// files Kilo never discovers. Symmetric across workItems — no
-	// userSkillsRel override needed. Skills-only; Kilo's settings live
+	// userSkillsRels override needed. Skills-only; Kilo's settings live
 	// in `~/.kilocode/` end-to-end and are user-owned outside the stax
 	// install scope.
-	{"kilo", "Kilo Code", ".kilocode/skills", "", "", "", ""},
+	{"kilo", "Kilo Code", ".kilocode/skills", nil, "", "", ""},
 	// omp (oh-my-pi, omp.sh / can1357/oh-my-pi) is a TS coding agent
 	// that registers a documented `agents` skill provider at priority
 	// 70 — see oh-my-pi/docs/skills.md "priority 70 group (in
@@ -255,7 +294,7 @@ var agentTargets = []agentTarget{
 	// spec path, identical to Codex's project-scope path and Copilot
 	// CLI's officially-documented add-skills location at both workItems.
 	// Reasons:
-	//   1. Symmetric across workItems — no userSkillsRel override needed,
+	//   1. Symmetric across workItems — no userSkillsRels override needed,
 	//      `omp -h` does not introduce a user-scope/project-scope
 	//      asymmetry for this provider (unlike the native priority-100
 	//      `.omp` provider where user-scope lives under `.omp/agent/`).
@@ -273,7 +312,7 @@ var agentTargets = []agentTarget{
 	// (interactive Settings → Memory tab) and its model registry at
 	// `~/.omp/agent/models.yml`. Both are user-owned end-to-end and
 	// outside the stax install scope.
-	{"omp", "Oh My Pi", ".agents/skills", "", "", "", ""},
+	{"omp", "Oh My Pi", ".agents/skills", nil, "", "", ""},
 	// OpenCode resolves slash commands from `.opencode/{command,commands}/**/*.md`
 	// at project scope and `~/.config/opencode/commands/` at user scope.
 	// The lookup keys off the file's frontmatter `name:` (the path-derived
@@ -285,7 +324,7 @@ var agentTargets = []agentTarget{
 	// flat `<command>.md`) matches Claude/Codex for parity across agents.
 	// No per-agent config is bundled for OpenCode yet (auth + provider
 	// routing live outside the install scope, in `~/.local/share/opencode/`).
-	{"opencode", "OpenCode", ".opencode/commands", "", "opencode", ".opencode/plugins", ".config/opencode/plugins"},
+	{"opencode", "OpenCode", ".opencode/commands", nil, "opencode", ".opencode/plugins", ".config/opencode/plugins"},
 	// Pi (pi.dev — @earendil-works/pi-coding-agent) reads skills from
 	// `.agents/skills/` walking up from cwd at project scope and from
 	// `~/.agents/skills/` at user scope (one of two documented user-scope
@@ -301,12 +340,12 @@ var agentTargets = []agentTarget{
 	// stay empty — no pi-specific config bundled today; pi looks for
 	// `~/.pi/agent/AGENTS.md` and `~/.pi/agent/settings.json` if a user
 	// adds them, which is outside the scope of stax's install.
-	{"pi", "Pi", ".agents/skills", "", "pi", ".pi/extensions", ".pi/agent/extensions"},
+	{"pi", "Pi", ".agents/skills", nil, "pi", ".pi/extensions", ".pi/agent/extensions"},
 	// Zed (zed.dev) reads skills from `.agents/skills/` at workspace
 	// scope and from `~/.agents/skills/` at global scope — Zed
 	// explicitly honors the cross-agent open spec at BOTH workItems per
 	// zed.dev's "agent panel skills" docs, making it the symmetric
-	// case (no userSkillsRel override). Install collapses with
+	// case (no userSkillsRels override). Install collapses with
 	// Codex/Copilot/Pi/omp/Cursor-workspace at project scope, and
 	// with Codex/Copilot/Pi/omp at user scope —
 	// a single `--agents codex,zed` install writes one shared
@@ -315,7 +354,7 @@ var agentTargets = []agentTarget{
 	// XDG), `%APPDATA%\Zed\settings.json` (Windows), or
 	// `$FLATPAK_XDG_CONFIG_HOME/zed/settings.json` (Flatpak), all
 	// user-owned end-to-end and outside the stax install scope.
-	{"zed", "Zed", ".agents/skills", "", "", "", ""},
+	{"zed", "Zed", ".agents/skills", nil, "", "", ""},
 }
 
 // skillsSubdir is the directory inside ~/<staxDir>/agents/ that holds the
@@ -475,6 +514,10 @@ var ownedFiles = []string{
 	agentByKey("opencode").userConfigRel + "/stax.ts",  // ~/.config/opencode/plugins/stax.ts
 	agentByKey("pi").configRel + "/stax.ts",            // .pi/extensions/stax.ts
 	agentByKey("pi").userConfigRel + "/stax.ts",        // ~/.pi/agent/extensions/stax.ts
+	// Antigravity's hook config is scope-symmetric (configRel == userConfigRel
+	// == ".gemini"), so one entry suffices — both `--scope project` and
+	// `--scope user` write to `<root>/.gemini/settings.json`.
+	agentByKey("antigravity").configRel + "/settings.json",
 }
 
 // Update-check settings — read by maybeNotifyUpdate / fetchLatestVersion.

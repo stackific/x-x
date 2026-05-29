@@ -1531,6 +1531,173 @@ func TestConfigRelFor_FallsBackToConfigRelWhenUserConfigEmpty(t *testing.T) {
 	}
 }
 
+// TestSkillsRelsFor_ResolvesPerScopeAndMultiDestination pins the helper
+// that decides which skill directories an install lands in. Project
+// scope always returns a one-element slice with skillsRel — userSkillsRels
+// is ignored even when set, because Cursor's `~/.cursor/skills` override
+// (and Antigravity's dual user-scope roots) MUST NOT leak into a
+// project-scope install. User scope returns userSkillsRels verbatim when
+// non-empty, falling back to skillsRel otherwise. The multi-element case
+// is the new contract introduced for Google Antigravity, which installs
+// skills into both `~/.gemini/antigravity-cli/skills` and
+// `~/.gemini/config/skills` in one shot.
+func TestSkillsRelsFor_ResolvesPerScopeAndMultiDestination(t *testing.T) {
+	cases := []struct {
+		name   string
+		target agentTarget
+		scope  initScope
+		want   []string
+	}{
+		{
+			name:   "symmetric project (skillsRel only)",
+			target: agentTarget{skillsRel: ".claude/skills"},
+			scope:  scopeProject,
+			want:   []string{".claude/skills"},
+		},
+		{
+			name:   "symmetric user (nil userSkillsRels falls back)",
+			target: agentTarget{skillsRel: ".claude/skills"},
+			scope:  scopeUser,
+			want:   []string{".claude/skills"},
+		},
+		{
+			name:   "symmetric user (empty userSkillsRels falls back)",
+			target: agentTarget{skillsRel: ".claude/skills", userSkillsRels: []string{}},
+			scope:  scopeUser,
+			want:   []string{".claude/skills"},
+		},
+		{
+			name:   "single-override project (uses skillsRel, NOT userSkillsRels[0])",
+			target: agentTarget{skillsRel: ".agents/skills", userSkillsRels: []string{".cursor/skills"}},
+			scope:  scopeProject,
+			want:   []string{".agents/skills"},
+		},
+		{
+			name:   "single-override user (uses userSkillsRels)",
+			target: agentTarget{skillsRel: ".agents/skills", userSkillsRels: []string{".cursor/skills"}},
+			scope:  scopeUser,
+			want:   []string{".cursor/skills"},
+		},
+		{
+			name: "multi-destination project (still one entry — skillsRel)",
+			target: agentTarget{
+				skillsRel:      ".agents/skills",
+				userSkillsRels: []string{".gemini/antigravity-cli/skills", ".gemini/config/skills"},
+			},
+			scope: scopeProject,
+			want:  []string{".agents/skills"},
+		},
+		{
+			name: "multi-destination user (returns every entry, in order)",
+			target: agentTarget{
+				skillsRel:      ".agents/skills",
+				userSkillsRels: []string{".gemini/antigravity-cli/skills", ".gemini/config/skills"},
+			},
+			scope: scopeUser,
+			want:  []string{".gemini/antigravity-cli/skills", ".gemini/config/skills"},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := c.target.skillsRelsFor(c.scope)
+			if len(got) != len(c.want) {
+				t.Fatalf("len(got)=%d %v, want %d %v", len(got), got, len(c.want), c.want)
+			}
+			for i := range got {
+				if got[i] != c.want[i] {
+					t.Fatalf("got[%d]=%q, want %q", i, got[i], c.want[i])
+				}
+			}
+		})
+	}
+}
+
+// TestAgentTargets_AntigravityRowShape pins the Antigravity registry row
+// against accidental drift. The display name and dual-user-scope skill
+// destinations are part of the docs contract — anything that quietly
+// renames "Google Antigravity" or drops one of the user-scope skill
+// paths breaks the public reference table and the manual-test matrix
+// without surfacing the regression elsewhere. The fixture-drift unit
+// test (TestE2EHookFixtureMirrorsBundle) already pins the hook bundle
+// shape; this test pins the registry shape upstream of it.
+func TestAgentTargets_AntigravityRowShape(t *testing.T) {
+	row := agentByKey("antigravity")
+	if row == nil {
+		t.Fatal(`agentByKey("antigravity") returned nil — the row was removed; restore it or update the docs / manual-test matrix in the same change`)
+	}
+	if got := row.name; got != "Google Antigravity" {
+		t.Errorf("display name = %q, want %q", got, "Google Antigravity")
+	}
+	if got := row.skillsRel; got != ".agents/skills" {
+		t.Errorf("skillsRel = %q, want %q (cross-agent open spec at project scope)", got, ".agents/skills")
+	}
+	wantUserSkills := []string{".gemini/antigravity-cli/skills", ".gemini/config/skills"}
+	if len(row.userSkillsRels) != len(wantUserSkills) {
+		t.Fatalf("userSkillsRels = %v, want %v (CLI-local + Desktop-shared)", row.userSkillsRels, wantUserSkills)
+	}
+	for i, want := range wantUserSkills {
+		if row.userSkillsRels[i] != want {
+			t.Errorf("userSkillsRels[%d] = %q, want %q", i, row.userSkillsRels[i], want)
+		}
+	}
+	if got := row.configSrc; got != "antigravity" {
+		t.Errorf("configSrc = %q, want %q", got, "antigravity")
+	}
+	if got := row.configRel; got != ".gemini" {
+		t.Errorf("configRel = %q, want %q (project-scope hook config root)", got, ".gemini")
+	}
+	if got := row.userConfigRel; got != "" {
+		t.Errorf("userConfigRel = %q, want empty (configRel is reused at user scope — scope-symmetric)", got)
+	}
+}
+
+// TestInstallForTarget_MultiDestinationWritesAllUserSkillPaths covers
+// the install-loop side of the multi-destination contract: when a row
+// carries N user-scope skill paths, one `--scope user` install must
+// land every bundled skill at all N destinations. The end-to-end
+// TestRunInit_UserScope_EndToEnd test covers this implicitly by
+// iterating skillsRelsFor, but a focused test points at installForTarget
+// directly so a regression in the loop is unambiguous about where it
+// broke.
+func TestInstallForTarget_MultiDestinationWritesAllUserSkillPaths(t *testing.T) {
+	scopeRoot := t.TempDir()
+	skillsSource := t.TempDir()
+	// Seed two bundled skill dirs with a marker SKILL.md each.
+	for _, skill := range []string{skillScopeDir, skillShipDir} {
+		dir := filepath.Join(skillsSource, skill)
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, skillManifestFile), []byte("---\nname: "+skill+"\n---\n"), 0o600); err != nil {
+			t.Fatalf("seed %s: %v", dir, err)
+		}
+	}
+	target := agentTarget{
+		key:            "antigravity",
+		name:           "Google Antigravity",
+		skillsRel:      ".agents/skills",
+		userSkillsRels: []string{".gemini/antigravity-cli/skills", ".gemini/config/skills"},
+	}
+	// useSymlink=false so the test works identically on POSIX and Windows
+	// — the question under test is "did the loop visit every userSkillsRels
+	// entry", not "did POSIX get symlinks vs Windows got copies".
+	installForTarget(&target, []string{skillScopeDir, skillShipDir}, scopeRoot, skillsSource, "", false, scopeUser)
+	for _, dest := range target.userSkillsRels {
+		for _, skill := range []string{skillScopeDir, skillShipDir} {
+			manifest := filepath.Join(scopeRoot, dest, skill, skillManifestFile)
+			if _, err := os.Stat(manifest); err != nil {
+				t.Fatalf("missing %s at user destination %s: %v", manifest, dest, err)
+			}
+		}
+	}
+	// Project-scope destination must NOT have been touched — userScope
+	// install hits userSkillsRels exclusively.
+	if _, err := os.Stat(filepath.Join(scopeRoot, target.skillsRel)); err == nil {
+		t.Fatalf("project-scope path %s was created by a user-scope install — installForTarget leaked into skillsRel",
+			target.skillsRel)
+	}
+}
+
 // TestInstallAgentConfig_NestedFile covers the recursive case: nested
 // agent-config files (e.g. agents/codex/sessions/*.json hypothetically)
 // must land at the equivalent nested dest path. Pins the walk structure so
@@ -1563,16 +1730,19 @@ func TestRunInit_ProjectScope_EndToEnd(t *testing.T) {
 	runInit([]string{"--scope", "project"})
 
 	// Bundled skills must land under every agent target's project-scope
-	// skill path. Source the destinations from the registry via
-	// skillsRelFor(scopeProject) to honor the "no inline path literals"
+	// skill path(s). Source the destinations from the registry via
+	// skillsRelsFor(scopeProject) to honor the "no inline path literals"
 	// rule from AGENTS.md AND the per-scope path override (e.g. Copilot
-	// CLI uses different paths at project vs user scope).
+	// CLI uses different paths at project vs user scope; Google
+	// Antigravity ships skills into multiple user-scope discovery roots,
+	// though project scope still resolves to a single entry).
 	for _, target := range agentTargets {
-		projectPath := target.skillsRelFor(scopeProject)
-		for _, name := range ownedSkills {
-			p := filepath.Join(projectDir, projectPath, name)
-			if _, err := os.Stat(p); err != nil {
-				t.Fatalf("missing %s for %s: %v", p, target.key, err)
+		for _, projectPath := range target.skillsRelsFor(scopeProject) {
+			for _, name := range ownedSkills {
+				p := filepath.Join(projectDir, projectPath, name)
+				if _, err := os.Stat(p); err != nil {
+					t.Fatalf("missing %s for %s: %v", p, target.key, err)
+				}
 			}
 		}
 	}
@@ -1618,6 +1788,34 @@ func TestRunInit_AgentsFilter_OnlyInstallsSelected(t *testing.T) {
 	}
 }
 
+// assertUserScopeSkillsInstalled walks every documented user-scope
+// skill destination for one agent and asserts each bundled skill exists
+// there with the strategy the test contract requires: a symlink on
+// POSIX (so `~/.stax/agents` refreshes propagate to every project at
+// once), a copy on Windows. Pulled out of TestRunInit_UserScope_EndToEnd
+// because the original triple-nested loop (agent → destination → skill)
+// crossed the gocognit cap once the multi-destination userSkillsRels
+// case landed.
+func assertUserScopeSkillsInstalled(t *testing.T, home string, target *agentTarget) {
+	t.Helper()
+	for _, userPath := range target.skillsRelsFor(scopeUser) {
+		for _, name := range ownedSkills {
+			p := filepath.Join(home, userPath, name)
+			info, err := os.Lstat(p)
+			if err != nil {
+				t.Fatalf("missing %s for %s: %v", p, target.key, err)
+			}
+			if runtime.GOOS == "windows" {
+				continue
+			}
+			if info.Mode()&os.ModeSymlink == 0 {
+				t.Fatalf("expected symlink at %s (%s), got mode %v",
+					p, target.key, info.Mode())
+			}
+		}
+	}
+}
+
 // TestRunInit_UserScope_EndToEnd is the user-scope counterpart to the
 // project-scope integration test. Crucially, on POSIX it asserts the
 // install entries are SYMLINKS, not copies — the strategy difference is
@@ -1630,23 +1828,13 @@ func TestRunInit_UserScope_EndToEnd(t *testing.T) {
 
 	// User-scope on POSIX uses symlinks; on Windows it falls back to copy.
 	// Walk the registry rather than hard-coding the per-agent skill dirs.
-	// `skillsRelFor(scopeUser)` honors per-agent overrides like Copilot CLI's
-	// `~/.copilot/skills` distinction from its project-scope `.agents/skills`.
+	// `skillsRelsFor(scopeUser)` honors per-agent overrides like Copilot
+	// CLI's `~/.copilot/skills` distinction from its project-scope
+	// `.agents/skills`, AND multi-destination agents like Google
+	// Antigravity whose user scope installs into both
+	// `~/.gemini/antigravity-cli/skills` and `~/.gemini/config/skills`.
 	for _, target := range agentTargets {
-		userPath := target.skillsRelFor(scopeUser)
-		for _, name := range ownedSkills {
-			p := filepath.Join(home, userPath, name)
-			info, err := os.Lstat(p)
-			if err != nil {
-				t.Fatalf("missing %s for %s: %v", p, target.key, err)
-			}
-			if runtime.GOOS != "windows" {
-				if info.Mode()&os.ModeSymlink == 0 {
-					t.Fatalf("expected symlink at %s (%s), got mode %v",
-						p, target.key, info.Mode())
-				}
-			}
-		}
+		assertUserScopeSkillsInstalled(t, home, &target)
 	}
 
 	// User-scope MUST also drop the .stax/ scaffold into cwd. Scope

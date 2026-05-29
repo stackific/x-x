@@ -905,6 +905,16 @@ func TestE2EHookFixtureMirrorsBundle(t *testing.T) {
 			caseAnchor:  `case_start "Copilot: skill remove --project un-merges bundled records"`,
 			heredocAddr: "${COPILOT_CONFIG_REL}/stax.json",
 		},
+		{
+			// Antigravity's un-merge heredoc seeds the bundled
+			// {"hooks": {...}} records alongside a user-authored sibling.
+			// The bundle path is settings.json (same shape as Claude),
+			// landed at ANTIGRAVITY_CONFIG_REL (`.gemini`).
+			name:        "antigravity",
+			bundlePath:  "agents/antigravity/settings.json",
+			caseAnchor:  `case_start "Antigravity: skill remove --project un-merges bundled records"`,
+			heredocAddr: "${ANTIGRAVITY_CONFIG_REL}/settings.json",
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

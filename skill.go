@@ -181,20 +181,26 @@ func runSkillsRemove(args []string) {
 	if agentsErr != nil {
 		fmt.Fprintf(os.Stderr, "warning: %v (skipping hook un-merge)\n", agentsErr)
 	}
-	// Match init's encoding: scope is initScope here so t.skillsRelFor picks
-	// the right path for agents whose project- and user-scope skill paths
-	// differ (e.g. Copilot CLI).
+	// Match init's encoding: scope is initScope here so t.skillsRelsFor picks
+	// the right path(s) for agents whose project- and user-scope skill paths
+	// differ (e.g. Copilot CLI) AND for agents that install into multiple
+	// user-scope discovery roots in one shot (Google Antigravity:
+	// `~/.gemini/antigravity-cli/skills` AND `~/.gemini/config/skills`).
 	removeScope := scopeProject
 	if *userScope {
 		removeScope = scopeUser
 	}
 	for _, t := range agentTargets {
-		// Each agent's skills live at <scopeRoot>/<t.skillsRelFor(scope)> (e.g.
-		// $HOME/.claude/skills). The per-agent helper handles missing
-		// directories gracefully.
-		r, s := removeOurSkillsIn(filepath.Join(scopeRoot, t.skillsRelFor(removeScope)), t.name, owned)
-		removed += r
-		skipped += s
+		// Each agent's skills live at one or more <scopeRoot>/<rel> roots
+		// (e.g. $HOME/.claude/skills, or both Antigravity user-scope
+		// destinations). removeOurSkillsIn handles missing directories
+		// gracefully so iterating over every documented destination is
+		// always safe.
+		for _, rel := range t.skillsRelsFor(removeScope) {
+			r, s := removeOurSkillsIn(filepath.Join(scopeRoot, rel), t.name, owned)
+			removed += r
+			skipped += s
+		}
 		// Hook un-merge: walk the bundled per-agent config dir and
 		// subtract our shipped hook records from the user's counterpart
 		// under <scopeRoot>/<t.configRelFor(scope)>. Agents that ship no
