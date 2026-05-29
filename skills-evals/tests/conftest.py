@@ -116,40 +116,34 @@ AGENT_ENV_DEFAULTS_FOR_KEY = {
   "cline": CLINE_ENV_DEFAULTS,
   "omp": OMP_ENV_DEFAULTS,
 }
-# Value passed to `stax init --agents <value>` for each backend. Today
-# the binary's agentTargets registry (constants.go) recognizes "claude",
-# "codex", "opencode", "pi", "cline", and "omp" — pi, cline, and omp
-# are first-class entries with their own skillsRel. Copilot is still
-# not a registered target, so Copilot tests install the Claude skill
-# layout as a transitional shape and the copilot CLI discovers them via
-# its cross-agent add-skills path list (`.claude/skills` at project
-# scope, `~/.agents/skills/` at user scope, both on the May 2026 docs
-# list). When copilot is added to agentTargets, flip its entry to
-# "copilot".
+# Value passed to `stax init --agents <value>` for each backend. The
+# binary's agentTargets registry (constants.go) recognizes "claude",
+# "codex", "opencode", "pi", "cline", "omp", and "copilot" — each as a
+# first-class entry with its own skillsRel. Copilot's row uses
+# `.agents/skills` at both scopes (the cross-agent open spec path
+# Codex / Pi / omp also share); copilot CLI's discovery list reads
+# `.claude/skills/` at project scope and `~/.agents/skills/` at user
+# scope, so installing at `.agents/skills` works at both — project
+# scope via copilot's secondary discovery path, user scope as the
+# primary location.
 AGENT_INIT_VALUE_FOR_KEY = {
   "claude": "claude",
   "opencode": "opencode",
-  "copilot": "claude",
+  "copilot": "copilot",
   "pi": "pi",
   "cline": "cline",
   "omp": "omp",
 }
-# Per-agent skills install root used by the user-scope post-install log
-# and the cline driver's `_resolve_skill_path`. Reflects each agent's
-# discovery convention — Claude reads `.claude/skills/`, OpenCode reads
-# `.opencode/commands/`, Copilot CLI (via the transitional Claude
-# layout) reads `.claude/skills/`, Pi reads `~/.agents/skills/` (one of
-# its documented user-scope skill discovery locations alongside
-# `~/.pi/agent/skills/`), Cline reads `.cline/skills/`, and omp's
-# `agents` skill provider (priority 70 in oh-my-pi docs/skills.md,
-# source at packages/coding-agent/src/discovery/agents.ts) walks
-# `$HOME/.agents/skills/` at user scope — the same path Codex, Pi, and
-# Copilot use at user scope. The registered omp agent target in
-# constants.go points there.
+# Per-agent skills install root used by the user-scope post-install
+# log. Mirrors `agentTargets[N].skillsRelFor(scopeUser)` from
+# constants.go for each backend — Claude reads `.claude/skills/`,
+# OpenCode reads `.opencode/commands/`, Copilot CLI / Codex / Pi /
+# omp all read `.agents/skills/` at user scope, Cline reads
+# `.cline/skills/`.
 AGENT_USER_SKILLS_REL_FOR_KEY = {
   "claude": Path(".claude") / "skills",
   "opencode": Path(".opencode") / "commands",
-  "copilot": Path(".claude") / "skills",
+  "copilot": Path(".agents") / "skills",
   "pi": Path(".agents") / "skills",
   "cline": Path(".cline") / "skills",
   "omp": Path(".agents") / "skills",
