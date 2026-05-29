@@ -68,7 +68,7 @@ jobs:
 
       - name: run pytest
         working-directory: skills-evals
-        run: uv run pytest tests/test_cline_stream_smoke.py tests/test_cline_todo.py tests/test_cline_plan_extends.py tests/test_cline_reminders_supersedes_todo.py
+        run: uv run pytest tests/test_cline_stream_smoke.py tests/test_cline_todo.py tests/test_cline_work_item_extends.py tests/test_cline_reminders_supersedes_todo.py
 
       - name: upload pytest tmp on failure
         if: failure()

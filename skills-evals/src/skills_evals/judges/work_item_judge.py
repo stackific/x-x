@@ -18,7 +18,7 @@ from deepeval.test_case import LLMTestCase, SingleTurnParams
 
 from .._logging import log
 from ..models import DEFAULT_JUDGE_MODEL, DeepSeekModel
-from ..workspace import collect_plan_files
+from ..workspace import collect_work_item_files
 from .base import Judge, Judgment
 
 INPUT_TEMPLATE = """\
@@ -87,16 +87,16 @@ class WorkItemJudge(Judge):
     )
 
   def evaluate(self, task: str, workspace: Path) -> Judgment:
-    plan_text = collect_plan_files(workspace)
+    work_item_text = collect_work_item_files(workspace)
     input_text = INPUT_TEMPLATE.format(task=task)
     log(
       "judge:work-item",
       f"evaluating: model={self.model.get_model_name()} "
       f"threshold={self.metric.threshold} "
       f"steps={len(EVALUATION_STEPS)} "
-      f"input_chars={len(input_text)} actual_chars={len(plan_text)}",
+      f"input_chars={len(input_text)} actual_chars={len(work_item_text)}",
     )
-    test_case = LLMTestCase(input=input_text, actual_output=plan_text)
+    test_case = LLMTestCase(input=input_text, actual_output=work_item_text)
     start = time.time()
     self.metric.measure(test_case)
     elapsed = time.time() - start

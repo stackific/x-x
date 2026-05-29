@@ -120,7 +120,7 @@ jobs:
       # cycle on a real scenario.
       - name: run pytest
         working-directory: skills-evals
-        run: uv run pytest tests/test_copilot_stream_smoke.py tests/test_copilot_todo.py tests/test_copilot_plan_extends.py tests/test_copilot_reminders_supersedes_todo.py
+        run: uv run pytest tests/test_copilot_stream_smoke.py tests/test_copilot_todo.py tests/test_copilot_work_item_extends.py tests/test_copilot_reminders_supersedes_todo.py
 
       # Pytest writes transcripts and per-test workspaces under tmp_path
       # (`/tmp/pytest-of-runner/...`). Uploading on failure gives us the
