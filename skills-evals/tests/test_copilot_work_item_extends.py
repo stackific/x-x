@@ -27,12 +27,12 @@ EXTENSION_TASK = (
 )
 
 
-def test_copilot_work_item_extends(copilot_workspace: Path, tmp_path: Path) -> None:
+def test_copilot_work_item_extends(workspace: Path, tmp_path: Path) -> None:
   transcripts = tmp_path / "transcripts"
 
   # --- Work-item A: the base todo app ---
   a_run = drive_skill(
-    copilot_workspace,
+    workspace,
     f"/scope {BASE_TASK}",
     transcript_path=transcripts / "scope-a.txt",
   )
@@ -51,7 +51,7 @@ def test_copilot_work_item_extends(copilot_workspace: Path, tmp_path: Path) -> N
 
   # --- Work-item B: extension of work item A ---
   b_run = drive_skill(
-    copilot_workspace,
+    workspace,
     f"/scope {EXTENSION_TASK}",
     transcript_path=transcripts / "scope-b.txt",
   )
@@ -69,7 +69,7 @@ def test_copilot_work_item_extends(copilot_workspace: Path, tmp_path: Path) -> N
   )
 
   # --- Verify work-item mechanics ---
-  work_items = load_all_work_items(copilot_workspace)
+  work_items = load_all_work_items(workspace)
   assert len(work_items) == 2, (
     f"expected exactly 2 work-item files, got {len(work_items)}: "
     f"{[p.slug for p in work_items]}"
