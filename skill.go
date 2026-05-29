@@ -243,7 +243,7 @@ func runSkillsRemove(args []string) {
 // Returns (removed, skipped) so the caller can aggregate counts across all
 // agent targets. Skips silently when the directory is absent — the agent
 // simply has no stax install at this scope, which is not an error.
-func removeOurSkillsIn(skillsDir, agentName string, owned map[string]bool) (removed, skipped int) {
+func removeOurSkillsIn(skillsDir, _ string, owned map[string]bool) (removed, skipped int) {
 	entries, err := os.ReadDir(skillsDir)
 	if err != nil {
 		// ErrNotExist is expected and silent (agent never had a skills
@@ -254,7 +254,12 @@ func removeOurSkillsIn(skillsDir, agentName string, owned map[string]bool) (remo
 		}
 		return 0, 0
 	}
-	fmt.Printf("  %-13s %s\n", agentName, skillsDir)
+	// Print only the path — the agent name is implicit from the path
+	// segment (e.g. `.claude/skills` ↔ Claude Code). Helps users who
+	// scan output for "what was on disk" rather than for the agent
+	// label, and keeps the column alignment stable as agent display
+	// names change.
+	fmt.Printf("  %s\n", skillsDir)
 	for _, e := range entries {
 		// Allowlist check is the only filter. A folder named anything not
 		// in ownedSkills is implicitly user-authored and skipped silently

@@ -152,24 +152,6 @@ func agentByKey(key string) *agentTarget {
 // stable identifier the picker emits — keep it short, lowercase, and
 // unique across the registry.
 var agentTargets = []agentTarget{
-	// Antigravity (antigravity.google) defaults to `.agents/skills/<name>/
-	// SKILL.md` at workspace scope and `~/.gemini/antigravity/skills/<name>/
-	// SKILL.md` at global scope, per antigravity.google/docs/skills (Nov 2026
-	// docs surveyed via the official codelab + the in-product docs). The two
-	// scope paths diverge — `~/.agents/skills` is the cross-agent fallback
-	// Gemini-CLI honors but Antigravity explicitly does NOT, per Dazbo's
-	// 2026 "confused about where to put your agent skills" rundown — so the
-	// user-scope path needs a `userSkillsRel` override. The bundled tree
-	// shape (`<name>/SKILL.md`) matches Antigravity's documented Skill
-	// format (folder with a SKILL.md and optional `scripts/`, `examples/`,
-	// `resources/` siblings), so no embed restructure is needed. Workspace-
-	// scope `.agents/skills` co-locates with Codex/Copilot/Pi/omp; a
-	// `--agents codex,antigravity` install collapses to one shared
-	// `.agents/skills/` write at project scope. Skills-only for now —
-	// Antigravity's hook surfaces aren't pinned to a public reference page
-	// the way Claude's `settings.json` is, so configSrc/configRel stay
-	// empty pending docs.
-	{"antigravity", "Antigravity", ".agents/skills", ".gemini/antigravity/skills", "", ""},
 	{"claude", "Claude Code", ".claude/skills", "", "claude", ".claude"},
 	// Cline (cline.bot) reads skills from `.cline/skills/` at project scope
 	// and `~/.cline/skills/` at user scope, per the official 2026 config
@@ -204,10 +186,10 @@ var agentTargets = []agentTarget{
 	{"continue", "Continue", ".continue/skills", "", "", ""},
 	// Cursor reads skills from `.agents/skills/` at workspace scope
 	// (the cross-agent open spec path, shared with Codex/Copilot/Pi/
-	// omp/Antigravity) and from `~/.cursor/skills/` at global scope —
-	// Cursor does NOT honor the cross-agent `~/.agents/skills`
-	// fallback at user scope, same divergence shape as Antigravity.
-	// Needs a `userSkillsRel` override for that reason. The install
+	// omp/Zed) and from `~/.cursor/skills/` at global scope — Cursor
+	// does NOT honor the cross-agent `~/.agents/skills` fallback at
+	// user scope, so the row needs a `userSkillsRel` override. The
+	// install
 	// is skills-only; Cursor's settings (`~/.cursor/settings.json`,
 	// MCP config, the cursor-agent hosted backend auth via
 	// CURSOR_API_KEY) are all user-owned end-to-end and outside the
@@ -307,8 +289,8 @@ var agentTargets = []agentTarget{
 	// explicitly honors the cross-agent open spec at BOTH workItems per
 	// zed.dev's "agent panel skills" docs, making it the symmetric
 	// case (no userSkillsRel override). Install collapses with
-	// Codex/Copilot/Pi/omp/Cursor-workspace/Antigravity-workspace at
-	// project scope, and with Codex/Copilot/Pi/omp at user scope —
+	// Codex/Copilot/Pi/omp/Cursor-workspace at project scope, and
+	// with Codex/Copilot/Pi/omp at user scope —
 	// a single `--agents codex,zed` install writes one shared
 	// `.agents/skills/` directory at each scope. Skills-only; Zed's
 	// settings live at `~/.config/zed/settings.json` (Linux/macOS
@@ -408,7 +390,7 @@ const (
 
 // skillManifestFile is the manifest filename every bundled skill ships
 // under its directory (cross-agent SKILL.md open standard — Claude Code,
-// Codex CLI, and Gemini all look for this exact name). Pulled into a
+// Codex CLI, and others look for this exact name). Pulled into a
 // constant so tests that round-trip files out of the embed don't violate
 // the "no inline path literals in Go source" rule.
 const skillManifestFile = "SKILL.md"

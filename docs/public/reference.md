@@ -82,7 +82,6 @@ Every prompt has a flag — pass any subset to skip the matching prompt, or pass
 
 | Key | Display name | Workspace path | User-scope path |
 | --- | --- | --- | --- |
-| `antigravity` | Antigravity | `.agents/skills/` | `~/.gemini/antigravity/skills/` |
 | `claude` | Claude Code | `.claude/skills/` | `~/.claude/skills/` |
 | `cline` | Cline | `.cline/skills/` | `~/.cline/skills/` |
 | `codex` | Codex CLI | `.agents/skills/` | `~/.agents/skills/` |
@@ -95,12 +94,12 @@ Every prompt has a flag — pass any subset to skip the matching prompt, or pass
 | `pi` | Pi | `.agents/skills/` | `~/.agents/skills/` |
 | `zed` | Zed | `.agents/skills/` | `~/.agents/skills/` |
 
-Paths follow each agent's own docs ([Cline](https://docs.cline.bot/customization/overview), [Continue](https://docs.continue.dev/customize/overview), [Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills), [Cursor](https://docs.cursor.com/agent), [Antigravity](https://antigravity.google/docs/skills), [Pi](https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/docs/skills.md), [Oh My Pi](https://github.com/can1357/oh-my-pi/blob/main/docs/skills.md), [Zed](https://zed.dev/docs/ai/agent-panel)).
+Paths follow each agent's own docs ([Cline](https://docs.cline.bot/customization/overview), [Continue](https://docs.continue.dev/customize/overview), [Copilot CLI](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills), [Cursor](https://docs.cursor.com/agent), [Pi](https://github.com/earendil-works/pi-mono/blob/main/packages/coding-agent/docs/skills.md), [Oh My Pi](https://github.com/can1357/oh-my-pi/blob/main/docs/skills.md), [Zed](https://zed.dev/docs/ai/agent-panel)).
 
 Key path conventions:
 
 - `.agents/skills/` is the cross-agent open spec. Codex, Copilot, Oh My Pi, Pi, Zed read it natively at both scopes.
-- Antigravity and Cursor honor `.agents/skills/` at workspace scope but diverge at user scope (Antigravity → `~/.gemini/antigravity/skills/`, Cursor → `~/.cursor/skills/`).
+- Cursor honors `.agents/skills/` at workspace scope but diverges at user scope (Cursor → `~/.cursor/skills/`).
 - Cline, Continue, Kilo, Claude, and OpenCode use their own per-agent paths.
 
 #### Install behavior
@@ -121,7 +120,6 @@ Walks every user-scope skills root and removes every entry whose name matches th
 ~/.cursor/skills/
 ~/.kilocode/skills/
 ~/.opencode/commands/
-~/.gemini/antigravity/skills/
 ~/.agents/skills/
 ```
 
@@ -139,7 +137,7 @@ The following are never touched:
 - Folders whose name is not on the bundled-skill allowlist (your own skills sitting alongside ours).
 - Anything in the agent config files outside of their `"hooks"` subtree — top-level keys like `"fastMode"` and any user-authored content. Empty arrays or event-key maps left behind by the un-merge are kept as-is; we subtract records, not containers.
 - The `.stax/` scaffold in cwd. Once `init` writes it (at any scope), it's yours.
-- Parent directories (`.claude/`, `.codex/`, `.cline/`, `.continue/`, `.cursor/`, `.kilocode/`, `.gemini/antigravity/`). Only the `skills/` (or `commands/`) subdirectory under each may be removed, and only when it is empty after cleanup.
+- Parent directories (`.claude/`, `.codex/`, `.cline/`, `.continue/`, `.cursor/`, `.kilocode/`). Only the `skills/` (or `commands/`) subdirectory under each may be removed, and only when it is empty after cleanup.
 
 ### `stax skills remove --project`
 

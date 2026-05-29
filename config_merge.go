@@ -282,7 +282,7 @@ func mergeJSONArrays(existing, bundled []any) []any {
 // this scope" semantics already used by removeOurSkillsIn. Errors
 // (read/parse/write) are non-fatal: the offending file is left untouched,
 // a diagnostic is written to stderr, and skipped is incremented.
-func removeBundledHooksIn(bundleSrc, userDest, agentName string) (modified, skipped int) {
+func removeBundledHooksIn(bundleSrc, userDest, _ string) (modified, skipped int) {
 	// Missing source means this agent ships no per-agent config OR the
 	// bundle hasn't been materialized yet. Either way nothing to subtract.
 	if _, err := os.Stat(bundleSrc); errors.Is(err, os.ErrNotExist) {
@@ -294,8 +294,11 @@ func removeBundledHooksIn(bundleSrc, userDest, agentName string) (modified, skip
 		return 0, skipped
 	}
 	// Header is printed only when there's something to report under it,
-	// matching removeOurSkillsIn's silent-on-empty behavior.
-	fmt.Printf("  %-13s %s\n", agentName, userDest)
+	// matching removeOurSkillsIn's silent-on-empty behavior. We print
+	// just the path (not the agent name) — the path segment already
+	// identifies the agent (`.claude/settings.json` ↔ Claude Code) and
+	// keeps the output column-stable when display names change.
+	fmt.Printf("  %s\n", userDest)
 	for _, c := range pending {
 		if err := os.WriteFile(c.path, c.body, 0o600); err != nil {
 			fmt.Fprintf(os.Stderr, "    %s: write: %v\n", c.rel, err)
