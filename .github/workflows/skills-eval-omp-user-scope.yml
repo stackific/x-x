@@ -27,9 +27,6 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # server.go embeds frontend/dist via //go:embed all:frontend/dist
-      # (gitignored). Build it before `go install` or the embed pattern
-      # resolves to an empty dir and the compile fails at server.go.
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
@@ -53,7 +50,6 @@ jobs:
         run: |
           curl -fsSL https://omp.sh/install | sh
           echo "$HOME/.omp/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.omp/bin:$PATH"
           omp --version
 
       - uses: astral-sh/setup-uv@v8.1.0

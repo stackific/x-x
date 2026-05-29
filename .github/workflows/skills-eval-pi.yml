@@ -10,10 +10,8 @@ name: skills eval / pi
 #        a. Spawn `pi --mode json --model deepseek/<id> -p "/skill:<name>
 #           <task>"` per turn (single-shot subprocesses; resume with -c).
 #           Pi's CLI command parser resolves `/skill:<name>` against
-#           SKILL.md frontmatter `name:` values — `stax init --agents codex`
-#           writes `.agents/skills/scope/SKILL.md` and pi discovers it
-#           walking up from cwd (one of pi's documented skill locations
-#           alongside `.pi/skills/` and `~/.pi/agent/skills/`).
+#           SKILL.md frontmatter `name:` values — `stax init --agents pi`
+#           writes the SKILL.md tree exactly where pi discovers it.
 #        b. Drive the scope / stax skill prompts via that slash-command
 #           form in skills_evals.pi_driver. Confirmation gates show up as
 #           text events the driver matches against the "Reply yes" pattern
@@ -35,22 +33,19 @@ permissions:
 jobs:
   eval:
     runs-on: ubuntu-latest
-    # One scenario (TODO app) takes 5–15 min: planner + executor + two
-    # judge LLM calls. 60-minute cap leaves headroom for DeepSeek
-    # latency without rewarding a stuck agent.
+    # 60-minute cap leaves headroom for DeepSeek latency across the
+    # smoke + scenario tests without rewarding a stuck agent.
     timeout-minutes: 60
 
     env:
       # STAX_AGENT_KEY tells the skills-evals conftest which backend's
       # tests to collect, which binary to require on PATH, and which
-      # `--agents <key>` value to pass to `stax init`. Default is
-      # "claude"; this workflow runs the Pi set.
+      # `--agents <key>` value to pass to `stax init`.
       STAX_AGENT_KEY: pi
 
       # Pi reads `DEEPSEEK_API_KEY` directly for the `deepseek` provider
-      # entry in its model registry — no rename mirror needed (unlike
-      # Claude Code, where the DeepSeek key has to land at
-      # ANTHROPIC_AUTH_TOKEN). The judge LLM uses the same key directly.
+      # entry in its model registry — no rename mirror needed. The judge
+      # LLM uses the same key directly.
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 
       # Pi reaches `pi.dev/api/latest-version` and `pi.dev/api/report-install`
@@ -90,18 +85,14 @@ jobs:
           go install .
           stax --version
 
-      # Pi requires Node 22+ (legacy-node20 tag is pinned to 0.74.2 only).
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-
       # The shell installer (curl pi.dev/install.sh) is itself an npm
       # wrapper that requires Node already present; cutting straight to
-      # npm gives us deterministic PATH placement under setup-node's
-      # global bin dir. Pin to @latest until we have a known-good version;
-      # bump intentionally if the smoke test starts failing on a fresh
-      # release. `--ignore-scripts` matches the README's recommended form
-      # (pi does not require install scripts for normal npm installs).
+      # npm gives deterministic PATH placement under setup-node's global
+      # bin dir. @latest is fragile but acceptable until we have a
+      # known-good version; bump intentionally if the smoke test starts
+      # failing on a fresh release. `--ignore-scripts` matches the
+      # README's recommended form (pi does not require install scripts
+      # for normal npm installs).
       - name: install pi cli
         run: |
           npm install -g --ignore-scripts @earendil-works/pi-coding-agent@latest
@@ -117,10 +108,9 @@ jobs:
         working-directory: skills-evals
         run: uv sync --frozen || uv sync
 
-      # `test_pi_stream_json_smoke.py` runs first (smoke-first
-      # ordering in conftest.pytest_collection_modifyitems) — a
-      # wire-format / env / version failure fails it without burning a
-      # full planner+executor cycle on the real scenario.
+      # conftest's pytest_collection_modifyitems sorts smoke tests first
+      # so a wire-format / env / version regression fails fast instead of
+      # being masked by a scenario timeout.
       - name: run pytest
         working-directory: skills-evals
         run: uv run pytest

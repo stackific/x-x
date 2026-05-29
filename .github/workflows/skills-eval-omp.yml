@@ -2,14 +2,11 @@ name: skills eval / omp (oh-my-pi)
 
 # Manually-triggered experiment in the agent-eval lineage. Targets
 # oh-my-pi (`omp`, from omp.sh — a Rust-cored terminal coding agent
-# with 40+ providers and LSP/debugger integration). Drivers, judges,
-# and test files live in a follow-up PR — this workflow ships the
-# scaffold (CLI install, env routing, pytest invocation) so the eval
-# suite can plug in once the omp driver lands.
+# with 40+ providers and LSP/debugger integration).
 #
 # Non-interactive entry: `omp -p "<prompt>"` runs a single prompt to
 # completion. Provider routing is configured via `omp config set ...`
-# or through env; the driver will wire DeepSeek-specific config at
+# or through env; the driver wires DeepSeek-specific config at
 # spawn time.
 
 on:
@@ -21,11 +18,19 @@ permissions:
 jobs:
   eval:
     runs-on: ubuntu-latest
+    # 60-minute cap leaves headroom for DeepSeek latency across the
+    # smoke + scenario tests without rewarding a stuck agent.
     timeout-minutes: 60
 
     env:
+      # STAX_AGENT_KEY tells the skills-evals conftest which backend's
+      # tests to collect, which binary to require on PATH, and which
+      # `--agents <key>` value to pass to `stax init`.
       STAX_AGENT_KEY: omp
 
+      # omp's deepseek provider catalog routes DEEPSEEK_API_KEY directly
+      # to api.deepseek.com — no rename mirror needed. The judge LLM uses
+      # the same key directly.
       DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
 
     steps:
@@ -53,6 +58,8 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+      # `go install .` lands a release-flavored stax in $(go env GOPATH)/bin.
+      # The setup-go action puts that directory on PATH.
       - name: install stax to PATH
         run: |
           go install .
@@ -60,14 +67,15 @@ jobs:
 
       # omp ships an autodetecting installer (Bun-based source path or
       # standalone binary) at omp.sh/install; binary lives at ~/.omp/bin
-      # by default.
+      # by default. No version pin available upstream.
       - name: install omp
         run: |
           curl -fsSL https://omp.sh/install | sh
           echo "$HOME/.omp/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.omp/bin:$PATH"
           omp --version
 
+      # setup-uv no longer publishes moving major tags (@v8), so pin to
+      # a specific version. Bump intentionally after checking release notes.
       - uses: astral-sh/setup-uv@v8.1.0
         with:
           enable-cache: true
@@ -76,10 +84,16 @@ jobs:
         working-directory: skills-evals
         run: uv sync --frozen || uv sync
 
+      # conftest's pytest_collection_modifyitems sorts smoke tests first
+      # so a wire-format / env / version regression fails fast instead of
+      # being masked by a scenario timeout.
       - name: run pytest
         working-directory: skills-evals
         run: uv run pytest
 
+      # Pytest writes transcripts and per-test workspaces under tmp_path
+      # (`/tmp/pytest-of-runner/...`). Uploading on failure gives us the
+      # event stream the agent emitted plus the workspace state at failure.
       - name: upload pytest tmp on failure
         if: failure()
         uses: actions/upload-artifact@v5

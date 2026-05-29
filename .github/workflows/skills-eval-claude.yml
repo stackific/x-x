@@ -29,9 +29,8 @@ permissions:
 jobs:
   eval:
     runs-on: ubuntu-latest
-    # One scenario today (TODO app) takes 5–15 min: planner + executor +
-    # two judge LLM calls. 60-minute cap leaves headroom for DeepSeek
-    # latency without rewarding a stuck agent.
+    # 60-minute cap leaves headroom for DeepSeek latency across the
+    # smoke + scenario tests without rewarding a stuck agent.
     timeout-minutes: 60
 
     env:
@@ -82,15 +81,10 @@ jobs:
           go install .
           stax --version
 
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-
       # Claude Code's `--input-format stream-json` is reverse-engineered
-      # (see github.com/anthropics/claude-code/issues/24594). The protocol
-      # format can change between versions, so pinning is preferable to
-      # @latest. Bump intentionally after verifying the smoke test still
-      # passes against the new version.
+      # (see github.com/anthropics/claude-code/issues/24594) and the protocol
+      # format can change between versions. @latest is fragile but kept here
+      # for now; bump only after verifying the smoke test still passes.
       - name: install claude code
         run: |
           npm install -g @anthropic-ai/claude-code@latest
@@ -106,9 +100,9 @@ jobs:
         working-directory: skills-evals
         run: uv sync --frozen || uv sync
 
-      # `test_stream_json_smoke.py` runs first (alphabetical pytest order)
-      # — a protocol-format / env / version failure fails it without burning
-      # a full planner+executor cycle on the real scenario.
+      # conftest's pytest_collection_modifyitems sorts smoke tests first
+      # so a wire-format / env / version regression fails fast instead of
+      # being masked by a scenario timeout.
       - name: run pytest
         working-directory: skills-evals
         run: uv run pytest

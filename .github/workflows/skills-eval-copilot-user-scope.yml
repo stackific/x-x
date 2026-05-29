@@ -1,21 +1,12 @@
 name: skills eval / github copilot cli (user scope)
 
-# Manually-triggered experiment from the agent-eval lineage. Mirrors
-# skills-eval-copilot.yml but installs skills at user scope
-# (~/.agents/skills/) rather than project scope (`.agents/skills/`).
-# `~/.agents/skills/` is on Copilot CLI's official user-scope list per
-# docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills,
-# and reusing the cross-agent open spec path here lets the bundled
-# SKILL.md content (which only resolves `.claude/skills/` and
-# `.agents/skills/`) discover the shared docs correctly.
-#
-# Copilot's agentTargets row has an empty userSkillsRel, so the user
-# scope path takes the fall-back branch in skillsRelFor and reuses
-# skillsRel (`.agents/skills`) — the same string the project-scope
-# install uses, just rooted at $HOME instead of cwd. See
-# docs/internal/adding-agent-eval-backend.md for the agent-eval recipe
-# and docs/internal/manually-triggered-workflows.md for the workflow
-# conventions.
+# Identical to skills-eval-copilot.yml EXCEPT for STAX_INSTALL_SCOPE.
+# Installs skills at user scope (~/.agents/skills/) rather than project
+# scope (`.agents/skills/`). `~/.agents/skills/` is on Copilot CLI's
+# official user-scope list, and reusing the cross-agent open spec path
+# here lets the bundled SKILL.md content (which only resolves
+# `.claude/skills/` and `.agents/skills/`) discover the shared docs
+# correctly.
 
 on:
   workflow_dispatch:
@@ -26,22 +17,12 @@ permissions:
 jobs:
   eval:
     runs-on: ubuntu-latest
-    # Same envelope as the project-scope variant: 60-minute cap leaves
-    # headroom for DeepSeek latency across the smoke + three scenarios
-    # without rewarding a stuck agent.
     timeout-minutes: 60
 
     env:
-      # Identical to skills-eval-copilot.yml EXCEPT for STAX_INSTALL_SCOPE.
-      # The pytest fixture (skills-evals/tests/conftest.py) reads this
-      # and passes it to `stax init --scope <value>`, so the same test
-      # suite drives both project-scope and user-scope installs.
+      STAX_AGENT_KEY: copilot
       STAX_INSTALL_SCOPE: user
 
-      # Copilot CLI BYOK routing for DeepSeek's Anthropic-compatible endpoint.
-      # Provider type MUST be `anthropic` (not `openai`) — DeepSeek requires
-      # reasoning_content echo-back on subsequent requests, which Copilot CLI's
-      # OpenAI integration does not support.
       COPILOT_PROVIDER_TYPE: anthropic
       COPILOT_PROVIDER_BASE_URL: https://api.deepseek.com/anthropic
       COPILOT_PROVIDER_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
@@ -58,9 +39,6 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # server.go embeds frontend/dist via //go:embed all:frontend/dist
-      # (gitignored). Build it before `go install` or the embed pattern
-      # resolves to an empty dir and the compile fails at server.go.
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
@@ -80,14 +58,6 @@ jobs:
           go install .
           stax --version
 
-      # GitHub Copilot CLI requires Node 22+.
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-
-      # @latest is fragile when the wire surface evolves but acceptable
-      # for a manually-triggered experiment. Bump intentionally after
-      # verifying the smoke test still passes against the new version.
       - name: install github copilot cli
         run: |
           npm install -g @github/copilot@latest
@@ -103,7 +73,7 @@ jobs:
 
       - name: run pytest
         working-directory: skills-evals
-        run: uv run pytest tests/test_copilot_stream_smoke.py tests/test_copilot_todo.py tests/test_copilot_work_item_extends.py tests/test_copilot_reminders_supersedes_todo.py
+        run: uv run pytest
 
       - name: upload pytest tmp on failure
         if: failure()
