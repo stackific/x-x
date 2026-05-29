@@ -3,11 +3,11 @@
 //
 // Why an attribute-driven match (not a `location.pathname` compare):
 //   - A page can advertise a *logical* nav target that differs from
-//     its URL — `/scope?id=<slug>` sets `data-active="scopes"` so the
-//     sidebar "Scopes" entry stays highlighted while the user reads
-//     a single work item. Doing this purely from `location.pathname` would
-//     either highlight nothing on detail pages or require the
-//     dispatcher to special-case each route.
+//     its URL — `/work-item?id=<slug>` sets `data-active="work-items"`
+//     so the sidebar "Work items" entry stays highlighted while the
+//     user reads a single work item. Doing this purely from
+//     `location.pathname` would either highlight nothing on detail
+//     pages or require the dispatcher to special-case each route.
 //   - Layout is owned by HTML; only HTML sets `data-active` (via the
 //     Handlebars layout's block-helper call). TS just diffs.
 //

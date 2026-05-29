@@ -1,4 +1,4 @@
-name: Test
+name: E2E test
 
 # Runs the comprehensive test suite (Go unit tests + end-to-end shell tests)
 # inside an official Linux container so every PR proves stax works as installed.

@@ -595,7 +595,7 @@ var (
 	registryKVLineRe = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_-]*):\s*(.*)$`)
 	// workItemSlugRe matches the post-prefix portion of a work item filename:
 	// one-or-more digits, a single hyphen, then a kebab-case slug
-	// (lowercase letters, digits, hyphens only). The /api/scope?id=<slug>
+	// (lowercase letters, digits, hyphens only). The /api/work-item?id=<slug>
 	// handler validates user input against this regex before joining
 	// the slug into a filesystem path — a successful match guarantees
 	// the value contains no path separators, no `..` segments, and no

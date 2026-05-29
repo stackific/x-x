@@ -1451,7 +1451,7 @@ func TestRunInit_AgentsFilter_OnlyInstallsSelected(t *testing.T) {
 // TestRunInit_UserScope_EndToEnd is the user-scope counterpart to the
 // project-scope integration test. Crucially, on POSIX it asserts the
 // install entries are SYMLINKS, not copies — the strategy difference is
-// the whole point of supporting two scopes.
+// the whole point of supporting two workItems.
 func TestRunInit_UserScope_EndToEnd(t *testing.T) {
 	home := pinHome(t)
 	cwd := t.TempDir()

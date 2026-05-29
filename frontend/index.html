@@ -9,21 +9,21 @@
           <span class="small-text">Systems</span>
         </div>
       </a>
-      <a id="card-scopes" href="/scopes" class="s12 m6 row padding round surface-variant wave no-elevate middle-align">
+      <a id="card-work-items" href="/work-items" class="s12 m6 row padding round surface-variant wave no-elevate middle-align">
         <div class="row middle-align max">
-          <h3 class="no-margin mr-s" id="count-scopes">0</h3>
-          <span class="small-text">Scopes</span>
+          <h3 class="no-margin mr-s" id="count-work-items">0</h3>
+          <span class="small-text">Work items</span>
         </div>
       </a>
     </div>
 
-    <h5 class="mb-m">Latest scopes</h5>
-    <div id="latest-scopes" aria-live="polite">
+    <h5 class="mb-m">Latest work items</h5>
+    <div id="latest-work-items" aria-live="polite">
       <p class="small-text">Loading…</p>
     </div>
   </section>
 
-  <template id="tpl-scope">
+  <template id="tpl-work-item">
     <a class="row padding round surface-variant wave no-elevate mb-s middle-align">
       <i class="large" aria-hidden="true">flag</i>
       <h6 class="small no-margin max ml-s" data-slot="title"></h6>
@@ -41,7 +41,7 @@
   </template>
 
   <template id="tpl-empty">
-    <p class="small-text">No scopes yet.</p>
+    <p class="small-text">No work items yet.</p>
   </template>
 
   <template id="tpl-error">

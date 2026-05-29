@@ -33,7 +33,7 @@ export function $<T extends Element>(selector: string, root: ParentNode = docume
 // appended without aliasing.
 //
 // Usage pattern:
-//   const node = tpl("tpl-scope");
+//   const node = tpl("tpl-work-item");
 //   $('[data-slot="title"]', node).textContent = s.title;
 //   host.appendChild(node);
 export function tpl(id: string): DocumentFragment {

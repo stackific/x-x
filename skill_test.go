@@ -596,7 +596,7 @@ func TestValidateSkillsRemoveFlags(t *testing.T) {
 		{"user only", true, false, "", false, ""},
 		{"project only", false, true, "", false, ""},
 		{"project + cwd", false, true, "/some/dir", false, ""},
-		{"both scopes set", true, true, "", false, "mutually exclusive"},
+		{"both workItems set", true, true, "", false, "mutually exclusive"},
 		{"neither scope set", false, false, "", true, "exactly one of --user or --project"},
 		{"user + cwd rejected", true, false, "/some/dir", false, "--cwd is only valid with --project"},
 	}

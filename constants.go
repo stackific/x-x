@@ -34,13 +34,13 @@ const productTagline = "An evidence-based, spec-driven agent skillset with enter
 // or "_config.lock" inside Go source. AGENTS.md codifies this as a hard
 // rule; new path elements live here first, then get referenced elsewhere.
 const (
-	// staxDir is the directory name used at BOTH scopes:
+	// staxDir is the directory name used at BOTH workItems:
 	//   - User scope: $HOME/<staxDir>/ holds the materialized embed
 	//     (<staxDir>/agentsEmbedRoot/) and the update-check config
 	//     (<staxDir>/staxConfigFile).
 	//   - Project scope: <cwd>/<staxDir>/ holds the work-item-tooling scaffold
 	//     (staxLockFile, staxSystemsFile, *.md work-item files).
-	// The two scopes share the directory NAME but never the content — the
+	// The two workItems share the directory NAME but never the content — the
 	// user-scope tree is binary-owned, the project-scope tree is user-owned.
 	staxDir = ".stax"
 
@@ -88,13 +88,13 @@ const (
 //	name          — human-readable label printed in the progress log and in
 //	                the interactive agent picker.
 //	skillsRel     — destination for agents/skills/*; relative to scope root.
-//	                Used for BOTH scopes by default. For agents whose CLI
+//	                Used for BOTH workItems by default. For agents whose CLI
 //	                reads from different paths at project vs user scope
 //	                (e.g. GitHub Copilot CLI: `.agents/skills` at project,
 //	                `~/.copilot/skills` at user), populate userSkillsRel too.
 //	userSkillsRel — optional override for user scope ($HOME-relative). When
 //	                empty the install/remove code falls back to skillsRel
-//	                in both scopes. When set, project scope still uses
+//	                in both workItems. When set, project scope still uses
 //	                skillsRel and user scope uses this field.
 //	configSrc     — subdir under ~/<staxDir>/agents/ holding agent-specific
 //	                files (e.g. "claude" for agents/claude/settings.json).
@@ -194,7 +194,7 @@ var agentTargets = []agentTarget{
 	// Continue (continue.dev) reads skills from `.continue/skills/` at
 	// project scope and `~/.continue/skills/` at user scope, per the
 	// continue.dev customization docs (the IDE extension scans both
-	// roots on session start). Symmetric across scopes — no
+	// roots on session start). Symmetric across workItems — no
 	// userSkillsRel override needed. Continue does NOT honor the
 	// cross-agent `.agents/skills` path, so installing there would
 	// land files Continue never discovers; the install must use
@@ -217,9 +217,9 @@ var agentTargets = []agentTarget{
 	// or `.github/skills/` at project scope, and `~/.copilot/skills/` or
 	// `~/.agents/skills/` at user scope (per Copilot CLI's May 2026 docs at
 	// docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-skills).
-	// We use `.agents/skills` at BOTH scopes — the cross-agent open spec
+	// We use `.agents/skills` at BOTH workItems — the cross-agent open spec
 	// path. Reasons:
-	//   1. agents/skills/scope/SKILL.md and agents/skills/ship/SKILL.md
+	//   1. agents/skills/work-item/SKILL.md and agents/skills/ship/SKILL.md
 	//      define `<skills_root>` as exactly `.claude/skills/` (Claude) or
 	//      `.agents/skills/` (other agents). The agent's path-resolution
 	//      logic globs that exact list — `.copilot/skills` is not in it.
@@ -236,7 +236,7 @@ var agentTargets = []agentTarget{
 	// kilocode.ai's customization docs and the published `.kilocode/`
 	// config tree convention. The cross-agent `.agents/skills` path is
 	// NOT a documented Kilo lookup, so installing there would land
-	// files Kilo never discovers. Symmetric across scopes — no
+	// files Kilo never discovers. Symmetric across workItems — no
 	// userSkillsRel override needed. Skills-only; Kilo's settings live
 	// in `~/.kilocode/` end-to-end and are user-owned outside the stax
 	// install scope.
@@ -251,11 +251,11 @@ var agentTargets = []agentTarget{
 	//                   `<dir>/.agents/skills/` at each ancestor
 	//   user scope    → `$HOME/.agents/skills/`
 	//
-	// We pin to `.agents/skills` at both scopes — the cross-agent open
+	// We pin to `.agents/skills` at both workItems — the cross-agent open
 	// spec path, identical to Codex's project-scope path and Copilot
-	// CLI's officially-documented add-skills location at both scopes.
+	// CLI's officially-documented add-skills location at both workItems.
 	// Reasons:
-	//   1. Symmetric across scopes — no userSkillsRel override needed,
+	//   1. Symmetric across workItems — no userSkillsRel override needed,
 	//      `omp -h` does not introduce a user-scope/project-scope
 	//      asymmetry for this provider (unlike the native priority-100
 	//      `.omp` provider where user-scope lives under `.omp/agent/`).
@@ -278,7 +278,7 @@ var agentTargets = []agentTarget{
 	// at project scope and `~/.config/opencode/commands/` at user scope.
 	// The lookup keys off the file's frontmatter `name:` (the path-derived
 	// fallback is used only when frontmatter omits `name:`), so a stax
-	// install at `.opencode/commands/scope/SKILL.md` with `name: scope`
+	// install at `.opencode/commands/work-item/SKILL.md` with `name: scope`
 	// registers a command callable as both `/scope` in the TUI and
 	// `opencode run --command scope ...` from the CLI (sst/opencode
 	// PR #2348). The bundled tree shape (`<command>/SKILL.md` rather than
@@ -291,7 +291,7 @@ var agentTargets = []agentTarget{
 	// `~/.agents/skills/` at user scope (one of two documented user-scope
 	// locations alongside `~/.pi/agent/skills/`, per pi-mono's
 	// packages/coding-agent/docs/skills.md). We use the cross-agent
-	// `.agents/skills` path at both scopes — same as Codex and Copilot —
+	// `.agents/skills` path at both workItems — same as Codex and Copilot —
 	// so a single install reaches every "agents-standard" tool on the
 	// machine. Pi's CLI command parser resolves `/skill:<name>` in print
 	// mode by reading SKILL.md frontmatter `name:`, so the bundled
@@ -304,7 +304,7 @@ var agentTargets = []agentTarget{
 	{"pi", "Pi", ".agents/skills", "", "", ""},
 	// Zed (zed.dev) reads skills from `.agents/skills/` at workspace
 	// scope and from `~/.agents/skills/` at global scope — Zed
-	// explicitly honors the cross-agent open spec at BOTH scopes per
+	// explicitly honors the cross-agent open spec at BOTH workItems per
 	// zed.dev's "agent panel skills" docs, making it the symmetric
 	// case (no userSkillsRel override). Install collapses with
 	// Codex/Copilot/Pi/omp/Cursor-workspace/Antigravity-workspace at
@@ -535,11 +535,11 @@ const (
 // CLI's `work-item` vocabulary (`stax work-items next-prefix`, etc.);
 // only the HTTP API and frontend page routes use `scope`.
 const (
-	apiStatsPath   = "/api/stats"
-	apiSystemsPath = "/api/systems"
-	apiScopesPath  = "/api/scopes"
-	apiScopePath   = "/api/scope"
-	apiSearchPath  = "/api/search"
+	apiStatsPath     = "/api/stats"
+	apiSystemsPath   = "/api/systems"
+	apiWorkItemsPath = "/api/work-items"
+	apiWorkItemPath  = "/api/work-item"
+	apiSearchPath    = "/api/search"
 )
 
 // frontendAssetsURLPrefix is the URL prefix Vite emits non-hashed assets

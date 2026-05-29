@@ -22,7 +22,7 @@ import (
 // content type, and a body that carries the running Version plus the
 // system and scope totals. The Version assertion catches a future
 // linker-flag wiring regression. Counts default to zero for a cwd
-// with no project, matching the home page's "0 systems / 0 scopes"
+// with no project, matching the home page's "0 systems / 0 workItems"
 // empty state.
 func TestHandleAPIStats(t *testing.T) {
 	chdir(t, t.TempDir())
@@ -45,7 +45,7 @@ func TestHandleAPIStats(t *testing.T) {
 	if body.Version != Version {
 		t.Fatalf("version = %q, want %q", body.Version, Version)
 	}
-	if body.Systems != 0 || body.Scopes != 0 {
+	if body.Systems != 0 || body.WorkItems != 0 {
 		t.Fatalf("expected zero counts on an empty cwd, got %+v", body)
 	}
 }
@@ -75,14 +75,14 @@ func TestHandleAPIStats_CountsSystemsAndScopes(t *testing.T) {
 	if body.Systems != 2 {
 		t.Fatalf("systems = %d, want 2", body.Systems)
 	}
-	if body.Scopes != 2 {
-		t.Fatalf("scopes = %d, want 2", body.Scopes)
+	if body.WorkItems != 2 {
+		t.Fatalf("workItems = %d, want 2", body.WorkItems)
 	}
 }
 
 // TestReadSystemsForAPI exercises the testable body of handleAPISystems
-// directly: returns id+name+scopes triples in ascending id order, with
-// the scopes count tallied from work-item files in the same directory. The
+// directly: returns id+name+workItems triples in ascending id order, with
+// the workItems count tallied from work-item files in the same directory. The
 // pure shape (path in, slice out, no globals) keeps the lookup logic
 // decoupled from the http.Handler so a regression in either layer
 // surfaces independently.
@@ -116,8 +116,8 @@ func TestReadSystemsForAPI(t *testing.T) {
 
 	got := readSystemsForAPI(staxPath)
 	want := []systemEntry{
-		{ID: "alpha", Name: "Alpha Service", Scopes: 2},
-		{ID: "zeta", Name: "Zeta Service", Scopes: 1},
+		{ID: "alpha", Name: "Alpha Service", WorkItems: 2},
+		{ID: "zeta", Name: "Zeta Service", WorkItems: 1},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("len = %d, want %d (%+v)", len(got), len(want), got)
@@ -407,11 +407,11 @@ func TestHandleAPISystems_DetailUnknownID(t *testing.T) {
 }
 
 // TestReadScopeDetail_HasOpenTasks pins the open-task signal that the
-// `/scope?id=` page uses to tint the title flag icon `primary-text`,
-// matching the per-row icon convention on `/scopes`. A `- [ ]` marker
+// `/work-item?id=` page uses to tint the title flag icon `primary-text`,
+// matching the per-row icon convention on `/work-items`. A `- [ ]` marker
 // anywhere in the markdown body flips the flag; a body without it
-// reports false. Mirrors how readWorkItemForAPI populates the same field
-// on workItemDetail rows (server.go:428).
+// reports false. Mirrors how readSystemWorkItemForAPI populates the same field
+// on systemWorkItem rows (server.go:428).
 func TestReadScopeDetail_HasOpenTasks(t *testing.T) {
 	dir := t.TempDir()
 	staxPath := seedDetailFixture(t, dir,
@@ -443,9 +443,9 @@ func TestReadScopeDetail_HasOpenTasks(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.slug, func(t *testing.T) {
-			got, ok := readScopeDetail(staxPath, c.slug)
+			got, ok := readWorkItemDetail(staxPath, c.slug)
 			if !ok {
-				t.Fatalf("readScopeDetail(%q) returned false", c.slug)
+				t.Fatalf("readWorkItemDetail(%q) returned false", c.slug)
 			}
 			if got.HasOpenTasks != c.want {
 				t.Fatalf("hasOpenTasks = %v, want %v", got.HasOpenTasks, c.want)
@@ -454,7 +454,7 @@ func TestReadScopeDetail_HasOpenTasks(t *testing.T) {
 	}
 }
 
-// TestReadScopesForAPI_SortedByCreatedDesc pins that the /api/scopes
+// TestReadScopesForAPI_SortedByCreatedDesc pins that the /api/work-items
 // list comes back ordered by frontmatter `created` descending — newest
 // first — even when the filename slug's numeric prefix disagrees with
 // the date. The fixture intentionally inverts prefix vs. created: the
@@ -478,7 +478,7 @@ func TestReadScopesForAPI_SortedByCreatedDesc(t *testing.T) {
 				"---\n\n## Goal\nG.\n",
 		},
 	)
-	got := readScopesForAPI(staxPath)
+	got := readWorkItemsForAPI(staxPath)
 	if len(got) != 2 {
 		t.Fatalf("len = %d, want 2 (%+v)", len(got), got)
 	}
@@ -502,7 +502,7 @@ func TestReadScopesForAPI_TieBreakBySlugDesc(t *testing.T) {
 			"0099-high.md": body,
 		},
 	)
-	got := readScopesForAPI(staxPath)
+	got := readWorkItemsForAPI(staxPath)
 	if len(got) != 2 {
 		t.Fatalf("len = %d, want 2", len(got))
 	}
@@ -512,7 +512,7 @@ func TestReadScopesForAPI_TieBreakBySlugDesc(t *testing.T) {
 	}
 }
 
-// TestReadSystemDetail_SortedByCreatedDesc mirrors the /api/scopes
+// TestReadSystemDetail_SortedByCreatedDesc mirrors the /api/work-items
 // sort assertion against the system-detail handler so a regression in
 // only one of the two pure-body functions doesn't slip through.
 func TestReadSystemDetail_SortedByCreatedDesc(t *testing.T) {
@@ -584,7 +584,7 @@ func TestNewServerMux_ServesEmbeddedFrontend(t *testing.T) {
 func TestNewServerMux_CleanURLs(t *testing.T) {
 	srv := httptest.NewServer(newServerMux())
 	t.Cleanup(srv.Close)
-	for _, page := range []string{"/systems", "/system", "/search", "/scopes", "/scope"} {
+	for _, page := range []string{"/systems", "/system", "/search", "/work-items", "/work-item"} {
 		t.Run(page, func(t *testing.T) {
 			res, err := http.Get(srv.URL + page) // #nosec G107 -- srv.URL is httptest.
 			if err != nil {
@@ -876,10 +876,10 @@ func TestHandleAPISearch_EmptyQuery(t *testing.T) {
 		if err := json.NewDecoder(rec.Result().Body).Decode(&body); err != nil {
 			t.Fatalf("q=%q decode: %v", q, err)
 		}
-		if body.Scopes == nil || body.Systems == nil {
+		if body.WorkItems == nil || body.Systems == nil {
 			t.Fatalf("q=%q expected non-nil empty slices, got %+v", q, body)
 		}
-		if len(body.Scopes) != 0 || len(body.Systems) != 0 {
+		if len(body.WorkItems) != 0 || len(body.Systems) != 0 {
 			t.Fatalf("q=%q expected empty results, got %+v", q, body)
 		}
 		if body.Query != "" {
@@ -907,10 +907,10 @@ func TestRunSearch(t *testing.T) {
 	staxPath := filepath.Join(dir, staxDir)
 
 	cases := []struct {
-		name        string
-		q           string
-		wantScopes  []string // slugs we expect, in any order
-		wantSystems []string // ids we expect, in any order
+		name          string
+		q             string
+		wantWorkItems []string // slugs we expect, in any order
+		wantSystems   []string // ids we expect, in any order
 	}{
 		{"title hit", "PKCE", []string{"0001-add-pkce"}, nil},
 		{"system-id hit on scope row", "billing", []string{"0003-stripe-webhook", "0002-proration"}, []string{"billing"}},
@@ -923,17 +923,17 @@ func TestRunSearch(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			got := runSearch(staxPath, c.q)
-			assertSearchScopes(t, got.Scopes, c.wantScopes)
+			assertSearchWorkItems(t, got.WorkItems, c.wantWorkItems)
 			assertSearchSystems(t, got.Systems, c.wantSystems)
 		})
 	}
 }
 
-// assertSearchScopes verifies every wanted slug appears in got and
+// assertSearchWorkItems verifies every wanted slug appears in got and
 // (when wantSlugs is non-empty) that the counts match. Extracted from
 // TestRunSearch to keep its inner case-loop body under the project's
 // cognitive-complexity cap.
-func assertSearchScopes(t *testing.T, got []scopeListItem, wantSlugs []string) {
+func assertSearchWorkItems(t *testing.T, got []workItemListItem, wantSlugs []string) {
 	t.Helper()
 	gotSlugs := make(map[string]bool, len(got))
 	for _, s := range got {
@@ -949,7 +949,7 @@ func assertSearchScopes(t *testing.T, got []scopeListItem, wantSlugs []string) {
 	}
 }
 
-// assertSearchSystems mirrors assertSearchScopes for the systems
+// assertSearchSystems mirrors assertSearchWorkItems for the systems
 // slice: every wanted id must appear, and an explicit empty want
 // (non-nil zero-length slice) means no system hits are allowed.
 func assertSearchSystems(t *testing.T, got []systemEntry, wantIDs []string) {

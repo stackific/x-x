@@ -13,7 +13,7 @@ import handlebars from "vite-plugin-handlebars";
 
 const root = dirname(fileURLToPath(import.meta.url));
 
-const pages = ["index", "search", "systems", "system", "scopes", "scope", "404"] as const;
+const pages = ["index", "search", "systems", "system", "work-items", "work-item", "404"] as const;
 
 // Rename the deduplicated entry chunk (Vite/Rollup emits `bundleN.js` when
 // multiple HTML entries all request the same `bundle.js` name) back to

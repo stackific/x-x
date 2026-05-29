@@ -1,4 +1,4 @@
-name: windows cli smoke
+name: E2E test / windows
 
 # Windows smoke test, two-job pipeline:
 #

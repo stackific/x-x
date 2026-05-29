@@ -645,7 +645,7 @@ try {
   Assert-Eq       'stats status 200' $resp.StatusCode 200
   Assert-Contains 'stats version'    $resp.Content "`"version`":`"$E2E_VERSION`""
   Assert-Contains 'stats systems'    $resp.Content '"systems":'
-  Assert-Contains 'stats scopes'     $resp.Content '"scopes":'
+  Assert-Contains 'stats workItems'     $resp.Content '"workItems":'
   $banner = Get-Content -LiteralPath $srv.StaxStdout -Raw
   Assert-Contains 'listening banner' $banner $srv.StaxUrl
   Assert-Contains 'ctrl-c hint'      $banner 'Ctrl-C'

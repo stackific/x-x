@@ -238,17 +238,17 @@ details.surface-variant a[target="_blank"] {
   text-decoration: underline;
 }
 
-// -- Scope detail body (rendered markdown) -----------------------
+// -- Work-item detail body (rendered markdown) ------------------
 // goldmark's GFM extension renders `- [ ] task` as
 //   <li><input type="checkbox" disabled> …</li>
 // inside a regular <ul> — without adding the GitHub `task-list-item`
 // class. The disc bullet then sits next to the checkbox, which is
 // visually redundant. Suppress the bullet (and the bullet's
 // indentation) on any <li> whose first child element is a checkbox.
-// Scoped to `.scope-body` so unrelated <ul>s on the page keep their
-// default disc bullets.
+// Scoped to `.work-item-body` so unrelated <ul>s on the page keep
+// their default disc bullets.
 
-.scope-body {
+.work-item-body {
   li:has(> input[type="checkbox"]) {
     list-style: none;
     margin-inline-start: -1.25rem;
@@ -270,9 +270,9 @@ details.surface-variant a[target="_blank"] {
 // specificity, but class-based wins because it comes later).
 // Restore the expected behavior with !important so any element
 // carrying the `hidden` attribute is collapsed regardless of which
-// layout class it also wears — used by the /scope page's
-// `#scope-superseded-by-row`, which is `class="row … " hidden` and
-// must stay collapsed on work items that aren't actually superseded.
+// layout class it also wears — used by the /work-item page's
+// `#work-item-superseded-by-row`, which is `class="row … " hidden`
+// and must stay collapsed on work items that aren't actually superseded.
 
 [hidden] {
   display: none !important;

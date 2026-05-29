@@ -529,7 +529,7 @@ assert_eq "spawn succeeded" "$?" "0"
 stats_body="$(curl -fsS --max-time 1 "${BG_URL}${STAX_API_STATS_PATH}")"
 assert_contains "stats version" "$stats_body" "\"version\":\"${E2E_VERSION}\""
 assert_contains "stats systems" "$stats_body" '"systems":'
-assert_contains "stats scopes"  "$stats_body" '"scopes":'
+assert_contains "stats workItems"  "$stats_body" '"workItems":'
 # stdout carries the listening banner — pin both the URL and the
 # Ctrl-C hint so a reshuffle of runServer's banner shows up here.
 listening_banner="$(cat "$BG_STDOUT")"
@@ -550,7 +550,7 @@ assert_is_dir "lazy-bootstrap agents dir" "$HOME/${STAX_AGENTS_DIR}"
 # ---------- bare stax in a non-project directory ----------
 #
 # Bare `stax` (and `stax --no-browser`) only makes sense inside an
-# initialized project — the UI's /api/scopes, /api/scope, and the
+# initialized project — the UI's /api/work-items, /api/work-item, and the
 # detail mode of /api/systems all read from .stax/. Surface the
 # canonical `stax init` banner to stderr, exit 2 (usage error),
 # and DO NOT bind the listener or open a browser.

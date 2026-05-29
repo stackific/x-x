@@ -22,7 +22,7 @@ import (
 )
 
 // initScope is the user's choice between "this project" and "all projects".
-// Encoding it as an enum (rather than a bool) leaves room for future scopes
+// Encoding it as an enum (rather than a bool) leaves room for future workItems
 // (e.g. workspace-level for multi-project repos) without breaking call sites.
 type initScope int
 
@@ -177,7 +177,7 @@ func runInit(args []string) {
 	// with `/scope`, `/ship`, and the `stax work-items *` CLI subcommands. A
 	// user-scope install that left cwd un-scaffolded produced skills with
 	// nowhere to anchor work items — every subsequent command tripped the
-	// `not a stax project` check. Writing the scaffold under both scopes
+	// `not a stax project` check. Writing the scaffold under both workItems
 	// keeps cwd a real stax project either way.
 	//
 	// Failures here are non-fatal — they downgrade to a warning because

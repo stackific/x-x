@@ -3,11 +3,11 @@ import "material-dynamic-colors";
 import "./styles/app.scss";
 
 import { home } from "./pages/home";
-import { scope } from "./pages/scope";
-import { scopes } from "./pages/scopes";
 import { search } from "./pages/search";
 import { system } from "./pages/system";
 import { systems } from "./pages/systems";
+import { workItem } from "./pages/work-item";
+import { workItems } from "./pages/work-items";
 import { syncActiveNav } from "./shared/nav";
 import { initSidebar } from "./shared/sidebar";
 import { initTheme } from "./shared/theme";
@@ -17,8 +17,8 @@ const pages: Record<string, () => void | Promise<void>> = {
   search,
   systems,
   system,
-  scopes,
-  scope,
+  "work-items": workItems,
+  "work-item": workItem,
 };
 
 function start(): void {
