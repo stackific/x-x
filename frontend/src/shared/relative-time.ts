@@ -90,12 +90,22 @@ export function applyRelativeTime(el: HTMLElement, iso: string): void {
 // regardless of the user's locale. Falls back to the raw string when
 // the input doesn't parse — the relativeTime primary will also echo
 // the raw value, so the row stays self-consistent.
+//
+// Uses individual field options (year/month/day/hour/minute) rather
+// than the dateStyle/timeStyle shorthand because Intl.DateTimeFormat
+// throws RangeError("Invalid option : option") at runtime when those
+// shorthands are combined with timeZoneName — the spec forbids
+// mixing the two families. TypeScript can't catch this; only the
+// runtime can. So we spell out the fields.
 function absoluteTimestamp(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
     timeZoneName: "short",
   });
 }
