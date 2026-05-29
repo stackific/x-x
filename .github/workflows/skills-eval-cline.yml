@@ -61,6 +61,23 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # server.go embeds frontend/dist via //go:embed all:frontend/dist
+      # (gitignored). Build it before `go install` or the embed pattern
+      # resolves to an empty dir and the compile fails at server.go.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: build frontend (produces frontend/dist for the Go embed)
+        working-directory: frontend
+        run: npm run build
+
       # `go install .` lands a release-flavored stax in $(go env GOPATH)/bin.
       # The setup-go action puts that directory on PATH.
       - name: install stax to PATH
