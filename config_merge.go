@@ -86,8 +86,9 @@ func installAgentConfig(src, dest string) error {
 
 // installOneAgentConfigFile carries the per-file dispatch for
 // installAgentConfig's walk callback. Separated so the walker stays
-// short and the policy table (symlink → drop, .json → merge, other →
-// skip, missing → copy) reads as a single switch.
+// short and the policy table (symlink → drop, .json → merge, .ts →
+// whole-file copy with byte-identity preserve, other → skip, missing
+// → copy) reads as a single switch.
 func installOneAgentConfigFile(srcPath, destPath, rel string) error {
 	info, statErr := os.Lstat(destPath)
 	if statErr != nil {
@@ -121,10 +122,51 @@ func installOneAgentConfigFile(srcPath, destPath, rel string) error {
 			fmt.Fprintf(os.Stderr, "    config %s: merge failed (%v); leaving existing file untouched\n", rel, mErr)
 		}
 		return nil
+	case strings.EqualFold(filepath.Ext(destPath), configTSExt):
+		// TS-plugin shape: whole-file ownership by byte-identity. Used by
+		// agents whose hook surface is a TypeScript module rather than a
+		// JSON object (OpenCode, Pi). The merger-style record-level
+		// ownership doesn't apply — there's no parse-and-recombine
+		// strategy for executable source code that would survive across
+		// every agent's plugin API. Instead:
+		//
+		//   - dest byte-identical to bundle → no-op; re-running init is
+		//     idempotent.
+		//   - dest differs from bundle → user has edited their copy.
+		//     Leave it alone (same conservative default as the non-JSON
+		//     fallthrough below).
+		identical, cmpErr := filesByteEqual(srcPath, destPath)
+		if cmpErr != nil {
+			fmt.Fprintf(os.Stderr, "    config %s: compare failed (%v); leaving existing file untouched\n", rel, cmpErr)
+			return nil
+		}
+		if !identical {
+			fmt.Fprintf(os.Stderr, "    config %s: user-edited, skipping\n", rel)
+		}
+		return nil
 	default:
 		fmt.Fprintf(os.Stderr, "    config %s: exists, skipping\n", rel)
 		return nil
 	}
+}
+
+// filesByteEqual returns true iff a and b have identical bytes. Used by
+// the TS-plugin install branch (idempotent re-runs are no-ops on
+// byte-equal copies) and by the matching remove branch
+// (removeBundledTSPluginsIn deletes only byte-identical copies, so
+// user-edited variants survive). Pulled out as a one-liner so the two
+// directions share the identity primitive the same way the JSON
+// directions share jsonDeepEqual.
+func filesByteEqual(a, b string) (bool, error) {
+	aBytes, err := os.ReadFile(a) // #nosec G304 -- both paths are caller-controlled stax-managed locations.
+	if err != nil {
+		return false, err
+	}
+	bBytes, err := os.ReadFile(b) // #nosec G304 -- see above.
+	if err != nil {
+		return false, err
+	}
+	return bytes.Equal(aBytes, bBytes), nil
 }
 
 // mergeJSONFile reads the bundled file at bundlePath and the user's file
@@ -305,7 +347,10 @@ func removeBundledHooksIn(bundleSrc, userDest, _ string) (modified, skipped int)
 			skipped++
 			continue
 		}
-		fmt.Printf("    unmerged %s\n", c.rel)
+		// Per-file "unmerged settings.json" lines suppressed — see the
+		// equivalent comment in removeOurSkillsIn. Path header above
+		// already identifies the file; aggregate count surfaces in the
+		// final summary.
 		modified++
 	}
 	return modified, skipped
@@ -514,4 +559,105 @@ func jsonDeepEqual(a, b any) bool {
 		return false
 	}
 	return bytes.Equal(aj, bj)
+}
+
+// removeBundledTSPluginsIn walks the bundled per-agent config tree at
+// bundleSrc and, for every bundled .ts file, deletes the user's
+// counterpart under userDest IFF the user file is byte-identical to
+// the bundle. User-edited copies are left alone — the unit of
+// ownership is the whole file, identified by byte-equality the same
+// way the JSON un-merger identifies records by deep-equal.
+//
+// Scope of removal is intentionally narrow:
+//
+//   - Only files whose extension matches configTSExt are candidates.
+//     Sibling files the user has dropped into the same directory
+//     (e.g. a hand-written `.ts`) are left strictly alone because
+//     they have no bundle counterpart to compare against.
+//   - A user file is removed only when it byte-equals the bundle. Any
+//     edit — adding a comment, changing whitespace, swapping a string
+//     — breaks the equality and the file survives.
+//   - Empty parent directories left behind by the deletion are NOT
+//     pruned here. The caller (runSkillsRemove) already runs a parent
+//     cleanup pass for skill dirs; we let it handle TS-plugin parents
+//     consistently rather than duplicating the cleanup logic.
+//
+// Returns (removed, skipped). Missing bundleSrc / missing user file
+// are silent no-ops, matching removeBundledHooksIn semantics. Errors
+// during read / compare / unlink are non-fatal: the file is left
+// alone, a diagnostic is written to stderr, and skipped is bumped.
+func removeBundledTSPluginsIn(bundleSrc, userDest, _ string) (removed, skipped int) {
+	if _, err := os.Stat(bundleSrc); errors.Is(err, os.ErrNotExist) {
+		return 0, 0
+	}
+	pending, walkSkipped := collectTSPluginRemovals(bundleSrc, userDest)
+	skipped += walkSkipped
+	if len(pending) == 0 {
+		return 0, skipped
+	}
+	// Path-only header (no agent name) — matches removeOurSkillsIn /
+	// removeBundledHooksIn. Per-file "removed stax.ts" lines are
+	// suppressed for the same reason: the path header already
+	// identifies the file; aggregate count surfaces in the final
+	// summary.
+	fmt.Printf("  %s\n", userDest)
+	for _, p := range pending {
+		if err := os.Remove(p.path); err != nil {
+			fmt.Fprintf(os.Stderr, "    %s: remove: %v\n", p.rel, err)
+			skipped++
+			continue
+		}
+		removed++
+	}
+	return removed, skipped
+}
+
+// tsPluginRemoval is one queued whole-file delete ready for unlink.
+// Built up before mutating the filesystem so the WalkDir pass stays
+// pure and the printed header only appears when there's actual
+// removal work to report.
+type tsPluginRemoval struct {
+	rel  string
+	path string
+}
+
+// collectTSPluginRemovals walks bundleSrc for .ts files, compares
+// each to its user counterpart under userDest, and returns the queue
+// of user paths whose bytes match the bundle. Files that don't exist
+// on the user side or differ from the bundle are skipped — the
+// former silently (no install happened or it was already removed),
+// the latter loudly (user-edited copy, preserve it).
+func collectTSPluginRemovals(bundleSrc, userDest string) (pending []tsPluginRemoval, skipped int) {
+	walkErr := filepath.WalkDir(bundleSrc, func(path string, d fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() || !strings.EqualFold(filepath.Ext(path), configTSExt) {
+			return nil
+		}
+		rel, err := filepath.Rel(bundleSrc, path)
+		if err != nil {
+			return err
+		}
+		userPath := filepath.Join(userDest, rel)
+		if _, err := os.Stat(userPath); errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		identical, cmpErr := filesByteEqual(path, userPath)
+		if cmpErr != nil {
+			fmt.Fprintf(os.Stderr, "    %s: compare: %v\n", rel, cmpErr)
+			skipped++
+			return nil
+		}
+		if !identical {
+			fmt.Fprintf(os.Stderr, "    %s: user-edited, leaving alone\n", rel)
+			return nil
+		}
+		pending = append(pending, tsPluginRemoval{rel: rel, path: userPath})
+		return nil
+	})
+	if walkErr != nil {
+		fmt.Fprintf(os.Stderr, "    walk %s: %v\n", bundleSrc, walkErr)
+	}
+	return pending, skipped
 }

@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "hooks": {
+    "postToolUse": [
+      {
+        "type": "command",
+        "bash": "stax work-items lint"
+      }
+    ],
+    "agentStop": [
+      {
+        "type": "command",
+        "bash": "stax work-items lint"
+      }
+    ]
+  }
+}

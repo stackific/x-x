@@ -6,6 +6,7 @@ Welcome. This directory holds the public-facing documentation for **stax by Stac
 
 - [Getting Started](getting-started.md) — install and run stax in under a minute.
 - [Reference](reference.md) — flags, examples, and exit codes.
+- [Manual test matrix](manual-test-matrix.md) — checklist for hand-driving every shipped agent's skill + hook surface across macOS/Linux and Windows.
 
 ## Project links
 

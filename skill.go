@@ -197,18 +197,36 @@ func runSkillsRemove(args []string) {
 		skipped += s
 		// Hook un-merge: walk the bundled per-agent config dir and
 		// subtract our shipped hook records from the user's counterpart
-		// under <scopeRoot>/<t.configRel>. Agents that ship no config
-		// (empty configSrc) are skipped — same check installAgentConfig uses.
+		// under <scopeRoot>/<t.configRelFor(scope)>. Agents that ship no
+		// config (empty configSrc) are skipped — same check
+		// installAgentConfig uses. configRelFor mirrors install-side
+		// resolution so scope-asymmetric agents (Copilot CLI:
+		// `.github/hooks` at project, `~/.copilot/hooks` at user)
+		// un-merge from the same path their install landed in.
 		if agentsErr != nil || t.configSrc == "" {
 			continue
 		}
 		m, hs := removeBundledHooksIn(
 			filepath.Join(agentsRoot, t.configSrc),
-			filepath.Join(scopeRoot, t.configRel),
+			filepath.Join(scopeRoot, t.configRelFor(removeScope)),
 			t.name,
 		)
 		unmerged += m
 		skipped += hs
+		// TS-plugin sibling. Some agents ship hook code as TypeScript
+		// modules (OpenCode plugins, Pi extensions) rather than as a
+		// JSON document. The bundle directory can hold both — the JSON
+		// walker above ignores .ts files, this walker ignores
+		// everything else. removeBundledTSPluginsIn deletes only
+		// byte-identical copies, so a user-edited variant survives the
+		// same way a user-tweaked JSON record does.
+		r, ts := removeBundledTSPluginsIn(
+			filepath.Join(agentsRoot, t.configSrc),
+			filepath.Join(scopeRoot, t.configRelFor(removeScope)),
+			t.name,
+		)
+		unmerged += r
+		skipped += ts
 	}
 
 	fmt.Printf("\nRemoved %d skill(s), unmerged %d config file(s), skipped %d failed.\n",
@@ -275,7 +293,12 @@ func removeOurSkillsIn(skillsDir, _ string, owned map[string]bool) (removed, ski
 			skipped++
 			continue
 		}
-		fmt.Printf("    removed %s\n", e.Name())
+		// Per-skill "removed scope" / "removed ship" lines used to print
+		// here; they're suppressed because the path header above (e.g.
+		// `.claude/skills/`) already tells the user where the work
+		// happened, and the per-entry list is mostly noise — we own
+		// exactly two skill names today (see `ownedSkills`). The
+		// aggregate count surfaces in the final summary line.
 		removed++
 	}
 	// If the skills directory is now empty (e.g. only contained stax dirs),

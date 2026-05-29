@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // chdir is a t-scoped Chdir: restores the original cwd at test cleanup so
@@ -1358,6 +1359,175 @@ func TestInstallAgentConfig_CopiesMissingFile(t *testing.T) {
 	}
 	if string(got) != "FROM_BUNDLE" {
 		t.Fatalf("got %q want FROM_BUNDLE", got)
+	}
+}
+
+// ---------- .ts (TS-plugin) install-branch tests ----------
+//
+// The TS-plugin branch is whole-file-owned by byte-identity: absent →
+// copy; byte-equal to bundle → no-op; differs from bundle → user-edited
+// and left alone. These tests pin each policy slot. Used by agents
+// whose hook surface is a TypeScript module (OpenCode plugins, Pi
+// extensions) rather than a JSON document.
+
+// TestInstallAgentConfig_CopiesMissingTSFile is the fresh-install case:
+// when the dest .ts file doesn't exist, the bundled source must land
+// byte-for-byte. Mirrors TestInstallAgentConfig_CopiesMissingFile but
+// keys on the `.ts` branch instead of the no-extension path.
+func TestInstallAgentConfig_CopiesMissingTSFile(t *testing.T) {
+	src := t.TempDir()
+	const bundle = "// stax bundled plugin\nexport default function () {}\n"
+	if err := os.WriteFile(filepath.Join(src, "stax.ts"), []byte(bundle), 0o600); err != nil {
+		t.Fatalf("seed src: %v", err)
+	}
+	dest := filepath.Join(t.TempDir(), "plugins")
+	if err := installAgentConfig(src, dest); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(dest, "stax.ts"))
+	if err != nil {
+		t.Fatalf("read installed: %v", err)
+	}
+	if string(got) != bundle {
+		t.Fatalf("installed .ts not byte-equal to bundle:\nwant %q\ngot  %q", bundle, got)
+	}
+}
+
+// TestInstallAgentConfig_TSByteEqualIsNoOp pins idempotence: re-running
+// install when the user's file already matches the bundle byte-for-byte
+// must NOT touch the file (no rewrite, no mtime change). The byte-equal
+// branch is what makes back-to-back `stax init` calls a no-op for TS
+// plugins; without it, the file would always be considered "differs"
+// and the install would warn on every re-run.
+func TestInstallAgentConfig_TSByteEqualIsNoOp(t *testing.T) {
+	src := t.TempDir()
+	const bundle = "export default function () {}\n"
+	if err := os.WriteFile(filepath.Join(src, "stax.ts"), []byte(bundle), 0o600); err != nil {
+		t.Fatalf("seed src: %v", err)
+	}
+	dest := t.TempDir()
+	userPath := filepath.Join(dest, "stax.ts")
+	if err := os.WriteFile(userPath, []byte(bundle), 0o600); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	beforeStat, err := os.Stat(userPath)
+	if err != nil {
+		t.Fatalf("stat before: %v", err)
+	}
+	// Backdate the mtime so a rewrite would show up as a tick forward.
+	// Without this, a rewrite at the same nanosecond would slip past the
+	// check (most filesystems carry nsec resolution but we shouldn't bet
+	// on it; backdating one second is sturdier).
+	backdate := beforeStat.ModTime().Add(-time.Second)
+	if err := os.Chtimes(userPath, backdate, backdate); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+	if err := installAgentConfig(src, dest); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	afterStat, err := os.Stat(userPath)
+	if err != nil {
+		t.Fatalf("stat after: %v", err)
+	}
+	if !afterStat.ModTime().Equal(backdate) {
+		t.Fatalf("byte-equal install rewrote file: mtime moved %v → %v", backdate, afterStat.ModTime())
+	}
+	body, _ := os.ReadFile(userPath)
+	if string(body) != bundle {
+		t.Fatalf("bytes drifted unexpectedly: got %q", body)
+	}
+}
+
+// TestInstallAgentConfig_TSDifferingPreservesUserEdit pins the
+// user-edit-survival side: when the user's .ts file differs from the
+// bundle (any byte change — added comment, extra whitespace, swapped
+// string), the install must NOT overwrite. This is the same
+// conservative default the non-JSON skip path uses, applied with
+// finer-grained "different from what we shipped" detection.
+func TestInstallAgentConfig_TSDifferingPreservesUserEdit(t *testing.T) {
+	src := t.TempDir()
+	if err := os.WriteFile(filepath.Join(src, "stax.ts"), []byte("export default function () {}\n"), 0o600); err != nil {
+		t.Fatalf("seed src: %v", err)
+	}
+	dest := t.TempDir()
+	userPath := filepath.Join(dest, "stax.ts")
+	const userEdit = "// I customized this\nexport default function () { console.log('hi') }\n"
+	if err := os.WriteFile(userPath, []byte(userEdit), 0o600); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	if err := installAgentConfig(src, dest); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	body, _ := os.ReadFile(userPath)
+	if string(body) != userEdit {
+		t.Fatalf("user edit clobbered: want %q got %q", userEdit, body)
+	}
+}
+
+// TestFilesByteEqual covers the byte-equality primitive both
+// directions (TS install + remove) share. Three buckets — identical,
+// differing, length-mismatched — pin the contract the callers rely
+// on. A missing file errors out (not a "not equal" return) so callers
+// see the real I/O problem instead of a silent false.
+func TestFilesByteEqual(t *testing.T) {
+	dir := t.TempDir()
+	a := filepath.Join(dir, "a")
+	b := filepath.Join(dir, "b")
+	if err := os.WriteFile(a, []byte("hello\nworld\n"), 0o600); err != nil {
+		t.Fatalf("seed a: %v", err)
+	}
+	if err := os.WriteFile(b, []byte("hello\nworld\n"), 0o600); err != nil {
+		t.Fatalf("seed b: %v", err)
+	}
+	ok, err := filesByteEqual(a, b)
+	if err != nil || !ok {
+		t.Fatalf("identical: got ok=%v err=%v, want ok=true err=nil", ok, err)
+	}
+	// Differ — same length.
+	if err := os.WriteFile(b, []byte("hello\nWORLD\n"), 0o600); err != nil {
+		t.Fatalf("rewrite b: %v", err)
+	}
+	ok, err = filesByteEqual(a, b)
+	if err != nil || ok {
+		t.Fatalf("differing same length: got ok=%v err=%v, want ok=false err=nil", ok, err)
+	}
+	// Differ — different length.
+	if err := os.WriteFile(b, []byte("hi\n"), 0o600); err != nil {
+		t.Fatalf("rewrite b shorter: %v", err)
+	}
+	ok, err = filesByteEqual(a, b)
+	if err != nil || ok {
+		t.Fatalf("differing length: got ok=%v err=%v, want ok=false err=nil", ok, err)
+	}
+	// Missing — error.
+	if _, err := filesByteEqual(a, filepath.Join(dir, "missing")); err == nil {
+		t.Fatal("missing file: expected error, got nil")
+	}
+}
+
+// TestConfigRelFor_FallsBackToConfigRelWhenUserConfigEmpty covers the
+// scope-resolution helper for agents whose hook path is symmetric
+// across workItems. Project scope always uses configRel; user scope
+// uses userConfigRel when set, falls back to configRel otherwise.
+func TestConfigRelFor_FallsBackToConfigRelWhenUserConfigEmpty(t *testing.T) {
+	cases := []struct {
+		name   string
+		target agentTarget
+		scope  initScope
+		want   string
+	}{
+		{"symmetric project", agentTarget{configRel: ".x"}, scopeProject, ".x"},
+		{"symmetric user", agentTarget{configRel: ".x"}, scopeUser, ".x"},
+		{"asymmetric project (uses configRel)", agentTarget{configRel: ".github/hooks", userConfigRel: ".copilot/hooks"}, scopeProject, ".github/hooks"},
+		{"asymmetric user (uses userConfigRel)", agentTarget{configRel: ".github/hooks", userConfigRel: ".copilot/hooks"}, scopeUser, ".copilot/hooks"},
+		{"empty configRel", agentTarget{}, scopeProject, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := c.target.configRelFor(c.scope); got != c.want {
+				t.Fatalf("got %q, want %q", got, c.want)
+			}
+		})
 	}
 }
 
