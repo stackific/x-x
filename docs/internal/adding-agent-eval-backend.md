@@ -1,8 +1,8 @@
 # Adding a new agent backend to skills-evals
 
 This guide walks the next contributor through integrating a new agent
-backend (Cursor, Gemini CLI, GitHub Copilot CLI, OpenAI Codex, etc.)
-into the existing `skills-evals` test suite alongside the Claude path.
+backend (Cursor, GitHub Copilot CLI, OpenAI Codex, etc.) into the
+existing `skills-evals` test suite alongside the Claude path.
 
 The Claude implementation is the reference. Read
 `skills-evals/src/skills_evals/claude_driver.py` and
@@ -51,7 +51,7 @@ section below maps to something already shipped there.
 | File | What changes |
 |---|---|
 | `skills_evals/<agent>_driver.py` | Subprocess spawn, protocol parsing, auto-yes loop. Each agent's CLI has different conventions; cannot be fully abstracted today. |
-| `tests/conftest.py` env defaults | Routing env vars are agent-specific (Claude uses `ANTHROPIC_*`; Cursor will use `CURSOR_*`; Gemini uses `GOOGLE_*`; …). Add a new defaults dict per agent. |
+| `tests/conftest.py` env defaults | Routing env vars are agent-specific (Claude uses `ANTHROPIC_*`; Cursor will use `CURSOR_*`; Copilot uses `COPILOT_*`; …). Add a new defaults dict per agent. |
 | `tests/test_<agent>_*.py` | Either duplicate the test files (per-agent driver import) or refactor to a shared file with a `driver` fixture. Start with duplication; refactor once you have ≥3 backends. |
 | `.github/workflows/skills-eval-<agent>.yml` | Install step (npm/pip/cargo/bash), env block, secret mapping. |
 
@@ -165,7 +165,7 @@ cp .github/workflows/skills-eval-claude.yml \
 Update:
 
 - `name:` — human-readable label shown in the Actions UI
-- Install step — `npm install -g cursor`, `pip install gemini-cli`,
+- Install step — `npm install -g cursor`, `pip install <agent-cli>`,
   etc. Pin to a known-good version once you have one
   (`@latest` is fragile when the agent's protocol format evolves)
 - `env:` block — agent-specific routing vars + secret mapping
@@ -222,7 +222,7 @@ If the run fails, the failure is almost always one of:
   user message on the same stdin — multi-turn streaming works
   without `--resume`.
 
-### Cursor / Gemini / Codex / Copilot
+### Cursor / Codex / Copilot
 
 Document quirks here as each backend ships. Things to record:
 

@@ -55,20 +55,17 @@ readonly OWNED_SKILLS="${SKILL_SCOPE_DIR} ${SKILL_SHIP_DIR}"
 # constants.go. The registry is sorted alphabetically by display name
 # (case-insensitive) and looked up by `key` in the Go drift check
 # (TestE2EShellConstantsMatchGo), so these readonly entries are matched
-# by NAME, not by index. Codex, Copilot, Pi, omp, and Antigravity all
-# resolve skills from `.agents/skills` at workspace scope (cross-agent
-# open spec, install is idempotent so the rows co-exist on disk without
+# by NAME, not by index. Codex, Copilot, Pi, omp, and Zed all resolve
+# skills from `.agents/skills` at workspace scope (cross-agent open
+# spec, install is idempotent so the rows co-exist on disk without
 # conflict). Cline does NOT use the cross-agent path — per
 # docs.cline.bot/customization/overview it reads from `.cline/skills/`
 # (project) and `~/.cline/skills/` (user) only. OpenCode and Claude
 # stay on their own paths because their lookup logic doesn't include
 # `.agents/skills` — OpenCode reads `.opencode/{command,commands}/` only,
-# Claude reads `.claude/skills/` only. Antigravity is the lone row that
-# diverges across scopes: workspace `.agents/skills`, global
-# `~/.gemini/antigravity/skills` (per antigravity.google/docs/skills) —
+# Claude reads `.claude/skills/` only. Cursor diverges across scopes
+# (workspace `.agents/skills`, global `~/.cursor/skills`) and is
 # represented in Go via agentTarget.userSkillsRel.
-readonly ANTIGRAVITY_SKILLS_REL=".agents/skills"
-readonly ANTIGRAVITY_USER_SKILLS_REL=".gemini/antigravity/skills"
 readonly CLAUDE_SKILLS_REL=".claude/skills"
 readonly CLAUDE_CONFIG_REL=".claude"
 readonly CLINE_SKILLS_REL=".cline/skills"
@@ -83,9 +80,9 @@ readonly OMP_SKILLS_REL=".agents/skills"
 readonly OPENCODE_SKILLS_REL=".opencode/commands"
 readonly PI_SKILLS_REL=".agents/skills"
 readonly ZED_SKILLS_REL=".agents/skills"
-# OpenCode / Copilot / Continue / Cursor / Kilo / Pi / omp /
-# Antigravity / Zed each ship no per-agent config (configSrc /
-# configRel are empty), so no *_CONFIG_REL mirrors are needed for them.
+# OpenCode / Copilot / Continue / Cursor / Kilo / Pi / omp / Zed
+# each ship no per-agent config (configSrc / configRel are empty),
+# so no *_CONFIG_REL mirrors are needed for them.
 # Parent of CODEX_SKILLS_REL — used by isolation cases that seed sibling
 # files alongside the Codex skills dir. Derived (not a Go constant) to
 # avoid drift if the skillsRel ever moves.
@@ -96,10 +93,6 @@ readonly OPENCODE_SKILLS_PARENT="${OPENCODE_SKILLS_REL%/*}"
 # Parent of CLINE_SKILLS_REL — wiped between cases. Cline owns its own
 # `.cline/` dir at both project and user scope.
 readonly CLINE_SKILLS_PARENT="${CLINE_SKILLS_REL%/*}"
-# Parent of ANTIGRAVITY_USER_SKILLS_REL — `~/.gemini/antigravity/`.
-# Wiped between cases that touch Antigravity at user scope so no stale
-# global skill tree leaks across cases.
-readonly ANTIGRAVITY_USER_SKILLS_PARENT="${ANTIGRAVITY_USER_SKILLS_REL%/*}"
 # Parents for the rest of the per-agent roots. Each is wiped between
 # cases via reset_user_home so a previous case's install never bleeds
 # into the next.
@@ -326,7 +319,6 @@ reset_user_home() {
          "$HOME/${CODEX_SKILLS_PARENT}" \
          "$HOME/${OPENCODE_SKILLS_PARENT}" \
          "$HOME/${CLINE_SKILLS_PARENT}" \
-         "$HOME/${ANTIGRAVITY_USER_SKILLS_PARENT}" \
          "$HOME/${CONTINUE_SKILLS_PARENT}" \
          "$HOME/${CURSOR_USER_SKILLS_PARENT}" \
          "$HOME/${KILO_SKILLS_PARENT}" \
@@ -847,7 +839,12 @@ case_start "stax init interactive (explicit agents + project scope)"
 reset_user_home
 PROJ_INT2="$(fresh_project)"
 cd "$PROJ_INT2"
-run_capture "1,2
+# Picker indices follow agentTargets order (alphabetical by display
+# name): 1 = Claude Code, 2 = Cline, 3 = Codex CLI, … Pick 1+3 so the
+# install lands BOTH a `.claude/skills/` tree (CLAUDE_SKILLS_REL) AND a
+# `.agents/skills/` tree (CODEX_SKILLS_REL), proving the multi-select
+# loop preserves order and the two agents' distinct destinations.
+run_capture "1,3
 1
 
 
@@ -1070,43 +1067,6 @@ assert_is_dir "omp user-scope skills landed" \
 assert_absent "no install under project cwd" \
   "$PROJ_OMP_USER/${OMP_SKILLS_REL}"
 
-case_start "stax init --agents=antigravity installs at the shared .agents/skills/ path"
-reset_user_home
-PROJ_AG="$(fresh_project)"
-cd "$PROJ_AG"
-run_capture "" init --agents=antigravity --scope=project
-assert_eq "exit 0" "$RUN_RC" "0"
-# Antigravity's workspace skill path defaults to `.agents/skills`, the
-# cross-agent open spec path Codex, Copilot, Pi, and omp also use (per
-# antigravity.google/docs/skills). Other agents' exclusive paths and
-# their config files must stay absent under a single-row install.
-assert_is_dir "antigravity project skills installed" \
-  "$PROJ_AG/${ANTIGRAVITY_SKILLS_REL}/${SKILL_SHIP_DIR}"
-assert_absent "claude path NOT installed"   "$PROJ_AG/${CLAUDE_SKILLS_REL}"
-assert_absent "cline path NOT installed"    "$PROJ_AG/${CLINE_SKILLS_REL}"
-assert_absent "opencode path NOT installed" "$PROJ_AG/${OPENCODE_SKILLS_REL}"
-assert_absent "codex config NOT installed"  "$PROJ_AG/${CODEX_CONFIG_REL}"
-assert_absent "claude config NOT installed" "$PROJ_AG/${CLAUDE_CONFIG_REL}"
-
-case_start "stax init --agents=antigravity --scope=user lands at ~/.gemini/antigravity/skills"
-PROJ_AG_USER="$(fresh_project)"
-cd "$PROJ_AG_USER"
-reset_user_home
-run_capture "" init --agents=antigravity --scope=user
-assert_eq "exit 0" "$RUN_RC" "0"
-# Antigravity diverges from the cross-agent fallback at user scope: it
-# reads `~/.gemini/antigravity/skills/` (NOT `~/.agents/skills/`) per
-# antigravity.google/docs/skills. Skills land under SANDBOX_HOME at
-# that path; the cross-agent `~/.agents/skills` must stay clean to
-# prove the userSkillsRel override drove the install; project cwd is
-# left alone.
-assert_is_dir "antigravity user-scope skills landed" \
-  "${SANDBOX_HOME}/${ANTIGRAVITY_USER_SKILLS_REL}/${SKILL_SHIP_DIR}"
-assert_absent "cross-agent ~/.agents/skills NOT touched" \
-  "${SANDBOX_HOME}/${CODEX_SKILLS_REL}"
-assert_absent "no install under project cwd" \
-  "$PROJ_AG_USER/${ANTIGRAVITY_USER_SKILLS_REL}"
-
 case_start "stax init --agents=continue installs at .continue/skills"
 reset_user_home
 PROJ_CONT="$(fresh_project)"
@@ -1141,7 +1101,7 @@ cd "$PROJ_CUR"
 run_capture "" init --agents=cursor --scope=project
 assert_eq "exit 0" "$RUN_RC" "0"
 # Cursor at workspace scope uses the cross-agent `.agents/skills`
-# path — same as Codex/Copilot/Pi/omp/Antigravity. Cursor's own
+# path — same as Codex/Copilot/Pi/omp. Cursor's own
 # `~/.cursor/skills` is the user-scope-only path.
 assert_is_dir "cursor project skills installed" \
   "$PROJ_CUR/${CURSOR_SKILLS_REL}/${SKILL_SHIP_DIR}"
@@ -1155,9 +1115,9 @@ reset_user_home
 run_capture "" init --agents=cursor --scope=user
 assert_eq "exit 0" "$RUN_RC" "0"
 # Cursor diverges at user scope: it reads `~/.cursor/skills/`, NOT
-# the cross-agent `~/.agents/skills` fallback. Same shape as
-# Antigravity — the userSkillsRel override drives the install
-# destination, and the cross-agent path must stay clean as proof.
+# the cross-agent `~/.agents/skills` fallback. The userSkillsRel
+# override drives the install destination, and the cross-agent path
+# must stay clean as proof.
 assert_is_dir "cursor user-scope skills landed" \
   "${SANDBOX_HOME}/${CURSOR_USER_SKILLS_REL}/${SKILL_SHIP_DIR}"
 assert_absent "cross-agent ~/.agents/skills NOT touched" \

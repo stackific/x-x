@@ -43,10 +43,6 @@ func TestE2EShellConstantsMatchGo(t *testing.T) {
 		"SKILL_SHIP_DIR":      skillShipDir,
 		"SKILL_MANIFEST_FILE": skillManifestFile,
 
-		"ANTIGRAVITY_SKILLS_REL":      agentByKey("antigravity").skillsRel,
-		"ANTIGRAVITY_USER_SKILLS_REL": agentByKey("antigravity").userSkillsRel,
-		// Antigravity is skills-only — configSrc/configRel are "" because the
-		// hook surface isn't pinned to a public reference page yet.
 		"CLAUDE_SKILLS_REL": agentByKey("claude").skillsRel,
 		"CLAUDE_CONFIG_REL": agentByKey("claude").configRel,
 		"CLINE_SKILLS_REL":  agentByKey("cline").skillsRel,

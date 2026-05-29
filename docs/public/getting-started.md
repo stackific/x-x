@@ -19,7 +19,7 @@ iex (irm https://stackific.com/stax/INSTALL.ps1)
 
 ```bash
 # Run this inside of a project folder
-$ stax init        # installs bundled skills into ~/.claude/skills, ~/.cline/skills, ~/.continue/skills, ~/.cursor/skills, ~/.kilocode/skills, ~/.gemini/antigravity/skills, ~/.opencode/commands, ~/.agents/skills (or project-local)
+$ stax init        # installs bundled skills into ~/.claude/skills, ~/.cline/skills, ~/.continue/skills, ~/.cursor/skills, ~/.kilocode/skills, ~/.opencode/commands, ~/.agents/skills (or project-local)
 ```
 
 See [Reference](reference.md) for the full command reference.

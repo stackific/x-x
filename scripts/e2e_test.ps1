@@ -67,20 +67,17 @@ Set-Variable -Option Constant -Name OWNED_SKILLS -Value @($SKILL_SCOPE_DIR, $SKI
 # constants.go. The Go registry is sorted alphabetically by display name
 # (case-insensitive) and looked up by `key` in the Go drift check, so
 # these constants are matched by NAME, not by index. Codex, Copilot, Pi,
-# omp, and Antigravity all resolve skills from `.agents\skills` at
-# workspace scope (cross-agent open spec, install is idempotent so the
-# rows co-exist on disk without conflict). Cline does NOT use the
-# cross-agent path — per docs.cline.bot/customization/overview it reads
-# from `.cline\skills` (project) and `~\.cline\skills` (user) only.
-# Claude and OpenCode stay on their own paths because their lookup
-# logic doesn't include `.agents\skills`. OpenCode, Copilot, Pi, omp,
-# and Antigravity ship no per-agent config today (configRel is ""), so
-# there are no *_CONFIG_REL mirrors for them. Antigravity is the lone
-# row that diverges across scopes: workspace `.agents\skills`, global
-# `~\.gemini\antigravity\skills` (per antigravity.google/docs/skills) —
-# represented in Go via agentTarget.userSkillsRel.
-Set-Variable -Option Constant -Name ANTIGRAVITY_SKILLS_REL      -Value '.agents\skills'
-Set-Variable -Option Constant -Name ANTIGRAVITY_USER_SKILLS_REL -Value '.gemini\antigravity\skills'
+# omp, and Zed all resolve skills from `.agents\skills` at workspace
+# scope (cross-agent open spec, install is idempotent so the rows
+# co-exist on disk without conflict). Cline does NOT use the cross-
+# agent path — per docs.cline.bot/customization/overview it reads from
+# `.cline\skills` (project) and `~\.cline\skills` (user) only. Claude
+# and OpenCode stay on their own paths because their lookup logic
+# doesn't include `.agents\skills`. OpenCode, Copilot, Pi, and omp
+# ship no per-agent config today (configRel is ""), so there are no
+# *_CONFIG_REL mirrors for them. Cursor diverges across scopes
+# (workspace `.agents\skills`, global `~\.cursor\skills`) — represented
+# in Go via agentTarget.userSkillsRel.
 Set-Variable -Option Constant -Name CLAUDE_SKILLS_REL           -Value '.claude\skills'
 Set-Variable -Option Constant -Name CLAUDE_CONFIG_REL           -Value '.claude'
 Set-Variable -Option Constant -Name CLINE_SKILLS_REL            -Value '.cline\skills'
@@ -485,10 +482,6 @@ function Reset-UserHome {
   # Windows uses USERPROFILE, but some Go paths also consult HOME. Set both.
   $env:HOME        = $SandboxHome
   $env:USERPROFILE = $SandboxHome
-  # Bash counterpart's reset_user_home wipes `~/.gemini/antigravity/`
-  # (parent of ANTIGRAVITY_USER_SKILLS_REL) between cases; this script
-  # rebuilds SandboxHome from scratch above, so any stale antigravity
-  # global skills tree under it is already gone.
 }
 
 function New-FreshProject {
@@ -2756,52 +2749,6 @@ try {
     (Join-Path $projOmp2 (Join-Path $OMP_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
-Start-Case 'init --agents=antigravity project-scope install (shared .agents\skills)'
-Reset-UserHome
-$projAg1 = New-FreshProject
-Push-Location $projAg1
-try {
-  Invoke-XX init --scope project --agents=antigravity `
-                    --prefix-width 4 --max-work-item-lines 30 --review-per task
-  Assert-Eq    'exit 0' $RunRC 0
-  # Antigravity's workspace skill path defaults to `.agents\skills`, the
-  # cross-agent open spec path Codex, Copilot, Pi, and omp also use
-  # (antigravity.google/docs/skills). Other agents' exclusive paths and
-  # config files must stay absent under a single-row install.
-  Assert-IsDir 'antigravity project skills present' `
-    (Join-Path $projAg1 (Join-Path $ANTIGRAVITY_SKILLS_REL $SKILL_SHIP_DIR))
-  Assert-NotExists 'claude path NOT present' `
-    (Join-Path $projAg1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
-  Assert-NotExists 'cline path NOT present' `
-    (Join-Path $projAg1 (Join-Path $CLINE_SKILLS_REL $SKILL_SHIP_DIR))
-  Assert-NotExists 'opencode path NOT present' `
-    (Join-Path $projAg1 (Join-Path $OPENCODE_SKILLS_REL $SKILL_SHIP_DIR))
-  Assert-NotExists 'codex config NOT present' `
-    (Join-Path $projAg1 $CODEX_CONFIG_REL)
-  Assert-NotExists 'claude config NOT present' `
-    (Join-Path $projAg1 $CLAUDE_CONFIG_REL)
-} finally { Pop-Location }
-
-Start-Case 'init --agents=antigravity --scope=user lands at ~\.gemini\antigravity\skills'
-Reset-UserHome
-$projAg2 = New-FreshProject
-Push-Location $projAg2
-try {
-  Invoke-XX init --scope user --agents=antigravity `
-                    --prefix-width 4 --max-work-item-lines 30 --review-per task
-  Assert-Eq    'exit 0' $RunRC 0
-  # User scope: Antigravity reads `~\.gemini\antigravity\skills` (NOT
-  # the cross-agent `~\.agents\skills` fallback). This proves the
-  # userSkillsRel override is wired up — installing to the wrong path
-  # would land files antigravity never reads.
-  Assert-IsDir 'antigravity user-scope skills landed' `
-    (Join-Path $env:USERPROFILE (Join-Path $ANTIGRAVITY_USER_SKILLS_REL $SKILL_SHIP_DIR))
-  Assert-NotExists 'cross-agent ~\.agents\skills NOT touched' `
-    (Join-Path $env:USERPROFILE (Join-Path $CODEX_SKILLS_REL $SKILL_SHIP_DIR))
-  Assert-NotExists 'no install under project cwd' `
-    (Join-Path $projAg2 (Join-Path $ANTIGRAVITY_USER_SKILLS_REL $SKILL_SHIP_DIR))
-} finally { Pop-Location }
-
 Start-Case 'init --agents=continue project-scope install (.continue\skills)'
 Reset-UserHome
 $projCont1 = New-FreshProject
@@ -2856,10 +2803,9 @@ try {
   Invoke-XX init --scope user --agents=cursor `
                     --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
-  # Cursor diverges at user scope (userSkillsRel override) — same
-  # shape as Antigravity. Skills land at `~\.cursor\skills`; the
-  # cross-agent `~\.agents\skills` must stay clean to prove the
-  # override drove the install.
+  # Cursor diverges at user scope (userSkillsRel override). Skills
+  # land at `~\.cursor\skills`; the cross-agent `~\.agents\skills`
+  # must stay clean to prove the override drove the install.
   Assert-IsDir 'cursor user-scope skills landed' `
     (Join-Path $env:USERPROFILE (Join-Path $CURSOR_USER_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'cross-agent ~\.agents\skills NOT touched' `
