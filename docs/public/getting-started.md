@@ -5,14 +5,14 @@
 ### macOS / Linux
 
 ```bash
-curl -fsSL https://stackific.com/stax/INSTALL.sh | sh
+curl -fsSL https://stackific.com/stax/install.sh | sh
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
 Set-ExecutionPolicy Bypass -Scope Process -Force # If only needed
-iex (irm https://stackific.com/stax/INSTALL.ps1)
+iex (irm https://stackific.com/stax/install.ps1)
 ```
 
 ## First run
@@ -57,14 +57,14 @@ flags.
 ### macOS / Linux
 
 ```bash
-curl -fsSL https://stackific.com/stax/UNINSTALL.sh | sh
+curl -fsSL https://stackific.com/stax/uninstall.sh | sh
 ```
 
 ### Windows (PowerShell)
 
 ```powershell
 Set-ExecutionPolicy Bypass -Scope Process -Force # If only needed
-irm https://stackific.com/stax/UNINSTALL.ps1 | iex
+irm https://stackific.com/stax/uninstall.ps1 | iex
 ```
 
 The uninstaller cleans up the skills it installed into `~/.claude/`, `~/.codex/`, etc., then removes `~/.stax/` and strips the PATH entry that install added.

@@ -1,15 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Stackific Inc.
 #
-# UNINSTALL.ps1 — Remove a stax installation on Windows.
+# uninstall.ps1 — Remove a stax installation on Windows.
 #
 # Usage:
-#   irm https://raw.githubusercontent.com/stackific/stax/main/scripts/UNINSTALL.ps1 | iex
-#   $env:INSTALL_DIR = 'C:\tools\stax'; irm https://raw.githubusercontent.com/stackific/stax/main/scripts/UNINSTALL.ps1 | iex
+#   irm https://raw.githubusercontent.com/stackific/stax/main/scripts/uninstall.ps1 | iex
+#   $env:INSTALL_DIR = 'C:\tools\stax'; irm https://raw.githubusercontent.com/stackific/stax/main/scripts/uninstall.ps1 | iex
 #
 # Environment overrides:
 #   INSTALL_DIR  Directory the binary was installed into (default: $HOME\.stax).
-#                Must match whatever was passed to INSTALL.ps1; otherwise the
+#                Must match whatever was passed to install.ps1; otherwise the
 #                binary is left in place.
 
 [CmdletBinding()]
@@ -66,7 +66,7 @@ if (Test-Path -LiteralPath $configDir) {
 
 # 4. Strip $installDir from the User PATH (persistent) and from the current
 # session. Uses [Environment]::SetEnvironmentVariable for the same reason
-# INSTALL.ps1 does: it writes the registry directly and sidesteps `setx`'s
+# install.ps1 does: it writes the registry directly and sidesteps `setx`'s
 # 1024/2047-char truncation.
 $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 if ($userPath) {

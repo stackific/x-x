@@ -1,15 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Stackific Inc.
 #
-# INSTALL_LOCAL.ps1 — Install the locally-built stax binary on Windows.
+# install_local.ps1 — Install the locally-built stax binary on Windows.
 #
-# Companion to INSTALL.ps1 that skips the GitHub-release download path and
+# Companion to install.ps1 that skips the GitHub-release download path and
 # uses an artifact already on disk under .\bin\ (produced by `task build`).
 # Intended for dogfooding the install flow without cutting a release.
 #
 # Usage:
-#   task build; .\scripts\INSTALL_LOCAL.ps1
-#   $env:BIN_DIR = 'C:\path\to\bin'; .\scripts\INSTALL_LOCAL.ps1
+#   task build; .\scripts\install_local.ps1
+#   $env:BIN_DIR = 'C:\path\to\bin'; .\scripts\install_local.ps1
 #
 # Environment overrides:
 #   BIN_DIR      Directory holding stax-windows-<arch>.exe artifacts
@@ -55,7 +55,7 @@ $configDir = Join-Path $HOME '.stax'
 New-Item -ItemType Directory -Force -Path $configDir | Out-Null
 
 # Seed the update-check config so the first post-install invocation does
-# not probe the network. Mirrors INSTALL.ps1 exactly — same JSON structure,
+# not probe the network. Mirrors install.ps1 exactly — same JSON structure,
 # same version-string parse (last whitespace-separated token on the first
 # `--version` line).
 $installedVersion = try {

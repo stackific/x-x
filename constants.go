@@ -546,8 +546,8 @@ const (
 	// installShURL / installPS1URL are the standard install-script URLs
 	// surfaced to the user in the "update available" nudge. The README
 	// and docs/public/getting-started.md should match these strings.
-	installShURL  = "https://stackific.com/stax/INSTALL.sh"
-	installPS1URL = "https://stackific.com/stax/INSTALL.ps1"
+	installShURL  = "https://stackific.com/stax/install.sh"
+	installPS1URL = "https://stackific.com/stax/install.ps1"
 )
 
 // Local-server settings — read by runServer / runDefault. The listen

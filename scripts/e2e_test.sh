@@ -560,7 +560,7 @@ export USERPROFILE="$HOME"   # noop on POSIX, matters on Windows.
 
 # ---------- post-install (installer hook: silent seed) ----------
 #
-# INSTALL.sh's last step invokes `stax post-install` to materialize
+# install.sh's last step invokes `stax post-install` to materialize
 # ~/.stax/agents/ from the binary's embed. The contract: silent on
 # stdout/stderr, exit 0, and the lazy-bootstrap of the agents tree
 # happens before exit. Bare `stax` is now reserved for the local-server
@@ -725,7 +725,7 @@ bg_kill_stax
 
 # ---------- --version (still prints notice for installer parsing) ----------
 #
-# INSTALL.sh's version-detection awk parses `stax --version` line 1 to
+# install.sh's version-detection awk parses `stax --version` line 1 to
 # seed ~/.stax/.config.json. Bare `stax` no longer prints the notice
 # (it opens a browser), so this is now the canonical version-printing
 # entry point. The first-line-last-token assertion pins the awk

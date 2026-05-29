@@ -2,15 +2,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Stackific Inc.
 #
-# UNINSTALL.sh — Remove a stax installation on macOS or Linux.
+# uninstall.sh — Remove a stax installation on macOS or Linux.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/stackific/stax/main/scripts/UNINSTALL.sh | sh
-#   curl -fsSL https://raw.githubusercontent.com/stackific/stax/main/scripts/UNINSTALL.sh | INSTALL_DIR=/usr/local/bin sh
+#   curl -fsSL https://raw.githubusercontent.com/stackific/stax/main/scripts/uninstall.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/stackific/stax/main/scripts/uninstall.sh | INSTALL_DIR=/usr/local/bin sh
 #
 # Environment overrides:
 #   INSTALL_DIR  Directory the binary was installed into (default: $HOME/.stax).
-#                Must match whatever was passed to INSTALL.sh; otherwise the
+#                Must match whatever was passed to install.sh; otherwise the
 #                binary is left in place.
 
 set -eu
@@ -26,7 +26,7 @@ die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
 os=$(uname -s | tr '[:upper:]' '[:lower:]')
 case "$os" in
   darwin|linux) ;;
-  *) die "unsupported OS: $os (use scripts/UNINSTALL.ps1 on Windows)" ;;
+  *) die "unsupported OS: $os (use scripts/uninstall.ps1 on Windows)" ;;
 esac
 
 # 1. Have the binary clean up the user-scope skills it installed (~/.claude/
@@ -63,7 +63,7 @@ else
   warn "${CONFIG_DIR} not found; skipping"
 fi
 
-# 4. Strip the marker block from the user's shell rc file. INSTALL.sh writes
+# 4. Strip the marker block from the user's shell rc file. install.sh writes
 # two consecutive lines: the `# stax installer: PATH` marker followed by the
 # PATH/fish_add_path line. Remove both, plus a trailing blank line if it ended
 # up isolated, to keep the rc file tidy.

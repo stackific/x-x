@@ -3897,7 +3897,13 @@ try {
   Invoke-XX init --scope project --agents antigravity `
                     --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq 'exit 0 despite parse failure' $RunRC 0
-  Assert-Eq 'malformed file untouched' (Get-Content -Raw -LiteralPath $agSettings) 'not valid json {'
+  # Get-Content -Raw returns the file's full bytes; Set-Content adds a
+  # trailing CRLF on Windows that bash's `$(cat ...)` strips, so trim
+  # before comparing to keep the assertion behavior-neutral across
+  # platforms. The contract under test is "merge failure doesn't
+  # rewrite the user's content", not "the user's content has a
+  # specific trailing newline".
+  Assert-Eq 'malformed file untouched' (Get-Content -Raw -LiteralPath $agSettings).TrimEnd() 'not valid json {'
   Assert-Contains 'stderr warns about merge failure' $RunErr 'merge failed'
 } finally { Pop-Location }
 
@@ -4025,7 +4031,7 @@ try {
 
 # ---------- Windows-specific: PATH separator + drive letters ----------
 
-Start-Case 'INSTALL_LOCAL.ps1 puts the binary under %USERPROFILE%\.stax'
+Start-Case 'install_local.ps1 puts the binary under %USERPROFILE%\.stax'
 Reset-UserHome
 # Simulate having a fresh local build in bin/ — copy the e2e build into
 # %REPO_ROOT%\bin\stax-windows-amd64.exe so the local installer can find it.
@@ -4036,7 +4042,7 @@ $localBin = Join-Path $binDir "stax-windows-$arch.exe"
 Copy-Item -Force -LiteralPath $Script:BuildBin -Destination $localBin
 Push-Location $RepoRoot
 try {
-  & pwsh -NoLogo -NonInteractive -File (Join-Path $RepoRoot 'scripts\INSTALL_LOCAL.ps1') 2>&1 | Out-Null
+  & pwsh -NoLogo -NonInteractive -File (Join-Path $RepoRoot 'scripts\install_local.ps1') 2>&1 | Out-Null
   $installed = Join-Path $env:USERPROFILE '.stax\stax.exe'
   Assert-IsFile 'binary at $HOME\.stax\stax.exe' $installed
 } finally {

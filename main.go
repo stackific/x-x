@@ -49,7 +49,7 @@ func main() {
 			runWorkItems(os.Args[2:])
 			return
 		case "post-install":
-			// `stax post-install` — installer hook. INSTALL.sh / INSTALL.ps1
+			// `stax post-install` — installer hook. install.sh / install.ps1
 			// invoke it on their last step to materialize ~/.stax/agents/
 			// from the binary's embed. Modelled as a subcommand rather
 			// than a flag so it never collides with the bare-invocation
@@ -75,7 +75,7 @@ func main() {
 // surfaces:
 //
 //	stax --version     → print the notice block (the historical contract
-//	                    that INSTALL.sh / INSTALL.ps1 parse via
+//	                    that install.sh / install.ps1 parse via
 //	                    `awk 'NR==1 { print $NF }'` to seed
 //	                    ~/.stax/.config.json — DO NOT remove without
 //	                    coordinating an installer-script update).
@@ -172,7 +172,7 @@ func runDefault(args []string) {
 
 // runPostInstall is the `stax post-install` subcommand: the installer
 // hook that materializes ~/.stax/agents/ from the binary's embed and
-// exits silently. INSTALL.sh and INSTALL.ps1 invoke it on their last
+// exits silently. install.sh and install.ps1 invoke it on their last
 // step instead of bare `stax` — bare invocation opens a browser, which
 // would pop a window mid-install.
 //
@@ -202,7 +202,7 @@ func runPostInstall(args []string) {
 // for the bare-invocation path. The first line's last whitespace token is
 // the version string; the POSIX/PowerShell installers parse it that way to
 // seed ~/.stax/.config.json, so don't change the line format without also
-// updating scripts/INSTALL.sh and scripts/INSTALL.ps1.
+// updating scripts/install.sh and scripts/install.ps1.
 func printNotice() {
 	// Version banner — includes the vendor so the binary identifies itself
 	// even in CI logs that show no surrounding context.

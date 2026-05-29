@@ -2,15 +2,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Stackific Inc.
 #
-# INSTALL_LOCAL.sh — Install the locally-built stax binary on macOS or Linux.
+# install_local.sh — Install the locally-built stax binary on macOS or Linux.
 #
-# Companion to INSTALL.sh that skips the GitHub-release download path and
+# Companion to install.sh that skips the GitHub-release download path and
 # uses an artifact already on disk under ./bin/ (produced by `task build`).
 # Intended for dogfooding the install flow without cutting a release.
 #
 # Usage:
-#   task build && ./scripts/INSTALL_LOCAL.sh
-#   BIN_DIR=/path/to/bin INSTALL_DIR=/usr/local/bin ./scripts/INSTALL_LOCAL.sh
+#   task build && ./scripts/install_local.sh
+#   BIN_DIR=/path/to/bin INSTALL_DIR=/usr/local/bin ./scripts/install_local.sh
 #
 # Environment overrides:
 #   BIN_DIR      Directory holding stax-<os>-<arch> artifacts
@@ -31,7 +31,7 @@ die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
 os=$(uname -s | tr '[:upper:]' '[:lower:]')
 case "$os" in
   darwin|linux) ;;
-  *) die "unsupported OS: $os (use scripts/INSTALL_LOCAL.ps1 on Windows)" ;;
+  *) die "unsupported OS: $os (use scripts/install_local.ps1 on Windows)" ;;
 esac
 
 arch=$(uname -m)
@@ -59,7 +59,7 @@ mkdir -p "${config_dir}"
 chmod 700 "${config_dir}"
 
 # Seed the update-check config so the first post-install invocation does
-# not probe the network. Mirrors INSTALL.sh exactly — same JSON structure,
+# not probe the network. Mirrors install.sh exactly — same JSON structure,
 # same version-string parse (last whitespace-separated token on the first
 # `--version` line).
 installed_version=$("${INSTALL_DIR}/${BINARY}" --version 2>/dev/null | awk 'NR==1 { print $NF; exit }')

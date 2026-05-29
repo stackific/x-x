@@ -37,7 +37,7 @@ func captureStdout(t *testing.T, f func()) string {
 }
 
 // TestPrintNotice_ShapeIsInstallerParsable pins the line-1 contract that
-// scripts/INSTALL.sh relies on (`awk 'NR==1 { print $NF }'` must return
+// scripts/install.sh relies on (`awk 'NR==1 { print $NF }'` must return
 // the Version string). Any reshuffle of printNotice that moves the
 // version off the first line or out of the last token must break this test.
 func TestPrintNotice_ShapeIsInstallerParsable(t *testing.T) {
@@ -46,7 +46,7 @@ func TestPrintNotice_ShapeIsInstallerParsable(t *testing.T) {
 	if len(lines) == 0 || lines[0] == "" {
 		t.Fatalf("empty notice output: %q", out)
 	}
-	// INSTALL.sh extracts the version with `awk 'NR==1 { print $NF }'`.
+	// install.sh extracts the version with `awk 'NR==1 { print $NF }'`.
 	// Whatever ends up as the last whitespace-separated token on line 1
 	// is the contract — pin it to the Version variable.
 	tokens := strings.Fields(lines[0])

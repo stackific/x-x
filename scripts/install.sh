@@ -2,11 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Stackific Inc.
 #
-# INSTALL.sh — Download and install the latest stax release on macOS or Linux.
+# install.sh — Download and install the latest stax release on macOS or Linux.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/stackific/stax/main/scripts/INSTALL.sh | sh
-#   curl -fsSL https://raw.githubusercontent.com/stackific/stax/main/scripts/INSTALL.sh | INSTALL_DIR=/usr/local/bin sh
+#   curl -fsSL https://raw.githubusercontent.com/stackific/stax/main/scripts/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/stackific/stax/main/scripts/install.sh | INSTALL_DIR=/usr/local/bin sh
 #
 # Environment overrides:
 #   INSTALL_DIR  Destination directory (default: $HOME/.stax)
@@ -25,7 +25,7 @@ die()  { printf 'error: %s\n' "$*" >&2; exit 1; }
 os=$(uname -s | tr '[:upper:]' '[:lower:]')
 case "$os" in
   darwin|linux) ;;
-  *) die "unsupported OS: $os (use scripts/INSTALL.ps1 on Windows)" ;;
+  *) die "unsupported OS: $os (use scripts/install.ps1 on Windows)" ;;
 esac
 
 arch=$(uname -m)
