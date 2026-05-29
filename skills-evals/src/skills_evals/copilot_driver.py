@@ -82,6 +82,68 @@ CONFIRMATION_PATTERN = re.compile(r"reply\s+`?yes`?", re.IGNORECASE)
 DEFAULT_MAX_TURNS = 10
 DEFAULT_PER_TURN_TIMEOUT_S = 600.0
 
+# Copilot CLI's `-p <prompt>` does NOT resolve leading slash commands the
+# way Claude Code does — `copilot -p "/scope build an X"` is passed to
+# the model verbatim, and the model treats it as a literal request to
+# "build an X" rather than an invocation of the scope skill on disk.
+# Empirical evidence: run 26618829987 (copilot user-scope, fix branch)
+# showed `Done. Created \`todo.html\`` as the first stdout line for a
+# `/scope build a single HTML and localStorage-based todo list app`
+# prompt — the scope planning step was skipped entirely, no work-item
+# plan files were created, every downstream judge then fails with
+# "expected exactly N work-item files, got 0".
+#
+# Workaround mirrors the cline driver's `compose_skill_prompt` pattern
+# (which itself dates back to the opencode driver's pre-`--command`
+# era): when the test prompt begins with `/scope ` or `/ship`, read
+# the corresponding SKILL.md off disk, prepend its body to the
+# prompt, append the same CI directive every other inlining driver
+# uses, and hand the whole composed text to `copilot -p`. The agent
+# then sees the actual skill instructions inline and follows them
+# instead of treating the slash as ornamental.
+#
+# Paths probed below mirror the copilot agent's documented skill
+# discovery list (constants.go: `.agents/skills/`, `.claude/skills/`,
+# `.github/skills/` at project scope; `~/.copilot/skills/`,
+# `~/.agents/skills/` at user scope) plus `~/.claude/skills/` because
+# copilot tests install via `stax init --agents claude` (the
+# transitional shape — see conftest's AGENT_INIT_VALUE_FOR_KEY) which
+# lands skills under `.claude/skills/`.
+SKILL_CANDIDATE_RELS = (
+  Path(".claude") / "skills",
+  Path(".agents") / "skills",
+  Path(".github") / "skills",
+)
+SKILL_USER_CANDIDATE_RELS = (
+  Path(".claude") / "skills",
+  Path(".agents") / "skills",
+  Path(".copilot") / "skills",
+)
+
+# Verbatim copy of cline_driver.CI_DIRECTIVE — kept verbatim, not
+# imported, because each driver's docstring asserts cross-driver parity
+# is by-value and an import would couple the modules in a way that hides
+# accidental drift in code review.
+CI_DIRECTIVE = (
+  "\n\nOPERATING MODE: non-interactive CI evaluation. "
+  "There is no human operator available to answer questions or grant "
+  "approvals. Every gate the SKILL TEMPLATE above describes ('propose "
+  "to user and wait for approval', 'STOP and ask', 'Reply yes to "
+  "proceed', 'review per task', 'clarify only when underspecified', "
+  "etc.) is auto-approved by default — treat the propose-or-clarify "
+  "step as informational, immediately take the implied default or "
+  "your best-judgment choice, and continue with the work. Never end "
+  "a turn while the user's task below still has open work. Do not "
+  "ask AskUserQuestion-style or text-prompt questions; make a "
+  "reasonable choice and proceed. Follow the SKILL TEMPLATE "
+  "instructions verbatim otherwise."
+)
+
+# Matches `/scope ARGS`, `/ship ARGS`, `/scope`, `/ship` at the very
+# start of the prompt. The skill name is group 1, arguments (may be
+# empty) are group 2 with the leading whitespace stripped.
+_SLASH_RE = re.compile(r"^/(?P<skill>scope|ship)(?:\s+(?P<args>.*))?$", re.DOTALL)
+
 # Echoed at driver startup so CI logs show exactly which backend Copilot
 # is routed to. Non-secret values are printed in full; secrets are masked.
 ECHOED_ENV_KEYS = (
@@ -134,6 +196,75 @@ class SkillRun:
         f.write(line + "\n")
 
 
+def _resolve_skill_path(workspace: Path, skill: str) -> Path | None:
+  """Return the SKILL.md path for `skill` if present at any documented
+  copilot discovery location, else None.
+
+  Project-scope candidates rooted in `workspace`; user-scope candidates
+  rooted in `$HOME`. Order matches the project-then-user preference the
+  cline driver uses — project install wins when both are seeded, which
+  matches `stax init`'s default scope and the workflow's default
+  STAX_INSTALL_SCOPE=project.
+  """
+  candidates: list[Path] = [
+    workspace / rel / skill / "SKILL.md" for rel in SKILL_CANDIDATE_RELS
+  ]
+  candidates.extend(
+    Path.home() / rel / skill / "SKILL.md"
+    for rel in SKILL_USER_CANDIDATE_RELS
+  )
+  for path in candidates:
+    if path.is_file():
+      return path
+  log(
+    "driver",
+    f"SKILL.md for '{skill}' not found at any of: "
+    f"{[str(p) for p in candidates]}",
+  )
+  return None
+
+
+def compose_skill_prompt(workspace: Path, skill: str, arguments: str) -> str:
+  """Inline the SKILL.md body + user task + CI directive into one prompt.
+
+  Same shape as cline_driver.compose_skill_prompt. The body is read off
+  disk so the workspace's actual installed SKILL.md is what the agent
+  follows — including any per-scope edits a user has made.
+  """
+  skill_path = _resolve_skill_path(workspace, skill)
+  if skill_path is None:
+    raise FileNotFoundError(
+      f"copilot driver could not locate SKILL.md for '{skill}' in "
+      f"workspace={workspace} or $HOME — did `stax init` run before "
+      f"drive_skill was called?"
+    )
+  body = skill_path.read_text(encoding="utf-8")
+  task_block = f"\n\nUser task: {arguments}" if arguments else ""
+  return f"SKILL TEMPLATE:\n\n{body}{task_block}{CI_DIRECTIVE}"
+
+
+def _maybe_inline_skill(workspace: Path, prompt: str) -> str:
+  """Inline SKILL.md when `prompt` begins with `/scope` or `/ship`.
+
+  Returns the inlined prompt on a match, the original prompt otherwise.
+  Non-slash prompts (e.g. the smoke test's `Respond with the single
+  word: ok`) pass through unchanged so the no-skill code path keeps
+  working.
+  """
+  m = _SLASH_RE.match(prompt.strip())
+  if m is None:
+    return prompt
+  skill = m.group("skill")
+  args = (m.group("args") or "").strip()
+  composed = compose_skill_prompt(workspace, skill, args)
+  log(
+    "driver",
+    f"inlined SKILL.md for /{skill}: "
+    f"args={_brief(args, 80)!r} composed_len={len(composed)}",
+  )
+  return composed
+
+
 def drive_skill(
   workspace: Path,
   initial_prompt: str,
@@ -148,6 +279,14 @@ def drive_skill(
   Turns 2..max_turns: `copilot --continue -p yes --allow-all-tools
   --no-ask-user`, but only when the previous turn's stdout matched
   the "Reply yes" gate pattern. Otherwise the loop exits.
+
+  When `initial_prompt` begins with `/scope` or `/ship`, the
+  corresponding SKILL.md is inlined into the prompt (see the
+  module-level docstring on _SLASH_RE and SKILL_CANDIDATE_RELS for the
+  rationale). The recorded `run.initial_prompt` stays the original
+  slash form so transcripts and logs read the way the test author
+  wrote them — the inlined body would otherwise dominate every log
+  line.
   """
   if max_turns < 1:
     raise ValueError(f"max_turns must be >= 1, got {max_turns}")
@@ -155,8 +294,9 @@ def drive_skill(
   run = SkillRun(workspace=workspace, initial_prompt=initial_prompt)
   _log_startup(workspace, initial_prompt, per_turn_timeout, max_turns)
 
+  effective_prompt = _maybe_inline_skill(workspace, initial_prompt)
   loop_start = time.time()
-  turn_prompt = initial_prompt
+  turn_prompt = effective_prompt
   use_continue = False
 
   while run.turns < max_turns:
