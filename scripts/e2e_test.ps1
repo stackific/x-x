@@ -581,6 +581,36 @@ function Write-Registry {
 
 # ---------- build ----------
 
+# server.go embeds `frontend/dist/` via `//go:embed all:frontend/dist`. The
+# dist tree is gitignored, so a fresh clone has nothing for the embed to
+# match and `go build` fails with "pattern all:frontend/dist: no matching
+# files". CI builds dist in a separate workflow step
+# (.github/workflows/windows-cli.yml mirrors the Linux test workflow on
+# this) but the lefthook pre-push hook calls this script directly — so
+# we bootstrap dist here when it's missing. Already-built trees are left
+# untouched to keep local re-runs fast; set $env:FORCE_FRONTEND_BUILD=1
+# to rebuild unconditionally.
+$frontendDist = Join-Path $RepoRoot 'frontend\dist'
+if ($env:FORCE_FRONTEND_BUILD -eq '1' -or -not (Test-Path -LiteralPath $frontendDist -PathType Container)) {
+  Write-Host 'Building frontend/dist (for //go:embed all:frontend/dist)...'
+  Push-Location (Join-Path $RepoRoot 'frontend')
+  try {
+    if (-not (Test-Path -LiteralPath 'node_modules' -PathType Container)) {
+      & npm ci
+      if ($LASTEXITCODE -ne 0) { throw "npm ci failed with exit code $LASTEXITCODE" }
+    }
+    & npm run build
+    if ($LASTEXITCODE -ne 0) { throw "npm run build failed with exit code $LASTEXITCODE" }
+  } finally {
+    Pop-Location
+  }
+  if (-not (Test-Path -LiteralPath $frontendDist -PathType Container)) {
+    throw "expected frontend/dist after npm run build, not found at $frontendDist"
+  }
+} else {
+  Write-Host 'frontend/dist already present (skipping build; set $env:FORCE_FRONTEND_BUILD=1 to override).'
+}
+
 Write-Host "Building $($Script:BuildBin) (release-flavored, CGO disabled)..."
 Push-Location $RepoRoot
 try {

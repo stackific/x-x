@@ -12,9 +12,15 @@ pre-commit:
     format:
       glob: "*.go"
       run: gofumpt -w {staged_files} && goimports -w {staged_files} && gci write --section standard --section default --section "prefix(github.com/stackific/stax)" {staged_files} && git add {staged_files}
+    # Delegate to `task lint` so the `deps: [frontend:build]` chain in
+    # Taskfile.yml runs first. golangci-lint typechecks via go/packages,
+    # which processes `//go:embed all:frontend/dist` at load time — calling
+    # the linter directly here would fail on a fresh clone where dist is
+    # absent. Routing through task keeps the embed-bootstrap rule in one
+    # place.
     golangci-lint:
       glob: "*.go"
-      run: golangci-lint run --fix ./...
+      run: task lint
     gitleaks:
       run: gitleaks protect --staged --no-banner
     # Frontend lint/format — tree-wide, mirroring the golangci-lint pattern
@@ -32,27 +38,41 @@ commit-msg:
 pre-push:
   parallel: true
   commands:
+    # Every Go-touching command below delegates to `task X` so the
+    # `deps: [frontend:build]` chain in Taskfile.yml is the single source
+    # of truth for the `//go:embed all:frontend/dist` bootstrap. Running
+    # `go test`, `go vet`, `golangci-lint`, or `govulncheck` directly here
+    # would fail on a fresh clone — the embed pattern matches nothing
+    # before the frontend is built and load-time package resolution dies
+    # with "pattern all:frontend/dist: no matching files". On a fresh
+    # clone the parallel `task X` invocations may each trigger
+    # `frontend:build`; npm run build is idempotent so the result is
+    # correct (only wasteful, and only the first time).
+    #
     # -race enables the data-race detector; -count=1 busts Go's test cache so
     # source-clean re-runs still execute every test (the previous form just
-    # printed "(cached)" on most invocations).
+    # printed "(cached)" on most invocations). Both flags live in the
+    # Taskfile `test:unit` cmd, not here.
     test:
-      run: go test -race -count=1 ./...
+      run: task test:unit
     # End-to-end CLI tests — builds stax into a sandbox and drives every
     # subcommand. Runs in parallel with the Go unit tests above (no shared
     # state: the e2e script provisions its own sandbox HOME and binary).
     # Caught release-blocking bugs that unit tests alone missed, so it guards
-    # pushes the same way `test` does.
+    # pushes the same way `test` does. The script self-bootstraps
+    # `frontend/dist` when missing, so no task indirection is needed.
     e2e:
       run: ./scripts/e2e_test.sh
     vet:
-      run: go vet ./...
+      run: task vet
     # Tree-wide lint complements pre-commit (which only sees staged files):
     # commits made with --no-verify or rebased history can otherwise smuggle
-    # issues past the check.
+    # issues past the check. `lint:check` is the read-only (no --fix)
+    # variant — pre-push must not mutate the tree.
     lint:
-      run: golangci-lint run ./...
+      run: task lint:check
     govulncheck:
-      run: govulncheck ./...
+      run: task govulncheck
     # Frontend tree-wide checks — typecheck (tsc --noEmit) + lint (Biome) +
     # dead-code (Knip). Composed in the `check` npm script. Glob gates the
     # command on whether any frontend file is in the push diff.

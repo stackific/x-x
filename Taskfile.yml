@@ -25,8 +25,41 @@ tasks:
 
   lint:
     desc: Run golangci-lint with auto-fix
+    # server.go uses `//go:embed all:frontend/dist`; golangci-lint typechecks
+    # via go/packages, which processes embed directives at load time. If
+    # `frontend/dist/` is missing the lint run fails with "pattern
+    # all:frontend/dist: no matching files" before any linter executes.
+    deps:
+      - frontend:build
     cmds:
       - golangci-lint run --fix ./...
+
+  lint:check:
+    desc: Run golangci-lint without auto-fix (read-only; used by pre-push)
+    # Same embed-dep gotcha as `lint`; see comment there.
+    deps:
+      - frontend:build
+    cmds:
+      - golangci-lint run ./...
+
+  vet:
+    desc: Run `go vet` across all packages
+    # `go vet` loads packages via go/packages and processes
+    # `//go:embed all:frontend/dist`; without dist the vet pass fails to
+    # build before any check fires.
+    deps:
+      - frontend:build
+    cmds:
+      - go vet ./...
+
+  govulncheck:
+    desc: Run govulncheck against the module
+    # govulncheck compiles the module to walk its call graph; the embed
+    # gate applies just like `go build`.
+    deps:
+      - frontend:build
+    cmds:
+      - govulncheck ./...
 
   # ---------- Dev runtime ----------
 
@@ -67,17 +100,28 @@ tasks:
 
   test:
     desc: Run the full test suite (Go unit tests + end-to-end CLI tests)
+    # `go test ./...` compiles every package, including the root which
+    # carries `//go:embed all:frontend/dist`; without dist the test
+    # binary fails to build before any test runs.
+    deps:
+      - frontend:build
     cmds:
       - go test -race -count=1 ./...
       - ./scripts/e2e_test.sh
 
   test:unit:
     desc: Run only the Go unit tests
+    # See `test` for the embed-dep rationale.
+    deps:
+      - frontend:build
     cmds:
       - go test -race -count=1 ./...
 
   test:e2e:
     desc: Run only the end-to-end CLI tests (builds stax, drives every command)
+    # NOTE: e2e_test.sh self-bootstraps `frontend/dist` when missing, so a
+    # `task frontend:build` dep would only duplicate work. Keep this task
+    # dep-free as the script's own bootstrap is the source of truth.
     cmds:
       - ./scripts/e2e_test.sh
 
