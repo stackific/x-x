@@ -2,7 +2,7 @@
 
 This document is the contract between the `stax` CLI (the producer) and the future Stackific telemetry endpoint at `https://stackific.com/stax/t` (the consumer). It exists so the backend team can implement the receiver against a fixed wire format without having to read Go source, and so any future event added to the CLI lands in an already-documented place.
 
-> **Status:** The CLI fires the `init` event today. The endpoint is not yet implemented; pings get connection-refused / 404 silently in production. The CLI swallows every error so this is invisible to users.
+> **Status:** The CLI fires `init` (install), `skills_remove` (uninstall), and `plans_lint` today. `plans_next_prefix`, `update_check`, and `update_apply` are wired in source but commented out — re-enable by uncommenting the `// Telemetry disabled —` blocks in `work_items.go` and `update.go` and flipping their rows in the event catalog below from 💤 back to ✅. The endpoint may or may not yet be implemented; pings get connection-refused / 404 silently in production. The CLI swallows every error so this is invisible to users.
 
 ## Endpoint
 
@@ -63,19 +63,21 @@ Every event carries these. They are merged in by `track()`; an event-specific pa
 
 ## Event catalog
 
-Each row shows the event name, what CLI action fires it, and the event-specific params on top of the standard floor. Wired column: ✅ = call site exists in the CLI today, ⏳ = reserved name, no call site yet (add when the matching feature ships).
+Each row shows the event name, what CLI action fires it, and the event-specific params on top of the standard floor. Wired column: ✅ = call site exists and fires in the CLI today, 💤 = call site exists but is commented out (re-enable by uncommenting), ⏳ = reserved name, no call site yet (add when the matching feature ships).
 
 | Event | Fired by | Event-specific params | Wired |
 |---|---|---|---|
 | `init` | End of `runInit` happy path (`init.go`) | `scope` (`project`/`user`), `agents` (comma-joined keys), `agent_count`, `skill_count` | ✅ |
 | `skills_remove` | End of `runSkillsRemove` happy path (`skill.go`) | `scope`, `agent_count`, `skill_count_removed`, `hook_count_unmerged` | ✅ |
-| `plans_lint` | End of `planLint` (`scope.go`) — success path only (post-arg-validation + post-project-check) | `plan_count`, `ok_count`, `fail_count` | ✅ |
-| `plans_next_prefix` | End of `planNextPrefix` (`scope.go`) — success path only | `prefix` (zero-padded string matching what was printed to stdout) | ✅ |
-| `update_check` | `maybeNotifyUpdate` after every GitHub round-trip — success AND fetch-error, so the backend sees actual check cadence | `from_version`, `to_version`, `has_update` (`1`/`0`) | ✅ |
-| `update_apply` | `maybeNotifyUpdate` after `writeBundledAgents(true)` (the hourly embed refresh) — success AND failure | `from_version`, `to_version`, `success_count` (`1`/`0`), `fail_count` (`1`/`0`) | ✅ |
+| `plans_lint` | End of `planLint` (`work_items.go`) — success path only (post-arg-validation + post-project-check) | `plan_count`, `ok_count`, `fail_count` | ✅ |
+| `plans_next_prefix` | End of `workItemNextPrefix` (`work_items.go`) — success path only | `prefix` (zero-padded string matching what was printed to stdout) | 💤 |
+| `update_check` | `maybeNotifyUpdate` after every GitHub round-trip — success AND fetch-error, so the backend sees actual check cadence | `from_version`, `to_version`, `has_update` (`1`/`0`) | 💤 |
+| `update_apply` | `maybeNotifyUpdate` after `writeBundledAgents(true)` (the hourly embed refresh) — success AND failure | `from_version`, `to_version`, `success_count` (`1`/`0`), `fail_count` (`1`/`0`) | 💤 |
 | `command_failed` | Wrapping every subcommand's non-zero exit | `command`, `exit_code` | ⏳ |
 
 `command_failed` stays reserved — wiring it cleanly requires an `os.Exit` wrapper across every subcommand entry point, which is a separate refactor.
+
+The three 💤 events were commented out in the CLI to narrow the wire to install (`init`) / uninstall (`skills_remove`) / lint (`plans_lint`) only. The call-site blocks are preserved as Go comments next to a `// Telemetry disabled —` header so re-enabling is a single block uncomment plus flipping the row's Wired column back to ✅. Negative unit tests (`TestWorkItemNextPrefix_NoTelemetry`, `TestMaybeNotifyUpdate_NoTelemetry`) pin the disabled state.
 
 ### Adding a new event
 

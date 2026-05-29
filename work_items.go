@@ -98,11 +98,14 @@ func workItemNextPrefix(args []string, staxDir string, stdout, stderr io.Writer)
 	width := loadPrefixWidth(staxDir)
 	next := scanHighestPrefix(staxDir, width) + 1
 	_, _ = fmt.Fprintf(stdout, "%0*d\n", width, next)
-	// Anonymous-usage ping on the success path.
-	track("plans_next_prefix", telemetryEvent{
-		"prefix": fmt.Sprintf("%0*d", width, next),
-	})
-	flushTelemetry()
+	// Telemetry disabled — install (`init`), uninstall (`skills_remove`),
+	// and lint (`plans_lint`) are the only events still wired. Re-enable
+	// by uncommenting the block below and the `plans_next_prefix` row
+	// in docs/internal/telemetry.md.
+	// track("plans_next_prefix", telemetryEvent{
+	// 	"prefix": fmt.Sprintf("%0*d", width, next),
+	// })
+	// flushTelemetry()
 	return 0
 }
 
