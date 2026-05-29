@@ -102,6 +102,11 @@ const (
 //	configRel     — destination for the configSrc files, relative to scope root
 //	                (e.g. ".claude" so that agents/claude/settings.json lands
 //	                at <root>/.claude/settings.json).
+//	userConfigRel — optional override for user scope ($HOME-relative). When
+//	                empty the install/remove code falls back to configRel in
+//	                both workItems. Set when an agent reads hooks from a
+//	                DIFFERENT directory at user scope (e.g. Copilot CLI:
+//	                `.github/hooks` at project, `~/.copilot/hooks` at user).
 type agentTarget struct {
 	key           string
 	name          string
@@ -109,6 +114,7 @@ type agentTarget struct {
 	userSkillsRel string
 	configSrc     string
 	configRel     string
+	userConfigRel string
 }
 
 // skillsRelFor returns the scope-correct skill install path for one agent.
@@ -122,6 +128,18 @@ func (t *agentTarget) skillsRelFor(scope initScope) string {
 		return t.userSkillsRel
 	}
 	return t.skillsRel
+}
+
+// configRelFor returns the scope-correct per-agent config install path.
+// Same shape as skillsRelFor — project scope always uses configRel; user
+// scope prefers userConfigRel when set, falling back to configRel
+// otherwise. Centralized so install AND remove paths use the same
+// resolver and can't drift.
+func (t *agentTarget) configRelFor(scope initScope) string {
+	if scope == scopeUser && t.userConfigRel != "" {
+		return t.userConfigRel
+	}
+	return t.configRel
 }
 
 // agentByKey returns the agentTargets row with the given `key`, or nil
@@ -152,7 +170,7 @@ func agentByKey(key string) *agentTarget {
 // stable identifier the picker emits — keep it short, lowercase, and
 // unique across the registry.
 var agentTargets = []agentTarget{
-	{"claude", "Claude Code", ".claude/skills", "", "claude", ".claude"},
+	{"claude", "Anthropic Claude", ".claude/skills", "", "claude", ".claude", ""},
 	// Cline (cline.bot) reads skills from `.cline/skills/` at project scope
 	// and `~/.cline/skills/` at user scope, per the official 2026 config
 	// docs at docs.cline.bot/customization/overview. The cross-agent
@@ -165,14 +183,14 @@ var agentTargets = []agentTarget{
 	// `<root>/.cline/skills/<name>/` unchanged.
 	// Skills-only for now — no settings.json / hooks file bundled for
 	// cline; configSrc and configRel stay empty.
-	{"cline", "Cline", ".cline/skills", "", "", ""},
+	{"cline", "Cline", ".cline/skills", "", "", "", ""},
 	// Codex CLI scans .agents/skills/ at every level (cwd → repo root → $HOME),
 	// per the cross-agent SKILL.md open standard. The legacy ~/.codex/skills
 	// is also recognized at user scope but not at project scope, so .agents
 	// is the one path that works in both modes. Per-agent config (hooks.json,
 	// config.toml, etc.) still lives under .codex/ — see Codex docs:
 	// https://developers.openai.com/codex/hooks for the lookup order.
-	{"codex", "Codex CLI", ".agents/skills", "", "codex", ".codex"},
+	{"codex", "OpenAI Codex", ".agents/skills", "", "codex", ".codex", ""},
 	// Continue (continue.dev) reads skills from `.continue/skills/` at
 	// project scope and `~/.continue/skills/` at user scope, per the
 	// continue.dev customization docs (the IDE extension scans both
@@ -183,7 +201,7 @@ var agentTargets = []agentTarget{
 	// `.continue/skills` exclusively. Skills-only — Continue's
 	// settings live at `~/.continue/config.yaml` and are user-owned
 	// end-to-end, outside the stax install scope.
-	{"continue", "Continue", ".continue/skills", "", "", ""},
+	{"continue", "Continue", ".continue/skills", "", "", "", ""},
 	// Cursor reads skills from `.agents/skills/` at workspace scope
 	// (the cross-agent open spec path, shared with Codex/Copilot/Pi/
 	// omp/Zed) and from `~/.cursor/skills/` at global scope — Cursor
@@ -194,7 +212,7 @@ var agentTargets = []agentTarget{
 	// MCP config, the cursor-agent hosted backend auth via
 	// CURSOR_API_KEY) are all user-owned end-to-end and outside the
 	// stax install scope.
-	{"cursor", "Cursor", ".agents/skills", ".cursor/skills", "", ""},
+	{"cursor", "Cursor", ".agents/skills", ".cursor/skills", "", "", ""},
 	// GitHub Copilot CLI reads skills from `.agents/skills/`, `.claude/skills/`,
 	// or `.github/skills/` at project scope, and `~/.copilot/skills/` or
 	// `~/.agents/skills/` at user scope (per Copilot CLI's May 2026 docs at
@@ -212,7 +230,7 @@ var agentTargets = []agentTarget{
 	// Skills-only for now — no settings.json / hooks file shipped yet;
 	// that's a follow-up once the manual eval workflow tells us which
 	// Copilot CLI lifecycle hooks make sense to register.
-	{"copilot", "GitHub Copilot CLI", ".agents/skills", "", "", ""},
+	{"copilot", "GitHub Copilot", ".agents/skills", "", "copilot", ".github/hooks", ".copilot/hooks"},
 	// Kilo Code (kilocode.ai) reads skills from `.kilocode/skills/` at
 	// project scope and `~/.kilocode/skills/` at user scope, per
 	// kilocode.ai's customization docs and the published `.kilocode/`
@@ -222,7 +240,7 @@ var agentTargets = []agentTarget{
 	// userSkillsRel override needed. Skills-only; Kilo's settings live
 	// in `~/.kilocode/` end-to-end and are user-owned outside the stax
 	// install scope.
-	{"kilo", "Kilo Code", ".kilocode/skills", "", "", ""},
+	{"kilo", "Kilo Code", ".kilocode/skills", "", "", "", ""},
 	// omp (oh-my-pi, omp.sh / can1357/oh-my-pi) is a TS coding agent
 	// that registers a documented `agents` skill provider at priority
 	// 70 — see oh-my-pi/docs/skills.md "priority 70 group (in
@@ -255,7 +273,7 @@ var agentTargets = []agentTarget{
 	// (interactive Settings → Memory tab) and its model registry at
 	// `~/.omp/agent/models.yml`. Both are user-owned end-to-end and
 	// outside the stax install scope.
-	{"omp", "Oh My Pi", ".agents/skills", "", "", ""},
+	{"omp", "Oh My Pi", ".agents/skills", "", "", "", ""},
 	// OpenCode resolves slash commands from `.opencode/{command,commands}/**/*.md`
 	// at project scope and `~/.config/opencode/commands/` at user scope.
 	// The lookup keys off the file's frontmatter `name:` (the path-derived
@@ -267,7 +285,7 @@ var agentTargets = []agentTarget{
 	// flat `<command>.md`) matches Claude/Codex for parity across agents.
 	// No per-agent config is bundled for OpenCode yet (auth + provider
 	// routing live outside the install scope, in `~/.local/share/opencode/`).
-	{"opencode", "OpenCode", ".opencode/commands", "", "", ""},
+	{"opencode", "OpenCode", ".opencode/commands", "", "opencode", ".opencode/plugins", ".config/opencode/plugins"},
 	// Pi (pi.dev — @earendil-works/pi-coding-agent) reads skills from
 	// `.agents/skills/` walking up from cwd at project scope and from
 	// `~/.agents/skills/` at user scope (one of two documented user-scope
@@ -283,7 +301,7 @@ var agentTargets = []agentTarget{
 	// stay empty — no pi-specific config bundled today; pi looks for
 	// `~/.pi/agent/AGENTS.md` and `~/.pi/agent/settings.json` if a user
 	// adds them, which is outside the scope of stax's install.
-	{"pi", "Pi", ".agents/skills", "", "", ""},
+	{"pi", "Pi", ".agents/skills", "", "pi", ".pi/extensions", ".pi/agent/extensions"},
 	// Zed (zed.dev) reads skills from `.agents/skills/` at workspace
 	// scope and from `~/.agents/skills/` at global scope — Zed
 	// explicitly honors the cross-agent open spec at BOTH workItems per
@@ -297,7 +315,7 @@ var agentTargets = []agentTarget{
 	// XDG), `%APPDATA%\Zed\settings.json` (Windows), or
 	// `$FLATPAK_XDG_CONFIG_HOME/zed/settings.json` (Flatpak), all
 	// user-owned end-to-end and outside the stax install scope.
-	{"zed", "Zed", ".agents/skills", "", "", ""},
+	{"zed", "Zed", ".agents/skills", "", "", "", ""},
 }
 
 // skillsSubdir is the directory inside ~/<staxDir>/agents/ that holds the
@@ -310,13 +328,28 @@ const skillsSubdir = "skills"
 //
 //	`.json` files → deep-merge bundled into existing (user scalars win,
 //	  bundled keys added when missing, array entries unioned).
+//	`.ts` files   → whole-file ownership by byte-identity (see configTSExt).
 //	everything else → skip with a "skipping" log so user edits survive.
 //
-// Today every bundled config file (Claude `settings.json`, Codex
-// `hooks.json`) is JSON, so the merge path is the common case. The
-// constant lives here so adding a future TOML/YAML merger only needs
-// a new sibling and a tiny installAgentConfig branch.
+// Today every bundled JSON config file (Claude `settings.json`, Codex
+// `hooks.json`, Copilot `stax.json`) is JSON, so the merge path is the
+// common case. The constant lives here so adding a future TOML/YAML
+// merger only needs a new sibling and a tiny installAgentConfig branch.
 const configJSONExt = ".json"
+
+// configTSExt is the second policy slot: TypeScript plugin/extension
+// modules whose owning unit is the whole file rather than a leaf
+// record inside it. Used by agents whose hook surface is executable
+// source (OpenCode plugins, Pi extensions) rather than a JSON
+// document.
+//
+//	dest byte-identical to bundle → no-op (re-runs are idempotent).
+//	dest differs from bundle     → user-edited; install leaves alone,
+//	                                remove leaves alone.
+//
+// The same byte-equality test gates both directions so a user-edited
+// file is never silently overwritten or silently deleted.
+const configTSExt = ".ts"
 
 // configHooksKey is the top-level JSON property inside every bundled
 // per-agent config file (`agents/claude/settings.json`,

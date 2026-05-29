@@ -75,14 +75,36 @@ readonly CONTINUE_SKILLS_REL=".continue/skills"
 readonly CURSOR_SKILLS_REL=".agents/skills"
 readonly CURSOR_USER_SKILLS_REL=".cursor/skills"
 readonly COPILOT_SKILLS_REL=".agents/skills"
+# Copilot is scope-asymmetric on hook paths: `.github/hooks/` at project
+# (lives inside the repo so it's checked in next to other GitHub config),
+# `~/.copilot/hooks/` at user. The `userConfigRel` field on the Copilot
+# agentTargets row carries the user-scope override; this pair of
+# mirrored constants surfaces both halves so the harness can assert
+# install + un-merge at each scope without rebuilding the path inline.
+readonly COPILOT_CONFIG_REL=".github/hooks"
+readonly COPILOT_USER_CONFIG_REL=".copilot/hooks"
 readonly KILO_SKILLS_REL=".kilocode/skills"
 readonly OMP_SKILLS_REL=".agents/skills"
 readonly OPENCODE_SKILLS_REL=".opencode/commands"
+# OpenCode's hook surface is a TypeScript plugin file, NOT a JSON
+# config — it gets installed via the .ts whole-file-ownership branch
+# in installOneAgentConfigFile. Project scope and user scope diverge
+# on the directory (`.opencode/plugins/` vs `~/.config/opencode/plugins/`)
+# the same way Copilot's hooks do.
+readonly OPENCODE_CONFIG_REL=".opencode/plugins"
+readonly OPENCODE_USER_CONFIG_REL=".config/opencode/plugins"
 readonly PI_SKILLS_REL=".agents/skills"
+# Pi extensions: TypeScript modules, same install branch as OpenCode.
+# Pi's user-scope path nests under `.pi/agent/` (Pi's per-agent state
+# tree) rather than `.pi/` directly, so the pair diverges on the
+# parent directory too — track both halves.
+readonly PI_CONFIG_REL=".pi/extensions"
+readonly PI_USER_CONFIG_REL=".pi/agent/extensions"
 readonly ZED_SKILLS_REL=".agents/skills"
-# OpenCode / Copilot / Continue / Cursor / Kilo / Pi / omp / Zed
-# each ship no per-agent config (configSrc / configRel are empty),
-# so no *_CONFIG_REL mirrors are needed for them.
+# Continue / Cursor / Kilo / omp / Zed each ship no per-agent config
+# (configSrc / configRel are empty), so no *_CONFIG_REL mirrors are
+# needed for them. Copilot / OpenCode / Pi have *_CONFIG_REL +
+# *_USER_CONFIG_REL pairs declared further up.
 # Parent of CODEX_SKILLS_REL — used by isolation cases that seed sibling
 # files alongside the Codex skills dir. Derived (not a Go constant) to
 # avoid drift if the skillsRel ever moves.
@@ -99,6 +121,12 @@ readonly CLINE_SKILLS_PARENT="${CLINE_SKILLS_REL%/*}"
 readonly CONTINUE_SKILLS_PARENT="${CONTINUE_SKILLS_REL%/*}"
 readonly CURSOR_USER_SKILLS_PARENT="${CURSOR_USER_SKILLS_REL%/*}"
 readonly KILO_SKILLS_PARENT="${KILO_SKILLS_REL%/*}"
+# Parents of the per-agent hook destinations at user scope. Each is
+# wiped by reset_user_home so a previous case's bundled hook never
+# survives into the next.
+readonly COPILOT_USER_CONFIG_PARENT="${COPILOT_USER_CONFIG_REL%/*}"
+readonly OPENCODE_USER_CONFIG_PARENT="${OPENCODE_USER_CONFIG_REL%/*}"
+readonly PI_USER_CONFIG_PARENT="${PI_USER_CONFIG_REL%/*}"
 
 # Bundle-provided config filenames (agents/<configSrc>/* in the embed). Not
 # named in constants.go (the embed tree is the source) but pinned here
@@ -322,6 +350,9 @@ reset_user_home() {
          "$HOME/${CONTINUE_SKILLS_PARENT}" \
          "$HOME/${CURSOR_USER_SKILLS_PARENT}" \
          "$HOME/${KILO_SKILLS_PARENT}" \
+         "$HOME/${COPILOT_USER_CONFIG_PARENT}" \
+         "$HOME/${OPENCODE_USER_CONFIG_PARENT}" \
+         "$HOME/${PI_USER_CONFIG_PARENT}" \
          "$HOME/${STAX_DIR}"
 }
 
@@ -1661,6 +1692,262 @@ assert_eq "exit 0" "$RUN_RC" "0"
 TWEAKED_BODY="$(cat "$PROJ_UNT/${CLAUDE_SETTINGS_PATH}")"
 assert_contains "tweaked matcher kept" "$TWEAKED_BODY" 'Write|Edit|MultiEdit'
 assert_contains "tweaked command kept" "$TWEAKED_BODY" 'stax work-items lint --verbose'
+
+# ---------- Copilot CLI: hooks JSON install + scope-asymmetric paths ----------
+#
+# Copilot's hook surface is a JSON file (same shape policy as Claude /
+# Codex via the existing mergeJSONFile / subtractHooks path) but lands
+# at DIFFERENT directories per scope: `.github/hooks/stax.json` at
+# project, `~/.copilot/hooks/stax.json` at user (per Copilot CLI's May
+# 2026 hooks-configuration docs). The cases below exercise the
+# configRelFor(scope) resolver: same JSON contract on both sides, two
+# physically different destinations.
+
+case_start "Copilot: init --scope project lands stax.json at .github/hooks/"
+reset_user_home
+PROJ_CP="$(fresh_project)"
+cd "$PROJ_CP"
+run_capture "" init --scope project --agents copilot \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+assert_eq    "exit 0"             "$RUN_RC" "0"
+assert_is_file "stax.json present" "$PROJ_CP/${COPILOT_CONFIG_REL}/stax.json"
+CP_BODY="$(cat "$PROJ_CP/${COPILOT_CONFIG_REL}/stax.json")"
+assert_contains "version present"     "$CP_BODY" '"version"'
+assert_contains "postToolUse present" "$CP_BODY" '"postToolUse"'
+assert_contains "lint command present" "$CP_BODY" 'stax work-items lint'
+# User-scope path must NOT have been touched by a project-scope install.
+assert_absent  "user-scope path empty after project install" "$HOME/${COPILOT_USER_CONFIG_REL}/stax.json"
+
+case_start "Copilot: init --scope user lands stax.json at ~/.copilot/hooks/"
+reset_user_home
+PROJ_CPU="$(fresh_project)"
+cd "$PROJ_CPU"
+run_capture "" init --scope user --agents copilot \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+assert_eq    "exit 0"             "$RUN_RC" "0"
+assert_is_file "user stax.json present" "$HOME/${COPILOT_USER_CONFIG_REL}/stax.json"
+# Project-scope path must NOT have been touched by a user-scope install
+# — pins the configRelFor scope split.
+assert_absent  "project-scope path empty after user install" "$PROJ_CPU/${COPILOT_CONFIG_REL}/stax.json"
+
+case_start "Copilot: init re-run merges into edited stax.json"
+reset_user_home
+PROJ_CPM="$(fresh_project)"
+cd "$PROJ_CPM"
+run_capture "" init --scope project --agents copilot \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+assert_eq "first init exit 0" "$RUN_RC" "0"
+# Overwrite with a user-authored hook entry plus a user-only top-level scalar.
+# After re-init: scalar must survive; bundled records re-land; user record stays.
+cat > "$PROJ_CPM/${COPILOT_CONFIG_REL}/stax.json" <<'EOF'
+{
+  "version": 1,
+  "userOnlyKey": true,
+  "hooks": {
+    "postToolUse": [
+      {"type": "command", "bash": "user-tool"}
+    ]
+  }
+}
+EOF
+# Documented re-init flow: delete the lock to unblock the project-marker
+# check (mirrors the existing claude/codex merge case). Without this the
+# second init exits with "already initialized" before reaching the merge.
+rm "$PROJ_CPM/${STAX_LOCK_PATH}"
+run_capture "" init --scope project --agents copilot \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+CPM_BODY="$(cat "$PROJ_CPM/${COPILOT_CONFIG_REL}/stax.json")"
+assert_contains "user scalar survives merge"  "$CPM_BODY" 'userOnlyKey'
+assert_contains "user hook survives merge"    "$CPM_BODY" 'user-tool'
+assert_contains "bundled hook landed"         "$CPM_BODY" 'stax work-items lint'
+
+case_start "Copilot: skill remove --project un-merges bundled records"
+reset_user_home
+PROJ_CPR="$(fresh_project)"
+cd "$PROJ_CPR"
+run_capture "" init --scope project --agents copilot \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+# Append a user-authored entry; un-merge must drop the bundled one and
+# keep the user one.
+cat > "$PROJ_CPR/${COPILOT_CONFIG_REL}/stax.json" <<'EOF'
+{
+  "version": 1,
+  "hooks": {
+    "postToolUse": [
+      {"type": "command", "bash": "stax work-items lint"},
+      {"type": "command", "bash": "USER-COPILOT-HOOK"}
+    ],
+    "agentStop": [
+      {"type": "command", "bash": "stax work-items lint"}
+    ]
+  }
+}
+EOF
+run_capture "" skills remove --project
+assert_eq       "exit 0" "$RUN_RC" "0"
+CPR_BODY="$(cat "$PROJ_CPR/${COPILOT_CONFIG_REL}/stax.json")"
+assert_not_contains "bundled command gone"     "$CPR_BODY" 'stax work-items lint'
+assert_contains     "user copilot hook survives" "$CPR_BODY" 'USER-COPILOT-HOOK'
+assert_contains     "version scalar survives"   "$CPR_BODY" '"version"'
+
+# ---------- OpenCode plugin: .ts whole-file install + remove ----------
+#
+# OpenCode's hook surface is a TypeScript plugin file, NOT a JSON
+# config. The new installer branch (configTSExt in constants.go) owns
+# the file by byte-identity: install copies on absent + no-ops on
+# byte-equal + preserves on user-edit; remove deletes on byte-equal
+# + preserves on user-edit. Same ownership model as the JSON
+# un-merger, just whole-file granularity. Project scope lands at
+# `.opencode/plugins/`; user scope diverges to `~/.config/opencode/plugins/`.
+
+case_start "OpenCode: init lands stax.ts at .opencode/plugins/"
+reset_user_home
+PROJ_OC="$(fresh_project)"
+cd "$PROJ_OC"
+run_capture "" init --scope project --agents opencode \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+assert_eq    "exit 0"             "$RUN_RC" "0"
+assert_is_file "stax.ts present"   "$PROJ_OC/${OPENCODE_CONFIG_REL}/stax.ts"
+OC_BODY="$(cat "$PROJ_OC/${OPENCODE_CONFIG_REL}/stax.ts")"
+assert_contains "tool.execute.after present" "$OC_BODY" 'tool.execute.after'
+assert_contains "lint command in plugin"     "$OC_BODY" 'stax work-items lint'
+
+case_start "OpenCode: init re-run is byte-equal no-op"
+# Stat the file's content + size before re-run; ensure both unchanged.
+OC_BODY_FIRST="$(cat "$PROJ_OC/${OPENCODE_CONFIG_REL}/stax.ts")"
+rm "$PROJ_OC/${STAX_LOCK_PATH}"
+run_capture "" init --scope project --agents opencode \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+OC_BODY_SECOND="$(cat "$PROJ_OC/${OPENCODE_CONFIG_REL}/stax.ts")"
+assert_eq "stax.ts content stable across re-runs" "$OC_BODY_FIRST" "$OC_BODY_SECOND"
+
+case_start "OpenCode: init preserves user-edited stax.ts"
+reset_user_home
+PROJ_OCE="$(fresh_project)"
+cd "$PROJ_OCE"
+run_capture "" init --scope project --agents opencode \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+# Smallest possible edit (append a comment) to flip byte-equality.
+printf '// I customized this\n' >> "$PROJ_OCE/${OPENCODE_CONFIG_REL}/stax.ts"
+USER_EDITED="$(cat "$PROJ_OCE/${OPENCODE_CONFIG_REL}/stax.ts")"
+rm "$PROJ_OCE/${STAX_LOCK_PATH}"
+run_capture "" init --scope project --agents opencode \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+OCE_BODY="$(cat "$PROJ_OCE/${OPENCODE_CONFIG_REL}/stax.ts")"
+assert_eq       "user edit survives re-run" "$USER_EDITED" "$OCE_BODY"
+assert_contains "stderr warned about skip"  "$RUN_ERR"     "user-edited, skipping"
+
+case_start "OpenCode: skill remove deletes byte-equal stax.ts"
+reset_user_home
+PROJ_OCR="$(fresh_project)"
+cd "$PROJ_OCR"
+run_capture "" init --scope project --agents opencode \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+assert_is_file "stax.ts present before remove" "$PROJ_OCR/${OPENCODE_CONFIG_REL}/stax.ts"
+run_capture "" skills remove --project
+assert_eq    "exit 0"                          "$RUN_RC" "0"
+assert_absent "stax.ts removed after byte-equal delete" "$PROJ_OCR/${OPENCODE_CONFIG_REL}/stax.ts"
+
+case_start "OpenCode: skill remove preserves user-edited stax.ts"
+reset_user_home
+PROJ_OCRE="$(fresh_project)"
+cd "$PROJ_OCRE"
+run_capture "" init --scope project --agents opencode \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+printf '// I customized this\n' >> "$PROJ_OCRE/${OPENCODE_CONFIG_REL}/stax.ts"
+USER_EDITED_OCRE="$(cat "$PROJ_OCRE/${OPENCODE_CONFIG_REL}/stax.ts")"
+run_capture "" skills remove --project
+assert_eq    "exit 0" "$RUN_RC" "0"
+OCRE_BODY="$(cat "$PROJ_OCRE/${OPENCODE_CONFIG_REL}/stax.ts")"
+assert_eq    "user-edited stax.ts survives remove" "$USER_EDITED_OCRE" "$OCRE_BODY"
+
+case_start "OpenCode: --scope user lands stax.ts at ~/.config/opencode/plugins/"
+reset_user_home
+PROJ_OCU="$(fresh_project)"
+cd "$PROJ_OCU"
+run_capture "" init --scope user --agents opencode \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+assert_eq      "exit 0" "$RUN_RC" "0"
+assert_is_file "user stax.ts present" "$HOME/${OPENCODE_USER_CONFIG_REL}/stax.ts"
+# Project-scope path must NOT have been touched.
+assert_absent  "project-scope stax.ts empty after user install" "$PROJ_OCU/${OPENCODE_CONFIG_REL}/stax.ts"
+
+# ---------- Pi extension: .ts whole-file install + remove ----------
+#
+# Same install branch as OpenCode (configTSExt path) but lands at Pi's
+# documented extension paths: `.pi/extensions/` at project,
+# `~/.pi/agent/extensions/` at user (per pi-mono's coding-agent
+# docs/extensions.md). Same byte-identity ownership semantics — copy /
+# no-op / preserve on install; delete / preserve on remove.
+
+case_start "Pi: init lands stax.ts at .pi/extensions/"
+reset_user_home
+PROJ_PI="$(fresh_project)"
+cd "$PROJ_PI"
+run_capture "" init --scope project --agents pi \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+assert_eq      "exit 0"           "$RUN_RC" "0"
+assert_is_file "stax.ts present"   "$PROJ_PI/${PI_CONFIG_REL}/stax.ts"
+PI_BODY="$(cat "$PROJ_PI/${PI_CONFIG_REL}/stax.ts")"
+assert_contains "tool_result handler"      "$PI_BODY" 'tool_result'
+assert_contains "session_shutdown handler" "$PI_BODY" 'session_shutdown'
+assert_contains "lint command in extension" "$PI_BODY" 'stax work-items lint'
+
+case_start "Pi: init re-run is byte-equal no-op"
+PI_BODY_FIRST="$(cat "$PROJ_PI/${PI_CONFIG_REL}/stax.ts")"
+rm "$PROJ_PI/${STAX_LOCK_PATH}"
+run_capture "" init --scope project --agents pi \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+PI_BODY_SECOND="$(cat "$PROJ_PI/${PI_CONFIG_REL}/stax.ts")"
+assert_eq "stax.ts content stable across re-runs" "$PI_BODY_FIRST" "$PI_BODY_SECOND"
+
+case_start "Pi: init preserves user-edited stax.ts"
+reset_user_home
+PROJ_PIE="$(fresh_project)"
+cd "$PROJ_PIE"
+run_capture "" init --scope project --agents pi \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+printf '// my customization\n' >> "$PROJ_PIE/${PI_CONFIG_REL}/stax.ts"
+PIE_USER="$(cat "$PROJ_PIE/${PI_CONFIG_REL}/stax.ts")"
+rm "$PROJ_PIE/${STAX_LOCK_PATH}"
+run_capture "" init --scope project --agents pi \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+PIE_BODY="$(cat "$PROJ_PIE/${PI_CONFIG_REL}/stax.ts")"
+assert_eq "user-edited stax.ts survives re-run" "$PIE_USER" "$PIE_BODY"
+
+case_start "Pi: skill remove deletes byte-equal stax.ts"
+reset_user_home
+PROJ_PIR="$(fresh_project)"
+cd "$PROJ_PIR"
+run_capture "" init --scope project --agents pi \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+assert_is_file "stax.ts present before remove" "$PROJ_PIR/${PI_CONFIG_REL}/stax.ts"
+run_capture "" skills remove --project
+assert_eq      "exit 0" "$RUN_RC" "0"
+assert_absent  "stax.ts removed after byte-equal delete" "$PROJ_PIR/${PI_CONFIG_REL}/stax.ts"
+
+case_start "Pi: skill remove preserves user-edited stax.ts"
+reset_user_home
+PROJ_PIRE="$(fresh_project)"
+cd "$PROJ_PIRE"
+run_capture "" init --scope project --agents pi \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+printf '// pi customization\n' >> "$PROJ_PIRE/${PI_CONFIG_REL}/stax.ts"
+PIRE_USER="$(cat "$PROJ_PIRE/${PI_CONFIG_REL}/stax.ts")"
+run_capture "" skills remove --project
+assert_eq    "exit 0" "$RUN_RC" "0"
+PIRE_BODY="$(cat "$PROJ_PIRE/${PI_CONFIG_REL}/stax.ts")"
+assert_eq    "user-edited Pi stax.ts survives remove" "$PIRE_USER" "$PIRE_BODY"
+
+case_start "Pi: --scope user lands stax.ts at ~/.pi/agent/extensions/"
+reset_user_home
+PROJ_PIU="$(fresh_project)"
+cd "$PROJ_PIU"
+run_capture "" init --scope user --agents pi \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+assert_eq      "exit 0" "$RUN_RC" "0"
+assert_is_file "user stax.ts present" "$HOME/${PI_USER_CONFIG_REL}/stax.ts"
+assert_absent  "project-scope stax.ts empty after user install" "$PROJ_PIU/${PI_CONFIG_REL}/stax.ts"
 
 # ---------- isolation: lazy first-run write keeps foreign content ----------
 #

@@ -631,7 +631,7 @@ func installForTarget(t *agentTarget, skills []string, scopeRoot, skillsSource, 
 	if _, err := os.Stat(configSource); err != nil {
 		return
 	}
-	configDest := filepath.Join(scopeRoot, t.configRel)
+	configDest := filepath.Join(scopeRoot, t.configRelFor(scope))
 	if err := installAgentConfig(configSource, configDest); err != nil {
 		fmt.Fprintf(os.Stderr, "    config: %v\n", err)
 	}

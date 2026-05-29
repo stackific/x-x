@@ -484,6 +484,107 @@ func TestRunSkillRemove_EndToEnd_HookUnmerge(t *testing.T) {
 	}
 }
 
+// TestRunSkillRemove_EndToEnd_TSPluginRemove is the TS-plugin parallel
+// of the hook-unmerge end-to-end test above. For every agentTargets
+// row with a non-empty configSrc, seed a bundled .ts file plus a
+// byte-identical user copy and a user-edited sibling, then run
+// `skills remove --user`. The byte-equal copy must disappear; the
+// user-edited file must survive. Walks the registry so a future
+// fourth TS-plugin agent gets free coverage.
+// TSPluginFixture is the standard mix of bundled + user-edited + user-
+// authored .ts files used by TestRunSkillRemove_EndToEnd_TSPluginRemove
+// and any future regression test that wants the same shape.
+type tsPluginFixture struct {
+	bundleBody string // contents of bundle's stax.ts AND the user's byte-equal copy
+	userEdit   string // contents of a SECOND user file named differently from the bundle
+	userOnly   string // contents of a THIRD wholly-user-authored .ts
+}
+
+func defaultTSPluginFixture() tsPluginFixture {
+	return tsPluginFixture{
+		bundleBody: "// stax bundled\nexport default function () {}\n",
+		userEdit:   "// stax bundled — but I edited this\nexport default function () {}\n",
+		userOnly:   "// user-authored\nexport default function () {}\n",
+	}
+}
+
+func seedTSPluginFixture(t *testing.T, home string, target *agentTarget, fx tsPluginFixture) {
+	t.Helper()
+	bundleDir := filepath.Join(home, staxDir, agentsEmbedRoot, target.configSrc)
+	userDir := filepath.Join(home, target.configRelFor(scopeUser))
+	if err := os.MkdirAll(bundleDir, 0o700); err != nil {
+		t.Fatalf("mkdir bundle %s: %v", target.key, err)
+	}
+	if err := os.MkdirAll(userDir, 0o700); err != nil {
+		t.Fatalf("mkdir user %s: %v", target.key, err)
+	}
+	for _, w := range []struct {
+		label string
+		path  string
+		body  string
+	}{
+		{"bundle", filepath.Join(bundleDir, "stax.ts"), fx.bundleBody},
+		{"byte-equal user copy", filepath.Join(userDir, "stax.ts"), fx.bundleBody},
+		{"user-edited sibling", filepath.Join(userDir, "stax-edited.ts"), fx.userEdit},
+		{"user-only sibling", filepath.Join(userDir, "user-only.ts"), fx.userOnly},
+	} {
+		if err := os.WriteFile(w.path, []byte(w.body), 0o600); err != nil {
+			t.Fatalf("seed %s for %s: %v", w.label, target.key, err)
+		}
+	}
+}
+
+func assertTSPluginRemoveResult(t *testing.T, home string, target *agentTarget, fx tsPluginFixture) {
+	t.Helper()
+	userDir := filepath.Join(home, target.configRelFor(scopeUser))
+	if _, err := os.Stat(filepath.Join(userDir, "stax.ts")); !os.IsNotExist(err) {
+		t.Errorf("%s: byte-equal stax.ts should be removed, stat err = %v", target.key, err)
+	}
+	for _, w := range []struct {
+		name string
+		path string
+		want string
+	}{
+		{"user-edited sibling", filepath.Join(userDir, "stax-edited.ts"), fx.userEdit},
+		{"user-only sibling", filepath.Join(userDir, "user-only.ts"), fx.userOnly},
+	} {
+		got, err := os.ReadFile(w.path)
+		if err != nil {
+			t.Errorf("%s: %s vanished: %v", target.key, w.name, err)
+			continue
+		}
+		if string(got) != w.want {
+			t.Errorf("%s: %s clobbered:\nwant %q\ngot  %q", target.key, w.name, w.want, got)
+		}
+	}
+}
+
+// TestRunSkillRemove_EndToEnd_TSPluginRemove is the TS-plugin parallel
+// of the hook-unmerge end-to-end test above. For every agentTargets
+// row with a non-empty configSrc, seed a bundled .ts file plus a
+// byte-identical user copy, a sibling user-named file, and a user-
+// only file. Run `skills remove --user`. The byte-equal copy must
+// disappear; both siblings must survive. Walks the registry so a
+// future fourth TS-plugin agent gets free coverage. The seed +
+// assertion helpers above keep this body close to a one-screen
+// table of what's being checked.
+func TestRunSkillRemove_EndToEnd_TSPluginRemove(t *testing.T) {
+	home := pinHome(t)
+	chdir(t, t.TempDir())
+	fx := defaultTSPluginFixture()
+	for i := range agentTargets {
+		if agentTargets[i].configSrc != "" {
+			seedTSPluginFixture(t, home, &agentTargets[i], fx)
+		}
+	}
+	runSkillsRemove([]string{"--user"})
+	for i := range agentTargets {
+		if agentTargets[i].configSrc != "" {
+			assertTSPluginRemoveResult(t, home, &agentTargets[i], fx)
+		}
+	}
+}
+
 // seedHookFixture lays down one agent's bundle file + user counterpart on
 // the pinned $HOME. Both files use hookFixtureJSON's structure so the bundled
 // record deep-equals the matching user record after JSON round-trip.
@@ -491,7 +592,13 @@ func seedHookFixture(t *testing.T, home string, target *agentTarget, fname strin
 	t.Helper()
 	bundleRaw, userRaw := hookFixtureJSON(t)
 	bundleDir := filepath.Join(home, staxDir, agentsEmbedRoot, target.configSrc)
-	userDir := filepath.Join(home, target.configRel)
+	// User dir uses configRelFor(scopeUser) so scope-asymmetric agents
+	// (e.g. Copilot CLI: `.github/hooks` at project, `~/.copilot/hooks`
+	// at user) get seeded where `runSkillsRemove --user` actually
+	// reads. Without this the un-merge silently lands at the
+	// project-scope path while remove walks the user-scope one,
+	// leaving the seeded file untouched and failing the assertion.
+	userDir := filepath.Join(home, target.configRelFor(scopeUser))
 	for _, d := range []string{bundleDir, userDir} {
 		if err := os.MkdirAll(d, 0o700); err != nil {
 			t.Fatalf("mkdir %s: %v", d, err)
@@ -511,7 +618,7 @@ func seedHookFixture(t *testing.T, home string, target *agentTarget, fname strin
 // bundled record is gone.
 func assertHookUnmergeResult(t *testing.T, home string, target *agentTarget, fname string) {
 	t.Helper()
-	got, err := os.ReadFile(filepath.Join(home, target.configRel, fname))
+	got, err := os.ReadFile(filepath.Join(home, target.configRelFor(scopeUser), fname))
 	if err != nil {
 		t.Fatalf("read %s result: %v", target.key, err)
 	}
@@ -584,6 +691,337 @@ func TestRunSkillsRemove_CwdFlag_TargetsRequestedProject(t *testing.T) {
 // policy violation; `showUsage` true means the caller should print the
 // FlagSet's Usage block before exiting (the "neither flag passed"
 // branch, where the actionable answer is the usage table itself).
+// ---------- removeBundledTSPluginsIn coverage ----------
+//
+// Parallel to the removeBundledHooksIn tests above. The TS-plugin
+// remover identifies ownership by whole-file byte-equality (vs the
+// JSON un-merger's leaf-record deep-equal). Same shape of contract:
+// only files we shipped come off, user-edited copies survive, missing
+// sides are silent.
+
+// TestRemoveBundledTSPluginsIn_DropsByteEqualUserCopy is the happy
+// path: a user copy that byte-equals the bundle gets removed.
+func TestRemoveBundledTSPluginsIn_DropsByteEqualUserCopy(t *testing.T) {
+	bundle := t.TempDir()
+	user := t.TempDir()
+	const body = "// stax bundled\nexport default function () {}\n"
+	if err := os.WriteFile(filepath.Join(bundle, "stax.ts"), []byte(body), 0o600); err != nil {
+		t.Fatalf("seed bundle: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(user, "stax.ts"), []byte(body), 0o600); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	removed, skipped := removeBundledTSPluginsIn(bundle, user, "test-agent")
+	if removed != 1 || skipped != 0 {
+		t.Fatalf("got removed=%d skipped=%d, want 1/0", removed, skipped)
+	}
+	if _, err := os.Stat(filepath.Join(user, "stax.ts")); !os.IsNotExist(err) {
+		t.Fatalf("byte-equal copy should be removed, stat err = %v", err)
+	}
+}
+
+// TestRemoveBundledTSPluginsIn_PreservesUserEditedCopy is the
+// safety contract: any byte difference between the user copy and the
+// bundle means user-ownership took over, and the file must NOT be
+// deleted. Smallest possible diff (one trailing space) still wins.
+func TestRemoveBundledTSPluginsIn_PreservesUserEditedCopy(t *testing.T) {
+	bundle := t.TempDir()
+	user := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bundle, "stax.ts"), []byte("export default function () {}\n"), 0o600); err != nil {
+		t.Fatalf("seed bundle: %v", err)
+	}
+	const userEdit = "export default function () {} \n" // trailing space — smallest diff
+	if err := os.WriteFile(filepath.Join(user, "stax.ts"), []byte(userEdit), 0o600); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	removed, skipped := removeBundledTSPluginsIn(bundle, user, "test-agent")
+	if removed != 0 || skipped != 0 {
+		t.Fatalf("user-edited: got removed=%d skipped=%d, want 0/0", removed, skipped)
+	}
+	got, _ := os.ReadFile(filepath.Join(user, "stax.ts"))
+	if string(got) != userEdit {
+		t.Fatalf("user edit clobbered:\nwant %q\ngot  %q", userEdit, got)
+	}
+}
+
+// TestRemoveBundledTSPluginsIn_MissingUserFileIsSilent matches
+// removeBundledHooksIn's "agent never had an install at this scope"
+// semantics: a bundle exists but the user side doesn't → silent
+// no-op, no counters bumped.
+func TestRemoveBundledTSPluginsIn_MissingUserFileIsSilent(t *testing.T) {
+	bundle := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bundle, "stax.ts"), []byte("X"), 0o600); err != nil {
+		t.Fatalf("seed bundle: %v", err)
+	}
+	removed, skipped := removeBundledTSPluginsIn(bundle, filepath.Join(t.TempDir(), "missing-dir"), "test-agent")
+	if removed != 0 || skipped != 0 {
+		t.Fatalf("missing user: got removed=%d skipped=%d, want 0/0", removed, skipped)
+	}
+}
+
+// TestRemoveBundledTSPluginsIn_MissingBundleIsSilent matches the
+// equivalent guard on the bundle side: if the bundle never materialized
+// (or this agent ships no TS plugins), the walker exits cleanly with
+// no work done.
+func TestRemoveBundledTSPluginsIn_MissingBundleIsSilent(t *testing.T) {
+	removed, skipped := removeBundledTSPluginsIn(filepath.Join(t.TempDir(), "no-bundle"), t.TempDir(), "test-agent")
+	if removed != 0 || skipped != 0 {
+		t.Fatalf("missing bundle: got removed=%d skipped=%d, want 0/0", removed, skipped)
+	}
+}
+
+// TestRemoveBundledTSPluginsIn_IgnoresNonTSFiles pins the extension
+// gate: the walker only considers .ts files. Bundle siblings with
+// other extensions (a hypothetical .json, a README) are skipped, so a
+// mixed-content bundle directory (which is exactly what Copilot has
+// for its JSON hook file colocated with — hypothetically — a TS
+// helper) doesn't have its JSON siblings touched by this walker.
+func TestRemoveBundledTSPluginsIn_IgnoresNonTSFiles(t *testing.T) {
+	bundle := t.TempDir()
+	user := t.TempDir()
+	for _, name := range []string{"stax.json", "README.md"} {
+		if err := os.WriteFile(filepath.Join(bundle, name), []byte("X"), 0o600); err != nil {
+			t.Fatalf("seed bundle %s: %v", name, err)
+		}
+		if err := os.WriteFile(filepath.Join(user, name), []byte("X"), 0o600); err != nil {
+			t.Fatalf("seed user %s: %v", name, err)
+		}
+	}
+	removed, skipped := removeBundledTSPluginsIn(bundle, user, "test-agent")
+	if removed != 0 || skipped != 0 {
+		t.Fatalf("non-ts files: got removed=%d skipped=%d, want 0/0", removed, skipped)
+	}
+	for _, name := range []string{"stax.json", "README.md"} {
+		if _, err := os.Stat(filepath.Join(user, name)); err != nil {
+			t.Fatalf("%s should survive: %v", name, err)
+		}
+	}
+}
+
+// TestRemoveBundledTSPluginsIn_NestedFiles covers the recursive walk:
+// a bundle with `subdir/stax.ts` removes the matching user copy at
+// the same nested relative path. Mirrors the JSON walker's nested
+// coverage on the un-merge side.
+func TestRemoveBundledTSPluginsIn_NestedFiles(t *testing.T) {
+	bundle := t.TempDir()
+	user := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(bundle, "sub"), 0o700); err != nil {
+		t.Fatalf("mkdir bundle sub: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(user, "sub"), 0o700); err != nil {
+		t.Fatalf("mkdir user sub: %v", err)
+	}
+	const body = "export default function () {}\n"
+	if err := os.WriteFile(filepath.Join(bundle, "sub", "stax.ts"), []byte(body), 0o600); err != nil {
+		t.Fatalf("seed bundle: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(user, "sub", "stax.ts"), []byte(body), 0o600); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	removed, skipped := removeBundledTSPluginsIn(bundle, user, "test-agent")
+	if removed != 1 || skipped != 0 {
+		t.Fatalf("nested: got removed=%d skipped=%d, want 1/0", removed, skipped)
+	}
+	if _, err := os.Stat(filepath.Join(user, "sub", "stax.ts")); !os.IsNotExist(err) {
+		t.Fatalf("nested byte-equal copy should be removed: %v", err)
+	}
+}
+
+// TestRemoveBundledTSPluginsIn_SkipsMissingFromBundle pins the
+// "bundle is the live reference" property: a .ts file in the user
+// dir that the bundle does NOT ship is untouched. We only own files
+// that exist in our current bundle — orphaned user files from
+// previous installs (or user-authored siblings) survive.
+func TestRemoveBundledTSPluginsIn_SkipsMissingFromBundle(t *testing.T) {
+	bundle := t.TempDir()
+	user := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bundle, "stax.ts"), []byte("X"), 0o600); err != nil {
+		t.Fatalf("seed bundle: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(user, "user-authored.ts"), []byte("Y"), 0o600); err != nil {
+		t.Fatalf("seed user-authored: %v", err)
+	}
+	// removed must be 0: stax.ts is in the bundle but not the user dir,
+	// and user-authored.ts is in the user dir but not the bundle. Neither
+	// triggers a removal under the walker's "bundle drives discovery" rule.
+	removed, skipped := removeBundledTSPluginsIn(bundle, user, "test-agent")
+	if removed != 0 || skipped != 0 {
+		t.Fatalf("orphan: got removed=%d skipped=%d, want 0/0", removed, skipped)
+	}
+	if _, err := os.Stat(filepath.Join(user, "user-authored.ts")); err != nil {
+		t.Fatalf("user-authored sibling clobbered: %v", err)
+	}
+}
+
+// TestE2EHookFixtureMirrorsBundle catches a class of drift the bash
+// e2e can only surface at runtime: the un-merge case in
+// scripts/e2e_test.sh seeds two JSON heredocs that intentionally
+// mirror the bundled hook records in agents/claude/settings.json and
+// agents/codex/hooks.json. The fixture must contain at least every
+// hook record the bundle currently ships under the same event key,
+// otherwise subtractHooks finds nothing to subtract and the e2e
+// "bundled hook gone" assertion fires far downstream from the actual
+// drift — half a minute into the harness rather than at unit-test
+// speed. This test reads both sources, parses them, and asserts every
+// bundled record under `hooks.<event>` deep-equals at least one
+// fixture record under the same event. Failures point directly at
+// the file/key pair that diverged.
+//
+// Extra fixture entries (the user-authored siblings — `USER-HOOK`,
+// `USER-CODEX-HOOK`) are NOT asserted on; they're test scaffolding,
+// not part of the bundle contract. The relation we pin is
+// "bundle ⊆ fixture under the bundled keys", not equality.
+func TestE2EHookFixtureMirrorsBundle(t *testing.T) {
+	scriptRaw, err := os.ReadFile("scripts/e2e_test.sh")
+	if err != nil {
+		t.Fatalf("read e2e_test.sh: %v", err)
+	}
+	script := string(scriptRaw)
+
+	cases := []struct {
+		name        string
+		bundlePath  string
+		caseAnchor  string // `case_start "<title>"` line that precedes the un-merge heredoc
+		heredocAddr string // path var referenced after `cat > ... <<'EOF'`
+	}{
+		{
+			name:        "claude",
+			bundlePath:  "agents/claude/settings.json",
+			caseAnchor:  `case_start "skill remove --project un-merges bundled hook records"`,
+			heredocAddr: "${CLAUDE_SETTINGS_PATH}",
+		},
+		{
+			name:        "codex",
+			bundlePath:  "agents/codex/hooks.json",
+			caseAnchor:  `case_start "skill remove --project un-merges bundled hook records"`,
+			heredocAddr: "${CODEX_HOOKS_PATH}",
+		},
+		{
+			// Copilot's un-merge heredoc is in a dedicated case. The
+			// merge case earlier in the file uses a different heredoc
+			// for the same path, so the caseAnchor disambiguates.
+			name:        "copilot",
+			bundlePath:  "agents/copilot/stax.json",
+			caseAnchor:  `case_start "Copilot: skill remove --project un-merges bundled records"`,
+			heredocAddr: "${COPILOT_CONFIG_REL}/stax.json",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			assertBundleSubsetOfHeredoc(t, script, c.name, c.bundlePath, c.caseAnchor, c.heredocAddr)
+		})
+	}
+}
+
+// assertBundleSubsetOfHeredoc is the per-case body of
+// TestE2EHookFixtureMirrorsBundle. Reads the bundle, locates the
+// heredoc that follows `caseAnchor` for `heredocAddr` in `script`,
+// and asserts every bundled record under `hooks.<event>` appears in
+// the heredoc's same-key array. Lives outside the test function
+// because gocognit caps the test body at complexity 20 and the
+// triple-nested "for case → for event → for entry" walk easily
+// overflows that.
+func assertBundleSubsetOfHeredoc(t *testing.T, script, name, bundlePath, caseAnchor, heredocAddr string) {
+	t.Helper()
+	bundleHooks := readBundleHooksMap(t, bundlePath)
+	anchorIdx := strings.Index(script, caseAnchor)
+	if anchorIdx < 0 {
+		t.Fatalf("%s: case anchor %q not found in e2e_test.sh", name, caseAnchor)
+	}
+	fixture := extractHeredocAfter(t, script[anchorIdx:], heredocAddr)
+	var fixtureDoc map[string]any
+	if err := json.Unmarshal([]byte(fixture), &fixtureDoc); err != nil {
+		t.Fatalf("parse fixture heredoc for %s: %v\n%s", name, err, fixture)
+	}
+	fixtureHooks, _ := fixtureDoc[configHooksKey].(map[string]any)
+	if fixtureHooks == nil {
+		t.Fatalf("fixture for %s has no %q key", name, configHooksKey)
+	}
+	for event, bRaw := range bundleHooks {
+		assertOneEventSubset(t, name, bundlePath, event, bRaw, fixtureHooks[event])
+	}
+}
+
+// assertOneEventSubset checks that every entry in the bundle's
+// `hooks.<event>` array appears (by deep-equal) in the fixture's
+// same-event array. Split out so the outer test stays under the
+// gocognit cap and so the per-event failure message uniquely names
+// the bundle path + event + entry index.
+func assertOneEventSubset(t *testing.T, name, bundlePath, event string, bRaw, fRaw any) {
+	t.Helper()
+	bArr, ok := bRaw.([]any)
+	if !ok {
+		t.Fatalf("bundle %s.%s is not an array (got %T)", bundlePath, event, bRaw)
+	}
+	fArr, _ := fRaw.([]any)
+	if fArr == nil {
+		t.Errorf("%s: fixture missing event key %q (bundle ships %d entries under it)", name, event, len(bArr))
+		return
+	}
+	for i, bEntry := range bArr {
+		if !jsonContainsDeepEqual(fArr, bEntry) {
+			entryBytes, _ := json.MarshalIndent(bEntry, "", "  ")
+			t.Errorf("%s: bundle entry %s[%d] not present in fixture %s[]:\n%s",
+				name, event, i, event, entryBytes)
+		}
+	}
+}
+
+// readBundleHooksMap returns the value of the `hooks` top-level key of
+// a bundled JSON file as a map[event]any. Fatals when the file is
+// missing, malformed, or shaped wrong — those are setup bugs, not
+// runtime conditions worth handling.
+func readBundleHooksMap(t *testing.T, path string) map[string]any {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	hooks, ok := doc[configHooksKey].(map[string]any)
+	if !ok {
+		t.Fatalf("%s: top-level %q is not an object (got %T)", path, configHooksKey, doc[configHooksKey])
+	}
+	return hooks
+}
+
+// extractHeredocAfter scans script for the first `<<'EOF'`-terminated
+// heredoc whose `cat > "..."` opener ends with the given `addr`
+// suffix, and returns the body between the marker lines. The lookup
+// is suffix-anchored on the addr (not the bare-project prefix) so
+// each case can use its own per-case variable name (`$PROJ_UN`,
+// `$PROJ_CPR`, etc.) without breaking this extractor.
+//
+// Tied to the bash heredoc style used by the e2e — if a case
+// switches to `<<"EOF"` or `<<-EOF`, this extractor needs the matching
+// update, which is the intended drift signal.
+func extractHeredocAfter(t *testing.T, script, addr string) string {
+	t.Helper()
+	// Suffix-match on `<addr>" <<'EOF'` so the project-var prefix
+	// (`$PROJ_UN`, `$PROJ_CPR`, etc.) doesn't have to be enumerated
+	// here. The leading `cat > "` part is implied by the file format
+	// — every bundled un-merge case uses that exact opener.
+	suffix := addr + `" <<'EOF'`
+	idx := strings.Index(script, suffix)
+	if idx < 0 {
+		t.Fatalf("e2e_test.sh has no heredoc opener for %q", addr)
+	}
+	bodyStart := idx + len(suffix)
+	// Step past the newline that closes the header line.
+	if bodyStart < len(script) && script[bodyStart] == '\n' {
+		bodyStart++
+	}
+	rest := script[bodyStart:]
+	endRel := strings.Index(rest, "\nEOF\n")
+	if endRel < 0 {
+		t.Fatalf("e2e_test.sh heredoc for %q has no terminating EOF", addr)
+	}
+	return rest[:endRel+1] // +1 keeps the trailing newline before EOF
+}
+
 func TestValidateSkillsRemoveFlags(t *testing.T) {
 	cases := []struct {
 		name          string
