@@ -92,7 +92,7 @@ def test_omp_reminders_supersedes_todo(
   work_items = load_all_work_items(workspace)
   assert len(work_items) == 2, (
     f"expected exactly 2 work-item files, got {len(work_items)}: "
-    f"{[p.slug for p in work items]}"
+    f"{[p.slug for p in work_items]}"
   )
   todo_work_item, reminders_work_item = work_items  # numeric prefix asc
 

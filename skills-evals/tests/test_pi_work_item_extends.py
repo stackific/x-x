@@ -75,7 +75,7 @@ def test_pi_work_item_extends(workspace: Path, tmp_path: Path) -> None:
   work_items = load_all_work_items(workspace)
   assert len(work_items) == 2, (
     f"expected exactly 2 work-item files, got {len(work_items)}: "
-    f"{[p.slug for p in work items]}"
+    f"{[p.slug for p in work_items]}"
   )
   work_item_a, work_item_b = work_items  # sorted by filename = numeric prefix asc
 

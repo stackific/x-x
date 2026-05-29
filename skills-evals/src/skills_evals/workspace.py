@@ -65,7 +65,7 @@ def _is_excluded(rel: Path) -> bool:
   return any(part in EXCLUDED_DIRS for part in rel.parts)
 
 
-def collect_plan_files(workspace: Path) -> str:
+def collect_work_item_files(workspace: Path) -> str:
   """Concatenated text of every <prefix>-<slug>.md under .stax/.
 
   Underscore-prefixed registry files (_data_systems.yaml, _config.lock)
@@ -158,7 +158,7 @@ def _dump_file(p: Path, workspace: Path) -> str:
 
 
 @dataclass
-class ParsedPlan:
+class ParsedWorkItem:
   """A work-item file with its YAML frontmatter parsed.
 
   Tests assert on relationship fields (`status`, `supersedes`,
@@ -172,7 +172,7 @@ class ParsedPlan:
   body: str = ""
 
 
-def load_all_plans(workspace: Path) -> list[ParsedPlan]:
+def load_all_work_items(workspace: Path) -> list[ParsedWorkItem]:
   """Parse every <prefix>-<slug>.md under .stax/, sorted by filename.
 
   Underscore-prefixed registry files (_data_systems.yaml, _config.lock)
@@ -183,17 +183,17 @@ def load_all_plans(workspace: Path) -> list[ParsedPlan]:
   work_items_dir = workspace / ".stax"
   if not work_items_dir.is_dir():
     return []
-  out: list[ParsedPlan] = []
+  out: list[ParsedWorkItem] = []
   for p in sorted(work_items_dir.glob("*.md")):
     if p.name.startswith("_"):
       continue
-    parsed = _parse_plan(p)
+    parsed = _parse_work_item(p)
     if parsed is not None:
       out.append(parsed)
   return out
 
 
-def _parse_plan(p: Path) -> ParsedPlan | None:
+def _parse_work_item(p: Path) -> ParsedWorkItem | None:
   text = p.read_text(encoding="utf-8", errors="replace")
   if not text.startswith("---\n"):
     return None
@@ -209,4 +209,4 @@ def _parse_plan(p: Path) -> ParsedPlan | None:
     fm = {}
   if not isinstance(fm, dict):
     fm = {}
-  return ParsedPlan(path=p, slug=p.stem, frontmatter=fm, body=body)
+  return ParsedWorkItem(path=p, slug=p.stem, frontmatter=fm, body=body)
