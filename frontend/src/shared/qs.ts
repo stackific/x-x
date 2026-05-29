@@ -1,5 +1,5 @@
 // Query-string reader for the page-init dispatcher. Pages that key off
-// a URL parameter (`/scope?id=`, `/system?id=`, `/search?q=`) share this
+// a URL parameter (`/work-item?id=`, `/system?id=`, `/search?q=`) share this
 // one helper rather than each constructing their own URLSearchParams —
 // keeps the parameter-name convention discoverable and the empty-case
 // behavior uniform (missing key → fallback, never `null`/`undefined`).

@@ -1,21 +1,21 @@
-// Home page (`/`) — two summary cards + latest-scopes feed.
+// Home page (`/`) — two summary cards + latest-work-items feed.
 //
-// Layout: a Systems count card (link to /systems) and a Scopes count
-// card (link to /scopes), then a row-per-scope list of the most
+// Layout: a Systems count card (link to /systems) and a Work items count
+// card (link to /work-items), then a row-per-work-item list of the most
 // recent N work items, descending. Both cards show `0` if the project is
-// freshly initialized; the latest-scopes section shows the dedicated
+// freshly initialized; the latest-work-items section shows the dedicated
 // empty-state template.
 //
 // Why two parallel requests (Promise.allSettled, not Promise.all):
 //   - The counts and the latest list come from different endpoints.
 //     Firing them together cuts the page's wall-clock latency to
-//     `max(t_stats, t_scopes)` instead of the sequential sum.
+//     `max(t_stats, t_work-items)` instead of the sequential sum.
 //   - allSettled (not all) means one slow/failed endpoint doesn't
-//     blank the other: a 500 on /api/scopes still leaves the count
+//     blank the other: a 500 on /api/work-items still leaves the count
 //     cards filled in from /api/stats, and vice versa.
 //
 // The Go server treats both endpoints as 200-with-empty for a project
-// with no systems / scopes, so the empty-project path doesn't surface
+// with no systems / work items, so the empty-project path doesn't surface
 // here as an error.
 
 import { api } from "../shared/api";
@@ -26,12 +26,12 @@ import { applyStatusClass, paintFlagIcon } from "../shared/status";
 // Mirrors statsResponse in server.go. version isn't rendered today;
 // it's on the wire for the dual-purpose liveness probe and is left
 // available here for a future "running stax vN.M" footer.
-type Stats = { version: string; systems: number; scopes: number };
+type Stats = { version: string; systems: number; workItems: number };
 
-// Mirrors scopeListItem in server.go. The page renders a subset of
+// Mirrors workItemListItem in server.go. The page renders a subset of
 // these fields; keeping the type complete makes it self-documenting
 // when someone needs to add another field to a row.
-type Scope = {
+type WorkItem = {
   slug: string;
   title: string;
   status: string;
@@ -40,9 +40,9 @@ type Scope = {
   hasOpenTasks: boolean;
 };
 
-type ScopesResponse = { scopes: Scope[] };
+type WorkItemsResponse = { workItems: WorkItem[] };
 
-// Server returns ALL scopes (descending). We slice client-side so the
+// Server returns ALL work items (descending). We slice client-side so the
 // home page stays fast on big projects without adding a query
 // parameter the server has to honor.
 const LATEST_LIMIT = 10;
@@ -53,10 +53,10 @@ function renderError(host: HTMLElement, msg: string): void {
   host.replaceChildren(node);
 }
 
-// renderSystems builds the per-scope chip row of system links. Each
+// renderSystems builds the per-work-item chip row of system links. Each
 // chip carries an inner click-stopper because the parent <a class="row">
-// also targets a URL (/scope?id=<slug>) — without stopPropagation a
-// click on the chip would bubble to the row and open the scope
+// also targets a URL (/work-item?id=<slug>) — without stopPropagation a
+// click on the chip would bubble to the row and open the work item
 // instead of the system.
 function renderSystems(parent: HTMLElement, systems: string[]): void {
   for (const id of systems) {
@@ -70,23 +70,23 @@ function renderSystems(parent: HTMLElement, systems: string[]): void {
   }
 }
 
-// renderLatestScopes stamps up to LATEST_LIMIT rows from the supplied
+// renderLatestWorkItems stamps up to LATEST_LIMIT rows from the supplied
 // list. Status chip gets the lifecycle tint via applyStatusClass; the
 // flag icon's tint comes from paintFlagIcon — error-text on deprecated
 // rows, else primary-text when there's at least one open `- [ ]` task.
-// Same conventions as /scopes and /system — the cue carries across
+// Same conventions as /work-items and /system — the cue carries across
 // every list view so the user can scan for in-flight (and do-not-use)
 // work without remembering which page enforces which rule.
-function renderLatestScopes(host: HTMLElement, scopes: Scope[]): void {
-  if (!scopes.length) {
+function renderLatestWorkItems(host: HTMLElement, items: WorkItem[]): void {
+  if (!items.length) {
     host.replaceChildren(tpl("tpl-empty"));
     return;
   }
   const frag = document.createDocumentFragment();
-  for (const s of scopes.slice(0, LATEST_LIMIT)) {
-    const node = tpl("tpl-scope");
+  for (const s of items.slice(0, LATEST_LIMIT)) {
+    const node = tpl("tpl-work-item");
     const card = node.querySelector<HTMLAnchorElement>("a");
-    if (card) card.href = `/scope?id=${encodeURIComponent(s.slug)}`;
+    if (card) card.href = `/work-item?id=${encodeURIComponent(s.slug)}`;
     const icon = node.querySelector<HTMLElement>("i");
     if (icon) paintFlagIcon(icon, s.status, s.hasOpenTasks);
     $('[data-slot="title"]', node).textContent = s.title || s.slug;
@@ -102,12 +102,12 @@ function renderLatestScopes(host: HTMLElement, scopes: Scope[]): void {
 
 export async function home(): Promise<void> {
   const sysCount = $<HTMLHeadingElement>("#count-systems");
-  const scopeCount = $<HTMLHeadingElement>("#count-scopes");
-  const latestHost = $<HTMLDivElement>("#latest-scopes");
+  const workItemCount = $<HTMLHeadingElement>("#count-work-items");
+  const latestHost = $<HTMLDivElement>("#latest-work-items");
 
-  const [statsResult, scopesResult] = await Promise.allSettled([
+  const [statsResult, listResult] = await Promise.allSettled([
     api<Stats>("/api/stats"),
-    api<ScopesResponse>("/api/scopes"),
+    api<WorkItemsResponse>("/api/work-items"),
   ]);
 
   // Stats endpoint feeds the two count cards. On failure we still
@@ -115,18 +115,18 @@ export async function home(): Promise<void> {
   // list pages where the user can see (and diagnose) the real error.
   if (statsResult.status === "fulfilled") {
     sysCount.textContent = String(statsResult.value.systems);
-    scopeCount.textContent = String(statsResult.value.scopes);
+    workItemCount.textContent = String(statsResult.value.workItems);
   } else {
     sysCount.textContent = "0";
-    scopeCount.textContent = "0";
+    workItemCount.textContent = "0";
   }
 
-  // Latest-scopes failure becomes a visible error message in the
+  // Latest-work-items failure becomes a visible error message in the
   // dedicated section; the cards above are independent so the page
   // is partially useful even when this endpoint is down.
-  if (scopesResult.status === "fulfilled") {
-    renderLatestScopes(latestHost, scopesResult.value.scopes ?? []);
+  if (listResult.status === "fulfilled") {
+    renderLatestWorkItems(latestHost, listResult.value.workItems ?? []);
   } else {
-    renderError(latestHost, `Failed to load scopes: ${(scopesResult.reason as Error).message}`);
+    renderError(latestHost, `Failed to load work items: ${(listResult.reason as Error).message}`);
   }
 }

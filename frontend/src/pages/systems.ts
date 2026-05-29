@@ -1,13 +1,13 @@
 import { api } from "../shared/api";
 import { $, tpl } from "../shared/dom";
 
-// Mirrors the Go-side systemEntry in server.go. `scopes` is the live
+// Mirrors the Go-side systemEntry in server.go. `workItems` is the live
 // per-system work-item count surfaced by /api/systems so the list view can
-// render "N scope(s)" without an extra round-trip.
+// render "N work item(s)" without an extra round-trip.
 type System = {
   id: string;
   name: string;
-  scopes: number;
+  workItems: number;
   brief?: string;
 };
 
@@ -17,7 +17,7 @@ type SystemsResponse = { systems: System[] };
 // row. Singular vs plural keeps the wording natural across the "0",
 // "1", and "N" cases.
 function formatCount(n: number): string {
-  return `${n} ${n === 1 ? "scope" : "scopes"}`;
+  return `${n} ${n === 1 ? "work item" : "work items"}`;
 }
 
 export async function systems(): Promise<void> {
@@ -35,7 +35,7 @@ export async function systems(): Promise<void> {
       if (a && s.id) a.href = `/system?id=${encodeURIComponent(s.id)}`;
       $('[data-slot="name"]', node).textContent = s.name;
       $('[data-slot="brief"]', node).textContent = s.brief ?? "";
-      $('[data-slot="count"]', node).textContent = formatCount(s.scopes ?? 0);
+      $('[data-slot="count"]', node).textContent = formatCount(s.workItems ?? 0);
       frag.appendChild(node);
     }
     host.replaceChildren(frag);

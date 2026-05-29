@@ -2,10 +2,10 @@
 //
 // Renders the named system's display name as the page header, then a
 // row per work item whose frontmatter `systems:` array contains the id.
-// Each row links to /scope?id=<work-item-slug>; the flag icon gets a
+// Each row links to /work-item?id=<slug>; the flag icon gets a
 // `primary-text` tint when the work item has at least one open `- [ ]`
 // task so a skim of the page surfaces in-flight work without
-// requiring the reader to open every scope.
+// requiring the reader to open every work item.
 //
 // Data flow:
 //   /system?id=foo  →  GET /api/systems?id=foo  →  SystemDetail
@@ -22,11 +22,11 @@ import { qs as getQs } from "../shared/qs";
 import { applyRelativeTime } from "../shared/relative-time";
 import { applyStatusClass, paintFlagIcon } from "../shared/status";
 
-// Mirrors the Go-side planDetail in server.go. `hasOpenTasks` is the
-// server's pre-computed verdict on the work-item body — true when at least
-// one `- [ ]` task is unchecked. The body itself is not on the wire
-// here (that belongs to /api/scope?id=<slug>); the page only shows
-// row-level metadata.
+// Mirrors the Go-side systemWorkItem in server.go. `hasOpenTasks` is
+// the server's pre-computed verdict on the work-item body — true when
+// at least one `- [ ]` task is unchecked. The body itself is not on the
+// wire here (that belongs to /api/work-item?id=<slug>); the page only
+// shows row-level metadata.
 type WorkItem = {
   slug: string;
   title: string;
@@ -86,11 +86,11 @@ export async function system(): Promise<void> {
     for (const p of data.workItems) {
       const node = tpl("tpl-work-item");
       const a = node.querySelector<HTMLAnchorElement>("a");
-      if (a) a.href = `/scope?id=${encodeURIComponent(p.slug)}`;
+      if (a) a.href = `/work-item?id=${encodeURIComponent(p.slug)}`;
       // Tint the flag icon via paintFlagIcon — error-text for
       // deprecated work items (do-not-use), else primary-text when there's
-      // at least one open task. Same convention used on /scopes and
-      // the home page's Latest-scopes section so the cue carries
+      // at least one open task. Same convention used on /work-items and
+      // the home page's Latest work items section so the cue carries
       // across every list view.
       const icon = node.querySelector<HTMLElement>("i");
       if (icon) paintFlagIcon(icon, p.status, p.hasOpenTasks);

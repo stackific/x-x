@@ -83,29 +83,29 @@ func mustSubFS(parent embed.FS, dir string) fs.FS {
 
 // systemEntry is the JSON shape for one row in the /api/systems
 // response. id / name come straight from _data_systems.yaml's entries
-// (parseRegistry's byID map carries the same pairs). scopes is the
+// (parseRegistry's byID map carries the same pairs). workItems is the
 // number of work items in the project that declare this system in their
 // frontmatter `systems:` array — surfaced in the list view so each
 // card can show "N scope(s)" without a per-row /api/systems?id=
 // round-trip.
 type systemEntry struct {
-	ID     string `json:"id"`
-	Name   string `json:"name"`
-	Brief  string `json:"brief"`
-	Scopes int    `json:"scopes"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Brief     string `json:"brief"`
+	WorkItems int    `json:"workItems"`
 }
 
 // statsResponse is the JSON shape for /api/stats: a liveness probe
 // plus the two counts the UI's home page needs. version is pinned to
 // the linker-injected Version so a UI knows which binary it's hitting
 // without having to invoke `stax --version` separately. systems and
-// scopes are the totals served by /api/systems and /api/scopes
+// workItems are the totals served by /api/systems and /api/work-items
 // respectively — keeping them here means the home page can render
-// "0 systems / 0 scopes" or the live counts with a single round-trip.
+// "0 systems / 0 workItems" or the live counts with a single round-trip.
 type statsResponse struct {
-	Version string `json:"version"`
-	Systems int    `json:"systems"`
-	Scopes  int    `json:"scopes"`
+	Version   string `json:"version"`
+	Systems   int    `json:"systems"`
+	WorkItems int    `json:"workItems"`
 }
 
 // systemsResponse wraps the array in an object so the response can grow
@@ -116,12 +116,12 @@ type systemsResponse struct {
 	Systems []systemEntry `json:"systems"`
 }
 
-// workItemDetail is one matching work item in the /api/systems?id=<slug> response:
+// systemWorkItem is one matching work item in the /api/systems?id=<slug> response:
 // just the frontmatter fields the UI needs to render the row (title,
 // status badge, created date for relative-time formatting). The work item
-// body is intentionally not included — /api/scope?id=<slug> serves the
+// body is intentionally not included — /api/work-item?id=<slug> serves the
 // full markdown body for any work item a user actually opens.
-type workItemDetail struct {
+type systemWorkItem struct {
 	Slug         string `json:"slug"`
 	Title        string `json:"title"`
 	Status       string `json:"status"`
@@ -136,7 +136,7 @@ type workItemDetail struct {
 type systemDetailResponse struct {
 	ID        string           `json:"id"`
 	Name      string           `json:"name"`
-	WorkItems []workItemDetail `json:"workItems"`
+	WorkItems []systemWorkItem `json:"workItems"`
 }
 
 // apiErrorResponse is the body emitted for non-2xx JSON responses. Kept
@@ -145,16 +145,16 @@ type apiErrorResponse struct {
 	Error string `json:"error"`
 }
 
-// scopeListItem is one row in the /api/scopes response. Carries the
-// fields the /scopes list view needs to render each card: slug
-// (deep-link target for /scope?id=...), title, status (rendered as a
+// workItemListItem is one row in the /api/work-items response. Carries the
+// fields the /work-items list view needs to render each card: slug
+// (deep-link target for /work-item?id=...), title, status (rendered as a
 // chip), created (ISO 8601 UTC string the UI formats client-side), and
 // the kebab-case ids of every system the work item declares (each rendered
 // as a link to /system?id=...). The full markdown body is intentionally
-// NOT surfaced — that's the /api/scope?id=<slug> detail endpoint's
+// NOT surfaced — that's the /api/work-item?id=<slug> detail endpoint's
 // responsibility, and embedding it in every list row would inflate the
 // payload before the user opens any one work item.
-type scopeListItem struct {
+type workItemListItem struct {
 	Slug         string   `json:"slug"`
 	Title        string   `json:"title"`
 	Status       string   `json:"status"`
@@ -163,27 +163,27 @@ type scopeListItem struct {
 	HasOpenTasks bool     `json:"hasOpenTasks"`
 }
 
-// scopesListResponse wraps the array in an object so the response can
+// workItemsListResponse wraps the array in an object so the response can
 // grow (pagination, schema metadata) without becoming a breaking change
 // to clients that already deserialize the body as a JSON object. Same
 // shape rationale as systemsResponse.
-type scopesListResponse struct {
-	Scopes []scopeListItem `json:"scopes"`
+type workItemsListResponse struct {
+	WorkItems []workItemListItem `json:"workItems"`
 }
 
-// scopeRelation is one row in the supersedes / supersededBy arrays on
-// the scopeDetail response. We surface both the slug (so the UI can
-// build a /scope?id=<slug> deep-link) AND the linked work item's title so
+// workItemRelation is one row in the supersedes / supersededBy arrays on
+// the workItemDetail response. We surface both the slug (so the UI can
+// build a /work-item?id=<slug> deep-link) AND the linked work item's title so
 // the rendered chip shows human text instead of a kebab filename.
 // title is read from the predecessor / successor work item's frontmatter
 // when readWorkItemRelations enriches the slug list — empty when the
 // linked file is missing or has no parseable title.
-type scopeRelation struct {
+type workItemRelation struct {
 	Slug  string `json:"slug"`
 	Title string `json:"title"`
 }
 
-// scopeDetail is the /api/scope?id=<slug> body: every frontmatter field
+// workItemDetail is the /api/work-item?id=<slug> body: every frontmatter field
 // the detail view needs plus the markdown body pre-rendered to HTML
 // server-side (so the browser doesn't need its own markdown library).
 // systems carries the kebab-case ids exactly as parsed from
@@ -192,16 +192,16 @@ type scopeRelation struct {
 // frontmatter relationship arrays as {slug, title} pairs — each
 // linked work item's title is read from its own frontmatter so the UI can
 // render human-readable chips instead of bare slugs.
-type scopeDetail struct {
-	Slug         string          `json:"slug"`
-	Title        string          `json:"title"`
-	Status       string          `json:"status"`
-	Created      string          `json:"created"`
-	Systems      []string        `json:"systems"`
-	Supersedes   []scopeRelation `json:"supersedes"`
-	SupersededBy []scopeRelation `json:"supersededBy"`
-	HasOpenTasks bool            `json:"hasOpenTasks"`
-	HTML         string          `json:"html"`
+type workItemDetail struct {
+	Slug         string             `json:"slug"`
+	Title        string             `json:"title"`
+	Status       string             `json:"status"`
+	Created      string             `json:"created"`
+	Systems      []string           `json:"systems"`
+	Supersedes   []workItemRelation `json:"supersedes"`
+	SupersededBy []workItemRelation `json:"supersededBy"`
+	HasOpenTasks bool               `json:"hasOpenTasks"`
+	HTML         string             `json:"html"`
 }
 
 // forceH6Headings is a goldmark AST transformer that pins every
@@ -264,8 +264,8 @@ func newServerMux() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc(apiStatsPath, handleAPIStats)
 	mux.HandleFunc(apiSystemsPath, handleAPISystems)
-	mux.HandleFunc(apiScopesPath, handleAPIScopes)
-	mux.HandleFunc(apiScopePath, handleAPIScope)
+	mux.HandleFunc(apiWorkItemsPath, handleAPIWorkItems)
+	mux.HandleFunc(apiWorkItemPath, handleAPIWorkItem)
 	mux.HandleFunc(apiSearchPath, handleAPISearch)
 	mux.HandleFunc("/", handleFrontend)
 	return mux
@@ -345,12 +345,12 @@ func handleFrontend(w http.ResponseWriter, r *http.Request) {
 // two summary cards. Missing files / not-a-project cwds surface as
 // zero counts so the home page renders "0 systems" rather than an
 // error — matches the no-error contract of /api/systems and
-// /api/scopes individually.
+// /api/work-items individually.
 func handleAPIStats(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, statsResponse{
-		Version: Version,
-		Systems: len(readSystemsForAPI(staxDir)),
-		Scopes:  len(readScopesForAPI(staxDir)),
+		Version:   Version,
+		Systems:   len(readSystemsForAPI(staxDir)),
+		WorkItems: len(readWorkItemsForAPI(staxDir)),
 	})
 }
 
@@ -396,7 +396,7 @@ func handleAPISystems(w http.ResponseWriter, r *http.Request) {
 //
 // Work-item order is by frontmatter `created` descending — newest work items
 // first. Sorting by `created:` (not by filename slug) matches the
-// same expectation /api/scopes serves and decouples the displayed
+// same expectation /api/work-items serves and decouples the displayed
 // order from prefix-vs-date drift on backdated edits or hand-
 // renumbered files. Ties on `created:` fall back to slug descending
 // so the higher-prefix wins, matching the old filename-sort behavior
@@ -409,9 +409,9 @@ func readSystemDetail(staxDir, id string) (systemDetailResponse, bool) {
 	}
 
 	files, _ := filepath.Glob(filepath.Join(staxDir, "*"+workItemFileExt))
-	workItems := make([]workItemDetail, 0, len(files))
+	workItems := make([]systemWorkItem, 0, len(files))
 	for _, f := range files {
-		detail, ok := readWorkItemForAPI(f, id)
+		detail, ok := readSystemWorkItemForAPI(f, id)
 		if !ok {
 			continue
 		}
@@ -426,18 +426,18 @@ func readSystemDetail(staxDir, id string) (systemDetailResponse, bool) {
 	return systemDetailResponse{ID: id, Name: name, WorkItems: workItems}, true
 }
 
-// readWorkItemForAPI reads one work-item file and, if its frontmatter declares
-// the supplied id in its `systems:` array, returns the workItemDetail row.
+// readSystemWorkItemForAPI reads one work-item file and, if its frontmatter declares
+// the supplied id in its `systems:` array, returns the systemWorkItem row.
 // Returns (_, false) for files that fail to parse or lack the id —
 // individual bad work items never abort the whole /api/systems?id=... call.
-func readWorkItemForAPI(planPath, id string) (workItemDetail, bool) {
+func readSystemWorkItemForAPI(planPath, id string) (systemWorkItem, bool) {
 	row, ok := parseWorkItem(planPath, io.Discard)
 	if !ok || !slices.Contains(row.systems, id) {
-		return workItemDetail{}, false
+		return systemWorkItem{}, false
 	}
 	title, created := readWorkItemTitleAndCreated(planPath)
 	body, _ := readWorkItemBody(planPath)
-	return workItemDetail{
+	return systemWorkItem{
 		Slug:         row.slug,
 		Title:        title,
 		Status:       row.status,
@@ -479,8 +479,8 @@ func readWorkItemTitleAndCreated(planPath string) (title, created string) {
 	return title, created
 }
 
-// handleAPIScopes serves /api/scopes — the list view that backs the
-// /scopes web page. Returns one row per work-item file in cwd's .stax/
+// handleAPIWorkItems serves /api/work-items — the list view that backs the
+// /work-items web page. Returns one row per work-item file in cwd's .stax/
 // directory, carrying the slug (deep-link target), the title, and the
 // kebab-case ids of every system the work item declares (rendered by the
 // UI as links into /system?id=<id>). Missing .stax/ or a cwd that is
@@ -492,24 +492,24 @@ func readWorkItemTitleAndCreated(planPath string) (title, created string) {
 // io.Discard here so a broken work item never aborts the whole list. The
 // `stax work-items lint` subcommand is the user-facing way to surface those
 // per-file findings.
-func handleAPIScopes(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, scopesListResponse{
-		Scopes: readScopesForAPI(staxDir),
+func handleAPIWorkItems(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, workItemsListResponse{
+		WorkItems: readWorkItemsForAPI(staxDir),
 	})
 }
 
-// handleAPIScope serves /api/scope?id=<slug> — the detail view that
-// backs the /scope?id=<slug> web page. Returns the full work-item body
+// handleAPIWorkItem serves /api/work-item?id=<slug> — the detail view that
+// backs the /work-item?id=<slug> web page. Returns the full work-item body
 // pre-rendered to HTML plus every frontmatter field the detail UI
 // needs. Missing or unparseable work-item files produce a 404 with a
 // `{error}` body so the UI can show a not-found state.
-func handleAPIScope(w http.ResponseWriter, r *http.Request) {
+func handleAPIWorkItem(w http.ResponseWriter, r *http.Request) {
 	id := r.URL.Query().Get("id")
 	if id == "" {
 		writeJSON(w, http.StatusBadRequest, apiErrorResponse{Error: "missing required query parameter: id"})
 		return
 	}
-	detail, ok := readScopeDetail(staxDir, id)
+	detail, ok := readWorkItemDetail(staxDir, id)
 	if !ok {
 		writeJSON(w, http.StatusNotFound, apiErrorResponse{Error: "scope not found"})
 		return
@@ -517,7 +517,7 @@ func handleAPIScope(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, detail)
 }
 
-// readScopesForAPI is the testable body of handleAPIScopes: walks
+// readWorkItemsForAPI is the testable body of handleAPIWorkItems: walks
 // staxDir for work-item files and returns one row per parseable work item,
 // sorted by frontmatter `created` timestamp descending — newest first.
 // Sorting by `created:` (not by filename slug) is what the UI's "latest"
@@ -529,9 +529,9 @@ func handleAPIScope(w http.ResponseWriter, r *http.Request) {
 // old filename-sort behavior in the common monotonic case. Missing
 // staxDir returns an empty slice so the UI's empty state surfaces
 // naturally.
-func readScopesForAPI(staxDir string) []scopeListItem {
+func readWorkItemsForAPI(staxDir string) []workItemListItem {
 	files, _ := filepath.Glob(filepath.Join(staxDir, "*"+workItemFileExt))
-	out := make([]scopeListItem, 0, len(files))
+	out := make([]workItemListItem, 0, len(files))
 	for _, f := range files {
 		row, ok := parseWorkItem(f, io.Discard)
 		if !ok {
@@ -539,7 +539,7 @@ func readScopesForAPI(staxDir string) []scopeListItem {
 		}
 		title, created := readWorkItemTitleAndCreated(f)
 		body, _ := readWorkItemBody(f)
-		out = append(out, scopeListItem{
+		out = append(out, workItemListItem{
 			Slug:         row.slug,
 			Title:        title,
 			Status:       row.status,
@@ -558,29 +558,29 @@ func readScopesForAPI(staxDir string) []scopeListItem {
 }
 
 // searchResponse is the body of /api/search?q=<query>. Two sections:
-// scopes first (the work being planned), systems second (the buckets
+// workItems first (the work being planned), systems second (the buckets
 // that work falls into). Both lists are filtered subsets of the
-// existing /api/scopes and /api/systems shapes so the UI can reuse the
+// existing /api/work-items and /api/systems shapes so the UI can reuse the
 // row templates verbatim. The query is echoed back so a UI that
 // renders against a debounced fetch can confirm the response matches
 // what's currently in the input box.
 type searchResponse struct {
-	Query   string          `json:"query"`
-	Scopes  []scopeListItem `json:"scopes"`
-	Systems []systemEntry   `json:"systems"`
+	Query     string             `json:"query"`
+	WorkItems []workItemListItem `json:"workItems"`
+	Systems   []systemEntry      `json:"systems"`
 }
 
 // handleAPISearch serves /api/search?q=<query>. Returns matching
-// scopes + systems in two arrays. Empty query → both arrays empty
+// workItems + systems in two arrays. Empty query → both arrays empty
 // (200), letting the frontend's hint UI handle the "type to search"
 // state. Whitespace-only queries are treated as empty. Case-
-// insensitive substring match: scopes are searched across slug,
+// insensitive substring match: workItems are searched across slug,
 // title, status, declared system ids, AND the markdown body; systems
 // are searched across id and display name.
 func handleAPISearch(w http.ResponseWriter, r *http.Request) {
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	if q == "" {
-		writeJSON(w, http.StatusOK, searchResponse{Query: "", Scopes: []scopeListItem{}, Systems: []systemEntry{}})
+		writeJSON(w, http.StatusOK, searchResponse{Query: "", WorkItems: []workItemListItem{}, Systems: []systemEntry{}})
 		return
 	}
 	writeJSON(w, http.StatusOK, runSearch(staxDir, q))
@@ -589,7 +589,7 @@ func handleAPISearch(w http.ResponseWriter, r *http.Request) {
 // runSearch is the testable body of handleAPISearch. Walks scope and
 // system data from staxDir, filters by case-insensitive substring,
 // and returns a populated searchResponse. Always returns non-nil
-// slices for both Scopes and Systems so the JSON encodes as `[]`
+// slices for both WorkItems and Systems so the JSON encodes as `[]`
 // rather than `null` on no matches (UI can `.length` either case).
 //
 // Match rules:
@@ -598,19 +598,19 @@ func handleAPISearch(w http.ResponseWriter, r *http.Request) {
 //   - system matches when needle appears in id or display name
 //     (case-insensitive)
 //
-// Scope order matches /api/scopes (newest first); system order
+// Scope order matches /api/work-items (newest first); system order
 // matches /api/systems (id-sorted).
 func runSearch(staxDir, query string) searchResponse {
 	needle := strings.ToLower(query)
 	out := searchResponse{
-		Query:   query,
-		Scopes:  []scopeListItem{},
-		Systems: []systemEntry{},
+		Query:     query,
+		WorkItems: []workItemListItem{},
+		Systems:   []systemEntry{},
 	}
-	scopes := readScopesForAPI(staxDir)
-	for i := range scopes {
-		if scopeMatchesQuery(staxDir, &scopes[i], needle) {
-			out.Scopes = append(out.Scopes, scopes[i])
+	workItems := readWorkItemsForAPI(staxDir)
+	for i := range workItems {
+		if scopeMatchesQuery(staxDir, &workItems[i], needle) {
+			out.WorkItems = append(out.WorkItems, workItems[i])
 		}
 	}
 	for _, sys := range readSystemsForAPI(staxDir) {
@@ -625,9 +625,9 @@ func runSearch(staxDir, query string) searchResponse {
 // needle. Checks the cheap frontmatter fields first and only reads the
 // work-item body when none of them hit — body reads are the most expensive
 // step in the search loop, so deferring them keeps queries that hit on
-// title or system id fast. Pointer receiver because scopeListItem hit
+// title or system id fast. Pointer receiver because workItemListItem hit
 // gocritic's hugeParam threshold (96 bytes).
-func scopeMatchesQuery(staxDir string, s *scopeListItem, needle string) bool {
+func scopeMatchesQuery(staxDir string, s *workItemListItem, needle string) bool {
 	if strings.Contains(strings.ToLower(s.Slug), needle) ||
 		strings.Contains(strings.ToLower(s.Title), needle) ||
 		strings.Contains(strings.ToLower(s.Status), needle) {
@@ -656,34 +656,34 @@ func systemMatchesQuery(sys systemEntry, needle string) bool {
 		strings.Contains(strings.ToLower(sys.Brief), needle)
 }
 
-// readScopeDetail is the testable body of handleAPIScope: reads one
+// readWorkItemDetail is the testable body of handleAPIWorkItem: reads one
 // work-item file by slug, returns the populated detail plus a found bool.
 // false means the file doesn't exist, doesn't parse, or its body
 // can't be rendered — callers translate that into a 404.
-func readScopeDetail(staxDir, slug string) (scopeDetail, bool) {
+func readWorkItemDetail(staxDir, slug string) (workItemDetail, bool) {
 	// Validate slug strictly before composing the on-disk path so user
 	// input (the `?id=<slug>` query parameter) can never reach
 	// os.ReadFile with shell metacharacters or `..` segments. A failed
 	// match returns the same not-found shape an unknown slug would.
 	if !workItemSlugRe.MatchString(slug) {
-		return scopeDetail{}, false
+		return workItemDetail{}, false
 	}
 	planPath := filepath.Join(staxDir, slug+workItemFileExt)
 	row, ok := parseWorkItem(planPath, io.Discard)
 	if !ok {
-		return scopeDetail{}, false
+		return workItemDetail{}, false
 	}
 	body, ok := readWorkItemBody(planPath)
 	if !ok {
-		return scopeDetail{}, false
+		return workItemDetail{}, false
 	}
 	title, created := readWorkItemTitleAndCreated(planPath)
 	supersedes, supersededBy := readWorkItemRelations(staxDir, planPath)
 	var buf bytes.Buffer
 	if err := markdownRenderer.Convert([]byte(body), &buf); err != nil {
-		return scopeDetail{}, false
+		return workItemDetail{}, false
 	}
-	return scopeDetail{
+	return workItemDetail{
 		Slug:         row.slug,
 		Title:        title,
 		Status:       row.status,
@@ -704,7 +704,7 @@ func readScopeDetail(staxDir, slug string) (scopeDetail, bool) {
 // Per-entry title-lookup failures degrade gracefully: an unreadable
 // linked work item falls back to slug-as-title so the chip still has
 // something to render.
-func readWorkItemRelations(staxDir, planPath string) (supersedes, supersededBy []scopeRelation) {
+func readWorkItemRelations(staxDir, planPath string) (supersedes, supersededBy []workItemRelation) {
 	if !isSafeWorkItemPath(planPath) {
 		return nil, nil
 	}
@@ -736,11 +736,11 @@ func readWorkItemRelations(staxDir, planPath string) (supersedes, supersededBy [
 // can't push a tainted path through to the linked-work-item reader.
 // Linked work items whose file is missing or whose title is empty fall
 // back to slug-as-title — the UI still gets a renderable chip.
-func enrichRelationSlugs(staxDir string, slugs []string) []scopeRelation {
+func enrichRelationSlugs(staxDir string, slugs []string) []workItemRelation {
 	if len(slugs) == 0 {
 		return nil
 	}
-	out := make([]scopeRelation, 0, len(slugs))
+	out := make([]workItemRelation, 0, len(slugs))
 	for _, slug := range slugs {
 		if !workItemSlugRe.MatchString(slug) {
 			continue
@@ -749,14 +749,14 @@ func enrichRelationSlugs(staxDir string, slugs []string) []scopeRelation {
 		if title == "" {
 			title = slug
 		}
-		out = append(out, scopeRelation{Slug: slug, Title: title})
+		out = append(out, workItemRelation{Slug: slug, Title: title})
 	}
 	return out
 }
 
 // readSystemsForAPI is the testable body of handleAPISystems: takes
 // the project's stax directory, returns a deterministically-sorted
-// slice of systemEntry. Each row carries the parsed `Scopes` count —
+// slice of systemEntry. Each row carries the parsed `WorkItems` count —
 // the number of work items in the same directory that declare this system
 // in their frontmatter `systems:` array. Missing or unparseable
 // registry files surface as an empty slice, matching the "200 with
@@ -768,7 +768,7 @@ func readSystemsForAPI(staxDir string) []systemEntry {
 	counts := countScopesPerSystem(staxDir)
 	out := make([]systemEntry, 0, len(reg.byID))
 	for id, name := range reg.byID {
-		out = append(out, systemEntry{ID: id, Name: name, Brief: reg.byBrief[id], Scopes: counts[id]})
+		out = append(out, systemEntry{ID: id, Name: name, Brief: reg.byBrief[id], WorkItems: counts[id]})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out

@@ -147,7 +147,7 @@ func runDefault(args []string) {
 	}
 
 	// Bare `stax` only makes sense inside an initialized project — the
-	// web UI's /api/systems, /api/scopes, and /api/scope endpoints all
+	// web UI's /api/systems, /api/work-items, and /api/work-item endpoints all
 	// read from cwd's .stax/ tree, and there is nothing useful to show
 	// when that tree doesn't exist. Surface the same `stax init` hint
 	// the work-item-tooling subcommands print, then exit 2 (usage error)

@@ -3,10 +3,10 @@ import { $, tpl } from "../shared/dom";
 import { qs as getQs } from "../shared/qs";
 
 // Mirror the Go-side searchResponse in server.go. Two grouped lists
-// driven from the same handler that powers /scopes and /systems —
+// driven from the same handler that powers /work-items and /systems —
 // the same row shapes apply, so we reuse the templates for visual
 // continuity with the dedicated list pages.
-type Scope = {
+type WorkItem = {
   slug: string;
   title: string;
   status: string;
@@ -19,16 +19,16 @@ type System = {
   id: string;
   name: string;
   brief?: string;
-  scopes: number;
+  workItems: number;
 };
 
 type SearchResponse = {
   query: string;
-  scopes: Scope[];
+  workItems: WorkItem[];
   systems: System[];
 };
 
-// formatDate / formatCount mirror /scopes and /systems so a row in
+// formatDate / formatCount mirror /work-items and /systems so a row in
 // search results looks identical to one on the dedicated list page.
 function formatDate(iso: string): string {
   if (!iso) return "";
@@ -41,18 +41,18 @@ function formatDate(iso: string): string {
   });
 }
 
-function formatScopeCount(n: number): string {
-  return `${n} ${n === 1 ? "scope" : "scopes"}`;
+function formatWorkItemCount(n: number): string {
+  return `${n} ${n === 1 ? "work item" : "work items"}`;
 }
 
-// renderScopeRow stamps a single scope card. Identical body to the
-// /scopes page renderer — kept inline (rather than imported from
-// scopes.ts) because scopes.ts is its own entry chunk and importing
+// renderWorkItemRow stamps a single work-item card. Identical body to the
+// /work-items page renderer — kept inline (rather than imported from
+// work-items.ts) because work-items.ts is its own entry chunk and importing
 // across pages would balloon the search bundle.
-function renderScopeRow(s: Scope): DocumentFragment {
-  const node = tpl("tpl-scope");
+function renderWorkItemRow(s: WorkItem): DocumentFragment {
+  const node = tpl("tpl-work-item");
   const card = node.querySelector<HTMLAnchorElement>("a");
-  if (card) card.href = `/scope?id=${encodeURIComponent(s.slug)}`;
+  if (card) card.href = `/work-item?id=${encodeURIComponent(s.slug)}`;
   if (s.hasOpenTasks) {
     const icon = node.querySelector<HTMLElement>("i");
     if (icon) icon.classList.add("primary-text");
@@ -84,7 +84,7 @@ function renderSystemRow(sys: System): DocumentFragment {
   if (a && sys.id) a.href = `/system?id=${encodeURIComponent(sys.id)}`;
   $('[data-slot="name"]', node).textContent = sys.name;
   $('[data-slot="brief"]', node).textContent = sys.brief ?? "";
-  $('[data-slot="count"]', node).textContent = formatScopeCount(sys.scopes ?? 0);
+  $('[data-slot="count"]', node).textContent = formatWorkItemCount(sys.workItems ?? 0);
   return node;
 }
 
@@ -111,7 +111,7 @@ function hideHint(hintEl: HTMLElement): void {
 }
 
 function setSectionsVisible(visible: boolean): void {
-  $<HTMLDivElement>("#search-scopes-section").hidden = !visible;
+  $<HTMLDivElement>("#search-work-items-section").hidden = !visible;
   $<HTMLDivElement>("#search-systems-section").hidden = !visible;
 }
 
@@ -119,8 +119,8 @@ export function search(): void {
   const input = $<HTMLInputElement>("#search-input");
   const hint = $<HTMLParagraphElement>("#search-hint");
   const emptyAll = $<HTMLParagraphElement>("#search-empty-all");
-  const scopesHost = $<HTMLDivElement>("#search-scopes");
-  const scopesEmpty = $<HTMLParagraphElement>("#search-scopes-empty");
+  const workItemsHost = $<HTMLDivElement>("#search-work-items");
+  const workItemsEmpty = $<HTMLParagraphElement>("#search-work-items-empty");
   const systemsHost = $<HTMLDivElement>("#search-systems");
   const systemsEmpty = $<HTMLParagraphElement>("#search-systems-empty");
 
@@ -144,7 +144,7 @@ export function search(): void {
       showHint(hint);
       emptyAll.hidden = true;
       setSectionsVisible(false);
-      scopesHost.replaceChildren();
+      workItemsHost.replaceChildren();
       systemsHost.replaceChildren();
       return;
     }
@@ -154,17 +154,17 @@ export function search(): void {
       const data = await api<SearchResponse>(`/api/search?q=${encodeURIComponent(q)}`);
       // Drop stale responses — only the most recent keystroke wins.
       if (token !== inflight) return;
-      const scopeRows = (data.scopes ?? []).map(renderScopeRow);
+      const workItemRows = (data.workItems ?? []).map(renderWorkItemRow);
       const systemRows = (data.systems ?? []).map(renderSystemRow);
       setSectionsVisible(true);
-      renderSection(scopesHost, scopesEmpty, scopeRows);
+      renderSection(workItemsHost, workItemsEmpty, workItemRows);
       renderSection(systemsHost, systemsEmpty, systemRows);
-      emptyAll.hidden = scopeRows.length > 0 || systemRows.length > 0;
+      emptyAll.hidden = workItemRows.length > 0 || systemRows.length > 0;
     } catch (err) {
       if (token !== inflight) return;
       const msg = err instanceof Error ? err.message : String(err);
       setSectionsVisible(false);
-      scopesHost.replaceChildren();
+      workItemsHost.replaceChildren();
       systemsHost.replaceChildren();
       emptyAll.hidden = true;
       const node = tpl("tpl-error");

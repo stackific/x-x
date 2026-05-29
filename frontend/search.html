@@ -1,4 +1,4 @@
-{{#> layout title="Search" page="search" active="search" description="Stax — search across scopes and systems."}}
+{{#> layout title="Search" page="search" active="search" description="Stax — search across work items and systems."}}
   <section class="container py-l">
     <h4 class="mb-m">Search</h4>
     <div class="field label prefix border round mb-l">
@@ -8,13 +8,13 @@
     </div>
 
     <p id="search-hint" class="center-align padding small-text">
-      Type to search across scopes and systems.
+      Type to search across work items and systems.
     </p>
 
-    <section id="search-scopes-section" class="mb-l" hidden>
-      <h6 class="small mb-s">Scopes</h6>
-      <div id="search-scopes" aria-live="polite"></div>
-      <p id="search-scopes-empty" class="small-text" hidden>No matching scopes.</p>
+    <section id="search-work-items-section" class="mb-l" hidden>
+      <h6 class="small mb-s">Work items</h6>
+      <div id="search-work-items" aria-live="polite"></div>
+      <p id="search-work-items-empty" class="small-text" hidden>No matching work items.</p>
     </section>
 
     <section id="search-systems-section" class="mb-l" hidden>
@@ -28,7 +28,7 @@
     </p>
   </section>
 
-  <template id="tpl-scope">
+  <template id="tpl-work-item">
     <a class="row padding round surface-variant wave no-elevate mb-s middle-align">
       <i class="large" aria-hidden="true">flag</i>
       <h6 class="small no-margin max ml-s" data-slot="title"></h6>
