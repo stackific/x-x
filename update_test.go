@@ -135,3 +135,38 @@ func TestMaybeNotifyUpdate_SkipsWhenRecent(t *testing.T) {
 			out.LastChecked, in.LastChecked)
 	}
 }
+
+// TestMaybeNotifyUpdate_NoTelemetry pins the disabled-telemetry contract
+// for `maybeNotifyUpdate`. Both `update_check` and `update_apply` are
+// commented out (only install / uninstall / lint events stay wired), so
+// neither the throttle-skip path nor the post-throttle refresh path
+// must fire telemetry. Exercises both paths in one test by seeding an
+// expired config — maybeNotifyUpdate will attempt the GitHub round-trip
+// (which may succeed or fail depending on CI network state), and either
+// way no probe hits should land.
+func TestMaybeNotifyUpdate_NoTelemetry(t *testing.T) {
+	probe := newTelemetryProbe(t)
+	pointTelemetryAt(t, probe.server.URL)
+
+	home := pinHome(t)
+	if err := os.MkdirAll(filepath.Join(home, staxDir), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	p, _ := configPath()
+	// LastChecked far in the past forces the post-throttle path so the
+	// disabled `update_apply` + `update_check` blocks are exercised.
+	in := updateConfig{Version: "v0.0.0", LastChecked: time.Now().Add(-48 * time.Hour).Unix()}
+	if err := saveUpdateConfig(p, in); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+
+	maybeNotifyUpdate()
+	flushTelemetry()
+
+	probe.mu.Lock()
+	defer probe.mu.Unlock()
+	if len(probe.hits) != 0 {
+		t.Fatalf("maybeNotifyUpdate must not fire telemetry, got %d hits: %+v",
+			len(probe.hits), probe.hits)
+	}
+}

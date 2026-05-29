@@ -2049,6 +2049,32 @@ func TestWorkItemNextPrefix_StrayArg(t *testing.T) {
 	}
 }
 
+// TestWorkItemNextPrefix_NoTelemetry pins the disabled-telemetry contract
+// for `work-items next-prefix`. After the docs/internal/telemetry.md
+// trim to install / uninstall / lint, the success path must NOT fire any
+// telemetry event. A regression that re-wires `plans_next_prefix` would
+// break this test.
+func TestWorkItemNextPrefix_NoTelemetry(t *testing.T) {
+	probe := newTelemetryProbe(t)
+	pointTelemetryAt(t, probe.server.URL)
+
+	dir := freshProjectAndChdir(t)
+	staxRoot := filepath.Join(dir, staxDir)
+	seedListWorkItem(t, staxRoot, "0001-a.md", "valid", "auth", "x")
+	var out, errb bytes.Buffer
+	if rc := workItemNextPrefix(nil, staxDir, &out, &errb); rc != 0 {
+		t.Fatalf("rc=%d stderr=%q", rc, errb.String())
+	}
+	flushTelemetry()
+
+	probe.mu.Lock()
+	defer probe.mu.Unlock()
+	if len(probe.hits) != 0 {
+		t.Fatalf("work-items next-prefix must not fire telemetry, got %d hits: %+v",
+			len(probe.hits), probe.hits)
+	}
+}
+
 func TestWorkItemNextPrefix_RespectsPrefixWidth(t *testing.T) {
 	dir := freshProjectAndChdir(t)
 	// Overwrite the seed-empty lock with a width=6 pin.
