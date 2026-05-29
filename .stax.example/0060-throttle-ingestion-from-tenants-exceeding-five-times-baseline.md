@@ -2,7 +2,7 @@
 title: Throttle ingestion from tenants exceeding five times baseline
 status: valid
 systems: [ingest-pipeline]
-created: 2025-12-24T23:46:43Z
+created: 2026-01-09T03:40:00Z
 ---
 
 ## Goal

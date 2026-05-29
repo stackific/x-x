@@ -2,7 +2,7 @@
 title: Add nightly fact table for monthly recurring revenue
 status: valid
 systems: [analytics-warehouse]
-created: 2025-10-04T05:06:43Z
+created: 2025-10-09T18:50:00Z
 ---
 
 ## Goal

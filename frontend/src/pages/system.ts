@@ -19,8 +19,8 @@
 import { api } from "../shared/api";
 import { $, tpl } from "../shared/dom";
 import { qs as getQs } from "../shared/qs";
-import { relativeTime } from "../shared/relative-time";
-import { applyStatusClass } from "../shared/status";
+import { applyRelativeTime } from "../shared/relative-time";
+import { applyStatusClass, paintFlagIcon } from "../shared/status";
 
 // Mirrors the Go-side planDetail in server.go. `hasOpenTasks` is the
 // server's pre-computed verdict on the plan body — true when at least
@@ -87,19 +87,18 @@ export async function system(): Promise<void> {
       const node = tpl("tpl-plan");
       const a = node.querySelector<HTMLAnchorElement>("a");
       if (a) a.href = `/scope?id=${encodeURIComponent(p.slug)}`;
-      // Tint the flag icon when this plan has open tasks. Same
-      // primary-text convention used on /scopes, /search, and the
-      // home page's Latest-scopes section so the cue carries across
-      // every list view.
-      if (p.hasOpenTasks) {
-        const icon = node.querySelector<HTMLElement>("i");
-        if (icon) icon.classList.add("primary-text");
-      }
+      // Tint the flag icon via paintFlagIcon — error-text for
+      // deprecated plans (do-not-use), else primary-text when there's
+      // at least one open task. Same convention used on /scopes and
+      // the home page's Latest-scopes section so the cue carries
+      // across every list view.
+      const icon = node.querySelector<HTMLElement>("i");
+      if (icon) paintFlagIcon(icon, p.status, p.hasOpenTasks);
       $('[data-slot="title"]', node).textContent = p.title;
       const statusEl = $<HTMLSpanElement>('[data-slot="status"]', node);
       statusEl.textContent = p.status;
       applyStatusClass(statusEl, p.status);
-      $('[data-slot="created"]', node).textContent = relativeTime(p.created);
+      applyRelativeTime($('[data-slot="created"]', node), p.created);
       frag.appendChild(node);
     }
     plansEl.replaceChildren(frag);

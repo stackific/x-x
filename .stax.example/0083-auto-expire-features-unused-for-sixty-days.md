@@ -2,7 +2,7 @@
 title: Auto expire features unused for sixty days
 status: valid
 systems: [feature-store]
-created: 2026-04-08T02:25:36Z
+created: 2026-04-18T11:30:00Z
 ---
 
 ## Goal

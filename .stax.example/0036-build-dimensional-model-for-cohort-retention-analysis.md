@@ -2,7 +2,7 @@
 title: Build dimensional model for cohort retention analysis
 status: valid
 systems: [analytics-warehouse]
-created: 2025-10-03T12:11:13Z
+created: 2025-10-09T17:50:00Z
 ---
 
 ## Goal

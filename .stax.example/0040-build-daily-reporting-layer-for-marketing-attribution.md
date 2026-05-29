@@ -2,7 +2,7 @@
 title: Build daily reporting layer for marketing attribution
 status: valid
 systems: [analytics-warehouse]
-created: 2025-10-09T12:50:58Z
+created: 2025-10-09T21:50:00Z
 ---
 
 ## Goal

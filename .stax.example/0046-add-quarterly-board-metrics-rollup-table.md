@@ -2,7 +2,7 @@
 title: Add quarterly board metrics rollup table
 status: valid
 systems: [analytics-warehouse]
-created: 2025-11-06T11:53:53Z
+created: 2026-01-08T13:40:00Z
 ---
 
 ## Goal

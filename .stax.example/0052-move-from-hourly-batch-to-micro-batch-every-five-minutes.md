@@ -2,7 +2,7 @@
 title: Move from hourly batch to micro batch every five minutes
 status: valid
 systems: [ingest-pipeline]
-created: 2025-11-26T22:48:11Z
+created: 2026-01-08T19:40:00Z
 ---
 
 ## Goal

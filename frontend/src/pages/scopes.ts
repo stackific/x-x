@@ -1,7 +1,7 @@
 import { api } from "../shared/api";
 import { $, tpl } from "../shared/dom";
-import { relativeTime } from "../shared/relative-time";
-import { applyStatusClass } from "../shared/status";
+import { applyRelativeTime } from "../shared/relative-time";
+import { applyStatusClass, paintFlagIcon } from "../shared/status";
 
 // Mirrors the Go-side scopeListItem in server.go: one row per plan in
 // the project's .stax/ tree. systems carries the kebab-case ids the
@@ -55,10 +55,8 @@ function renderList(host: HTMLElement, scopes: Scope[]): void {
     const node = tpl("tpl-scope");
     const card = node.querySelector<HTMLAnchorElement>("a");
     if (card) card.href = `/scope?id=${encodeURIComponent(s.slug)}`;
-    if (s.hasOpenTasks) {
-      const icon = node.querySelector<HTMLElement>("i");
-      if (icon) icon.classList.add("primary-text");
-    }
+    const icon = node.querySelector<HTMLElement>("i");
+    if (icon) paintFlagIcon(icon, s.status, s.hasOpenTasks);
     $('[data-slot="title"]', node).textContent = s.title || s.slug;
     const statusEl = $<HTMLSpanElement>('[data-slot="status"]', node);
     if (s.status) {
@@ -67,7 +65,7 @@ function renderList(host: HTMLElement, scopes: Scope[]): void {
     } else {
       statusEl.hidden = true;
     }
-    $('[data-slot="created"]', node).textContent = relativeTime(s.created);
+    applyRelativeTime($('[data-slot="created"]', node), s.created);
     const systemsHost = $<HTMLDivElement>('[data-slot="systems"]', node);
     renderSystems(systemsHost, s.systems);
     frag.appendChild(node);

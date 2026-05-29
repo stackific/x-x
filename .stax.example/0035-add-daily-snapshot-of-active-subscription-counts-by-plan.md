@@ -2,7 +2,7 @@
 title: Add daily snapshot of active subscription counts by plan
 status: valid
 systems: [analytics-warehouse]
-created: 2025-09-25T20:03:05Z
+created: 2025-10-09T16:50:00Z
 ---
 
 ## Goal

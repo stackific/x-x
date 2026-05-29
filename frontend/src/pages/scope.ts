@@ -1,8 +1,8 @@
 import { api } from "../shared/api";
 import { $, tpl } from "../shared/dom";
 import { qs as getQs } from "../shared/qs";
-import { relativeTime } from "../shared/relative-time";
-import { applyStatusClass } from "../shared/status";
+import { applyRelativeTime } from "../shared/relative-time";
+import { applyStatusClass, paintFlagIcon } from "../shared/status";
 
 // Mirrors the Go-side scopeDetail in server.go: a single plan's
 // frontmatter fields plus the markdown body pre-rendered to HTML
@@ -78,8 +78,8 @@ export async function scope(): Promise<void> {
     statusEl.textContent = data.status;
     applyStatusClass(statusEl, data.status);
     statusEl.hidden = false;
-    if (data.hasOpenTasks) iconEl.classList.add("primary-text");
-    createdEl.textContent = relativeTime(data.created);
+    paintFlagIcon(iconEl, data.status, data.hasOpenTasks);
+    applyRelativeTime(createdEl, data.created);
 
     systemsEl.replaceChildren();
     for (const sid of data.systems ?? []) {

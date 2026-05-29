@@ -2,7 +2,7 @@
 title: Compact event logs older than seven days
 status: valid
 systems: [ingest-pipeline]
-created: 2025-12-10T13:01:45Z
+created: 2026-01-08T23:40:00Z
 ---
 
 ## Goal

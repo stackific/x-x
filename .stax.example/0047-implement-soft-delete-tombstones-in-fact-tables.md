@@ -2,7 +2,7 @@
 title: Implement soft delete tombstones in fact tables
 status: valid
 systems: [analytics-warehouse]
-created: 2025-11-06T17:23:36Z
+created: 2026-01-08T14:40:00Z
 ---
 
 ## Goal

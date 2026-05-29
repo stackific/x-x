@@ -3,7 +3,7 @@ title: Move PII masking from BI layer to warehouse views
 status: valid
 systems: [analytics-warehouse]
 supersedes: [0043-mask-pii-columns-in-the-bi-semantic-layer]
-created: 2026-05-14T11:05:00Z
+created: 2026-05-27T03:55:44Z
 ---
 
 ## Goal

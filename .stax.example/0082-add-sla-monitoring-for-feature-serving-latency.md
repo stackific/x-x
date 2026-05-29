@@ -2,7 +2,7 @@
 title: Add SLA monitoring for feature serving latency
 status: valid
 systems: [feature-store]
-created: 2026-04-07T08:34:19Z
+created: 2026-04-18T10:30:00Z
 ---
 
 ## Goal

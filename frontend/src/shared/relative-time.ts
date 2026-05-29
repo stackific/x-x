@@ -1,3 +1,5 @@
+import { $, tpl } from "./dom";
+
 // Format a timestamp as a coarse human-readable relative string.
 //
 // Examples:
@@ -11,7 +13,7 @@
 // "1 month ago" is the same calendar day in the previous month, not
 // exactly 30 * 86400 seconds. Days are only emitted when years === 0 —
 // "2 years 3 months 17 days ago" is noisier than useful at that range.
-export function relativeTime(iso: string, now: number = Date.now()): string {
+function relativeTime(iso: string, now: number = Date.now()): string {
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return iso;
   const diffMs = Math.max(0, now - then);
@@ -54,4 +56,46 @@ export function relativeTime(iso: string, now: number = Date.now()): string {
 
 function pluralize(noun: string, n: number): string {
   return n === 1 ? noun : `${noun}s`;
+}
+
+// applyRelativeTime stamps the fuzzy `relativeTime(iso)` string into
+// `el` and adds a BeerCSS tooltip with the unambiguous absolute
+// timestamp underneath. Wraps the two-step (text + cloned template)
+// pattern in one call so every list/detail view renders its created
+// dates uniformly — same fuzzy primary, same absolute on hover, same
+// position class, no per-page DOM construction.
+//
+// Steps:
+//   1. textContent replaces prior children (a stale tooltip from a
+//      previous render goes with them).
+//   2. tooltip-anchor establishes positioning context so the
+//      absolute-positioned .tooltip lays out relative to `el` rather
+//      than the body.
+//   3. tpl-tooltip is cloned from layout.html's shared template and
+//      filled with the formatted absolute timestamp.
+//
+// Falls back gracefully on an unparseable iso: relativeTime echoes the
+// raw string, and absoluteTimestamp returns the same. Better to show
+// the raw value than a broken/empty tooltip.
+export function applyRelativeTime(el: HTMLElement, iso: string): void {
+  el.textContent = relativeTime(iso);
+  el.classList.add("tooltip-anchor");
+  const node = tpl("tpl-tooltip");
+  $('[data-slot="content"]', node).textContent = absoluteTimestamp(iso);
+  el.appendChild(node);
+}
+
+// absoluteTimestamp formats an ISO string as a locale-readable date +
+// time with a timezone abbreviation so the tooltip is unambiguous
+// regardless of the user's locale. Falls back to the raw string when
+// the input doesn't parse — the relativeTime primary will also echo
+// the raw value, so the row stays self-consistent.
+function absoluteTimestamp(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZoneName: "short",
+  });
 }

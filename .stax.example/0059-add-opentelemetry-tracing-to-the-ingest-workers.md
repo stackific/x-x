@@ -2,7 +2,7 @@
 title: Add OpenTelemetry tracing to the ingest workers
 status: valid
 systems: [ingest-pipeline]
-created: 2025-12-22T08:35:10Z
+created: 2026-01-09T02:40:00Z
 ---
 
 ## Goal

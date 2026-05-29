@@ -3,7 +3,7 @@ title: Add backpressure handling for traffic spikes
 status: valid
 systems: [ingest-pipeline]
 extends: [0051-add-kafka-consumer-for-clickstream-events]
-created: 2025-12-10T11:04:23Z
+created: 2026-01-08T22:40:00Z
 ---
 
 ## Goal

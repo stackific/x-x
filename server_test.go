@@ -454,6 +454,99 @@ func TestReadScopeDetail_HasOpenTasks(t *testing.T) {
 	}
 }
 
+// TestReadScopesForAPI_SortedByCreatedDesc pins that the /api/scopes
+// list comes back ordered by frontmatter `created` descending — newest
+// first — even when the filename slug's numeric prefix disagrees with
+// the date. The fixture intentionally inverts prefix vs. created: the
+// higher-prefixed file is older. A sort-by-slug regression would put
+// the older plan first; this test catches that.
+func TestReadScopesForAPI_SortedByCreatedDesc(t *testing.T) {
+	dir := t.TempDir()
+	staxPath := seedDetailFixture(t, dir, "systems:\n",
+		map[string]string{
+			"0001-newer-with-low-prefix.md": "---\n" +
+				"title: Newer but lower prefix\n" +
+				"status: valid\n" +
+				"systems: []\n" +
+				"created: 2026-03-15T16:45:00Z\n" +
+				"---\n\n## Goal\nG.\n",
+			"0002-older-with-high-prefix.md": "---\n" +
+				"title: Older but higher prefix\n" +
+				"status: valid\n" +
+				"systems: []\n" +
+				"created: 2026-01-10T12:00:00Z\n" +
+				"---\n\n## Goal\nG.\n",
+		},
+	)
+	got := readScopesForAPI(staxPath)
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want 2 (%+v)", len(got), got)
+	}
+	if got[0].Slug != "0001-newer-with-low-prefix" {
+		t.Fatalf("got[0].Slug = %q, want %q (sort must honor `created:` desc, not filename desc)",
+			got[0].Slug, "0001-newer-with-low-prefix")
+	}
+}
+
+// TestReadScopesForAPI_TieBreakBySlugDesc pins the deterministic
+// tie-break: when two plans share an identical `created:` timestamp
+// (rare but possible — same wall-clock second), the higher-prefix
+// slug wins. Matches the old filename-sort behavior so monotonic
+// datasets still render identically after the sort key change.
+func TestReadScopesForAPI_TieBreakBySlugDesc(t *testing.T) {
+	dir := t.TempDir()
+	body := "---\ntitle: T\nstatus: valid\nsystems: []\ncreated: 2026-01-10T12:00:00Z\n---\n\n## Goal\nG.\n"
+	staxPath := seedDetailFixture(t, dir, "systems:\n",
+		map[string]string{
+			"0001-low.md":  body,
+			"0099-high.md": body,
+		},
+	)
+	got := readScopesForAPI(staxPath)
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want 2", len(got))
+	}
+	if got[0].Slug != "0099-high" {
+		t.Fatalf("got[0].Slug = %q, want %q (tie-break on identical created: must prefer higher slug)",
+			got[0].Slug, "0099-high")
+	}
+}
+
+// TestReadSystemDetail_SortedByCreatedDesc mirrors the /api/scopes
+// sort assertion against the system-detail handler so a regression in
+// only one of the two pure-body functions doesn't slip through.
+func TestReadSystemDetail_SortedByCreatedDesc(t *testing.T) {
+	dir := t.TempDir()
+	staxPath := seedDetailFixture(t, dir,
+		"systems:\n  - id: auth\n    name: Auth Service\n",
+		map[string]string{
+			"0001-newer-low-prefix.md": "---\n" +
+				"title: Newer\n" +
+				"status: valid\n" +
+				"systems: [auth]\n" +
+				"created: 2026-03-15T16:45:00Z\n" +
+				"---\n\n## Goal\nG.\n",
+			"0002-older-high-prefix.md": "---\n" +
+				"title: Older\n" +
+				"status: valid\n" +
+				"systems: [auth]\n" +
+				"created: 2026-01-10T12:00:00Z\n" +
+				"---\n\n## Goal\nG.\n",
+		},
+	)
+	got, ok := readSystemDetail(staxPath, "auth")
+	if !ok {
+		t.Fatalf("readSystemDetail returned false for known id")
+	}
+	if len(got.Plans) != 2 {
+		t.Fatalf("plans len = %d, want 2", len(got.Plans))
+	}
+	if got.Plans[0].Slug != "0001-newer-low-prefix" {
+		t.Fatalf("plans[0].Slug = %q, want %q (sort must honor `created:` desc, not filename desc)",
+			got.Plans[0].Slug, "0001-newer-low-prefix")
+	}
+}
+
 // TestNewServerMux_ServesEmbeddedFrontend exercises the catch-all
 // static handler: a GET on `/index.html` reads
 // `frontend/dist/index.html` from the embed and returns it. Pins the

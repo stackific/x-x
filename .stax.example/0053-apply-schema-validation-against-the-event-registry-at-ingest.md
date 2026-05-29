@@ -3,7 +3,7 @@ title: Apply schema validation against the event registry at ingest
 status: valid
 systems: [ingest-pipeline]
 extended_by: [0054-quarantine-malformed-events-into-a-dead-letter-topic]
-created: 2025-11-30T13:00:00Z
+created: 2026-01-08T20:40:00Z
 ---
 
 ## Goal

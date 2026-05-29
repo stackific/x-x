@@ -2,7 +2,7 @@
 title: Add CI checks for feature schema changes
 status: valid
 systems: [feature-store]
-created: 2026-04-11T11:16:43Z
+created: 2026-04-18T12:30:00Z
 ---
 
 ## Goal

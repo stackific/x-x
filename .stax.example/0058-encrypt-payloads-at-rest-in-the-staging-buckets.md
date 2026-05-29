@@ -2,7 +2,7 @@
 title: Encrypt payloads at rest in the staging buckets
 status: valid
 systems: [ingest-pipeline]
-created: 2025-12-18T08:53:40Z
+created: 2026-01-09T01:40:00Z
 ---
 
 ## Goal

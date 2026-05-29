@@ -3,7 +3,7 @@ title: Quarantine malformed events into a dead-letter topic
 status: valid
 systems: [ingest-pipeline]
 extends: [0053-apply-schema-validation-against-the-event-registry-at-ingest]
-created: 2025-12-02T11:20:00Z
+created: 2026-01-08T21:40:00Z
 ---
 
 ## Goal

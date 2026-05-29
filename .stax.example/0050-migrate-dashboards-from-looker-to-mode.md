@@ -2,7 +2,7 @@
 title: Migrate dashboards from Looker to Mode
 status: valid
 systems: [analytics-warehouse]
-created: 2025-11-13T04:06:14Z
+created: 2026-01-08T17:40:00Z
 ---
 
 ## Goal

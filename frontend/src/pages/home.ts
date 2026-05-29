@@ -20,8 +20,8 @@
 
 import { api } from "../shared/api";
 import { $, tpl } from "../shared/dom";
-import { relativeTime } from "../shared/relative-time";
-import { applyStatusClass } from "../shared/status";
+import { applyRelativeTime } from "../shared/relative-time";
+import { applyStatusClass, paintFlagIcon } from "../shared/status";
 
 // Mirrors statsResponse in server.go. version isn't rendered today;
 // it's on the wire for the dual-purpose liveness probe and is left
@@ -72,9 +72,10 @@ function renderSystems(parent: HTMLElement, systems: string[]): void {
 
 // renderLatestScopes stamps up to LATEST_LIMIT rows from the supplied
 // list. Status chip gets the lifecycle tint via applyStatusClass; the
-// flag icon gets primary-text on rows with at least one open `- [ ]`
-// task. Same conventions as /scopes, /system, /search — the cue
-// carries across every list view so the user can scan for in-flight
+// flag icon's tint comes from paintFlagIcon — error-text on deprecated
+// rows, else primary-text when there's at least one open `- [ ]` task.
+// Same conventions as /scopes and /system — the cue carries across
+// every list view so the user can scan for in-flight (and do-not-use)
 // work without remembering which page enforces which rule.
 function renderLatestScopes(host: HTMLElement, scopes: Scope[]): void {
   if (!scopes.length) {
@@ -86,12 +87,10 @@ function renderLatestScopes(host: HTMLElement, scopes: Scope[]): void {
     const node = tpl("tpl-scope");
     const card = node.querySelector<HTMLAnchorElement>("a");
     if (card) card.href = `/scope?id=${encodeURIComponent(s.slug)}`;
-    if (s.hasOpenTasks) {
-      const icon = node.querySelector<HTMLElement>("i");
-      if (icon) icon.classList.add("primary-text");
-    }
+    const icon = node.querySelector<HTMLElement>("i");
+    if (icon) paintFlagIcon(icon, s.status, s.hasOpenTasks);
     $('[data-slot="title"]', node).textContent = s.title || s.slug;
-    $('[data-slot="created"]', node).textContent = relativeTime(s.created);
+    applyRelativeTime($('[data-slot="created"]', node), s.created);
     const statusEl = $<HTMLSpanElement>('[data-slot="status"]', node);
     statusEl.textContent = s.status;
     applyStatusClass(statusEl, s.status);

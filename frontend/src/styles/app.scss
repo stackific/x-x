@@ -212,6 +212,21 @@ footer nav .grid > div {
   }
 }
 
+// -- Tooltip anchor (BeerCSS tooltip positioning context) --------
+// BeerCSS's `.tooltip` is absolute-positioned and looks up the nearest
+// positioned ancestor for placement. The shared `applyRelativeTime`
+// helper appends a `.tooltip top` to bare <span>s next to relative-time
+// text — those spans default to `position: static`, which would let
+// the tooltip escape to the document body. Marking the span as a
+// positioning context with this utility class anchors the tooltip to
+// its trigger. Kept inline so the wrapping line of text stays in flow
+// (display: inline-block would force the span to its own line in some
+// flex layouts).
+
+.tooltip-anchor {
+  position: relative;
+}
+
 // -- Reference links (suppress BeerCSS external-link icon) --------
 
 details.surface-variant a[target="_blank"]::after {

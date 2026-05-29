@@ -2,7 +2,7 @@
 title: Move card on file management out of the checkout flow
 status: valid
 systems: [billing]
-created: 2025-09-11T17:12:44Z
+created: 2025-09-14T12:24:55Z
 ---
 
 ## Goal
