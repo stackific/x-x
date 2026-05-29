@@ -45,14 +45,14 @@ REMINDERS_TASK = (
 
 
 def test_copilot_reminders_supersedes_todo(
-  copilot_workspace: Path,
+  workspace: Path,
   tmp_path: Path,
 ) -> None:
   transcripts = tmp_path / "transcripts"
 
   # --- Work-item 1: todo list ---
   todo_run = drive_skill(
-    copilot_workspace,
+    workspace,
     f"/scope {TODO_TASK}",
     transcript_path=transcripts / "scope-todo.txt",
   )
@@ -68,7 +68,7 @@ def test_copilot_reminders_supersedes_todo(
 
   # --- Work-item 2: reminders (supersedes todo) ---
   reminders_run = drive_skill(
-    copilot_workspace,
+    workspace,
     f"/scope {REMINDERS_TASK}",
     transcript_path=transcripts / "scope-reminders.txt",
   )
@@ -84,7 +84,7 @@ def test_copilot_reminders_supersedes_todo(
 
   # --- Execute ---
   exec_run = drive_skill(
-    copilot_workspace,
+    workspace,
     "/ship",
     transcript_path=transcripts / "stax.txt",
   )
@@ -101,7 +101,7 @@ def test_copilot_reminders_supersedes_todo(
   # underspecified "hit cap" message.
 
   # --- Work-item mechanics ---
-  work_items = load_all_work_items(copilot_workspace)
+  work_items = load_all_work_items(workspace)
   assert len(work_items) == 2, (
     f"expected exactly 2 work-item files, got {len(work_items)}: "
     f"{[p.slug for p in work_items]}"
@@ -130,7 +130,7 @@ def test_copilot_reminders_supersedes_todo(
 
   # --- Artifact correctness: must be a reminders app, not a todo ---
   judge = ArtifactJudge()
-  judgment = judge.evaluate(REMINDERS_TASK, copilot_workspace)
+  judgment = judge.evaluate(REMINDERS_TASK, workspace)
   print(f"\n[artifact] score={judgment.score:.2f} reason={judgment.reason}")
   assert judgment.passed, (
     f"ArtifactJudge failed for reminders task: score={judgment.score:.2f} "

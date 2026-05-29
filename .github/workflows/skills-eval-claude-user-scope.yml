@@ -59,7 +59,7 @@ jobs:
 
       - name: install claude code
         run: |
-          npm install -g @anthropic-ai/claude-code@latest
+          npm install -g @anthropic-ai/claude-code@2.1.150
           claude --version
 
       - uses: astral-sh/setup-uv@v8.1.0
