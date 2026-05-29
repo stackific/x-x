@@ -293,7 +293,12 @@ func removeOurSkillsIn(skillsDir, _ string, owned map[string]bool) (removed, ski
 			skipped++
 			continue
 		}
-		fmt.Printf("    removed %s\n", e.Name())
+		// Per-skill "removed scope" / "removed ship" lines used to print
+		// here; they're suppressed because the path header above (e.g.
+		// `.claude/skills/`) already tells the user where the work
+		// happened, and the per-entry list is mostly noise — we own
+		// exactly two skill names today (see `ownedSkills`). The
+		// aggregate count surfaces in the final summary line.
 		removed++
 	}
 	// If the skills directory is now empty (e.g. only contained stax dirs),

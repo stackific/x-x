@@ -347,7 +347,10 @@ func removeBundledHooksIn(bundleSrc, userDest, _ string) (modified, skipped int)
 			skipped++
 			continue
 		}
-		fmt.Printf("    unmerged %s\n", c.rel)
+		// Per-file "unmerged settings.json" lines suppressed — see the
+		// equivalent comment in removeOurSkillsIn. Path header above
+		// already identifies the file; aggregate count surfaces in the
+		// final summary.
 		modified++
 	}
 	return modified, skipped
@@ -583,7 +586,7 @@ func jsonDeepEqual(a, b any) bool {
 // are silent no-ops, matching removeBundledHooksIn semantics. Errors
 // during read / compare / unlink are non-fatal: the file is left
 // alone, a diagnostic is written to stderr, and skipped is bumped.
-func removeBundledTSPluginsIn(bundleSrc, userDest, agentName string) (removed, skipped int) {
+func removeBundledTSPluginsIn(bundleSrc, userDest, _ string) (removed, skipped int) {
 	if _, err := os.Stat(bundleSrc); errors.Is(err, os.ErrNotExist) {
 		return 0, 0
 	}
@@ -592,14 +595,18 @@ func removeBundledTSPluginsIn(bundleSrc, userDest, agentName string) (removed, s
 	if len(pending) == 0 {
 		return 0, skipped
 	}
-	fmt.Printf("  %-13s %s\n", agentName, userDest)
+	// Path-only header (no agent name) — matches removeOurSkillsIn /
+	// removeBundledHooksIn. Per-file "removed stax.ts" lines are
+	// suppressed for the same reason: the path header already
+	// identifies the file; aggregate count surfaces in the final
+	// summary.
+	fmt.Printf("  %s\n", userDest)
 	for _, p := range pending {
 		if err := os.Remove(p.path); err != nil {
 			fmt.Fprintf(os.Stderr, "    %s: remove: %v\n", p.rel, err)
 			skipped++
 			continue
 		}
-		fmt.Printf("    removed %s\n", p.rel)
 		removed++
 	}
 	return removed, skipped
