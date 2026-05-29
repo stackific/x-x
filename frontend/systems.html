@@ -1,0 +1,26 @@
+{{#> layout title="Systems" page="systems" active="systems" description="Stax — registered systems."}}
+  <section class="container py-l">
+    <h4 class="mb-m">Systems</h4>
+
+    <div id="systems-list" aria-live="polite">
+      <p class="small-text">Loading…</p>
+    </div>
+  </section>
+
+  <template id="tpl-system">
+    <a class="row padding round surface-variant wave no-elevate mb-s middle-align">
+      <i class="large" aria-hidden="true">hub</i>
+      <h6 class="small no-margin ml-s" data-slot="name"></h6>
+      <span class="small-text ml-m max truncate" data-slot="brief"></span>
+      <span class="small-text ml-m" data-slot="count"></span>
+    </a>
+  </template>
+
+  <template id="tpl-empty">
+    <p class="small-text">No systems found.</p>
+  </template>
+
+  <template id="tpl-error">
+    <p class="small-text bold" data-slot="error"></p>
+  </template>
+{{/layout}}

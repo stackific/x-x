@@ -1,0 +1,278 @@
+// =================================================================
+// @stackific/web-template — Project-level styles
+// =================================================================
+// BeerCSS handles typography, spacing, grid, and components.
+// This file only adds what BeerCSS does not provide.
+// =================================================================
+
+@use "sass:list";
+@use "sass:map";
+
+// -- Spacing maps + mixins ---------------------------------------
+// Single source of truth for the directional margin/padding system.
+// Used both by the utility-class generator below and by ad-hoc
+// selectors (e.g. `footer nav`) that want to reuse the same scale.
+
+$breakpoints: (
+  s: null,
+  m: 601px,
+  l: 993px,
+);
+
+// Size keys map 1:1 to --space-{key} variables on :root.
+$size-keys: (t, s, m, l);
+
+$dirs: (
+  mt: margin-block-start,
+  mb: margin-block-end,
+  ml: margin-inline-start,
+  mr: margin-inline-end,
+  mx: margin-inline,
+  my: margin-block,
+  pt: padding-block-start,
+  pb: padding-block-end,
+  pl: padding-inline-start,
+  pr: padding-inline-end,
+  px: padding-inline,
+  py: padding-block,
+);
+
+// Emit a single spacing declaration. Use this to apply the same value
+// an `m{dir}-{size}` / `p{dir}-{size}` utility class would, on any selector.
+// $dir: mt|mb|ml|mr|mx|my|pt|pb|pl|pr|px|py
+// $size: t|s|m|l
+@mixin space($dir, $size) {
+  #{map.get($dirs, $dir)}: var(--space-#{$size}) !important;
+}
+
+// Zero out padding + margin to neutralise BeerCSS list defaults.
+// Call with no args for all sides, or pass sides (e.g. `left`, `top`).
+// Uses *physical* properties (padding-left, margin-left) on purpose:
+// BeerCSS sets bullet indent via physical `padding-left`, so matching
+// physical here produces a clean override. Flip to logical the day
+// BeerCSS flips.
+@mixin no-space($sides...) {
+  @if list.length($sides) == 0 {
+    padding: 0 !important;
+    margin: 0 !important;
+  } @else {
+    @each $side in $sides {
+      padding-#{$side}: 0 !important;
+      margin-#{$side}: 0 !important;
+    }
+  }
+}
+
+// Generate one breakpoint's worth of utility classes.
+// At the base (`s`) breakpoint we emit both `.d-sz` and `.s\:d-sz`
+// in one grouped selector; at `m`/`l` only the prefixed form.
+@mixin spacing-utilities($bp) {
+  @each $d in map.keys($dirs) {
+    @each $sz in $size-keys {
+      @if $bp == s {
+        .#{$d}-#{$sz},
+        .s\:#{$d}-#{$sz} {
+          @include space($d, $sz);
+        }
+      } @else {
+        .#{$bp}\:#{$d}-#{$sz} {
+          @include space($d, $sz);
+        }
+      }
+    }
+  }
+}
+
+// Geist Variable (latin subset) served from the fontsource CDN as a
+// single woff2-variations file. Loading from CDN instead of bundling
+// the @fontsource-variable/geist npm package keeps the build output
+// free of woff2 binaries and lets the browser cache the file across
+// other sites that pull the same URL.
+@font-face {
+  font-family: "Geist Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("https://cdn.jsdelivr.net/fontsource/fonts/geist:vf@latest/latin-wght-normal.woff2") format("woff2-variations");
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+}
+
+:root {
+  --font: "Geist Variable", sans-serif !important;
+  --letter-spacing: -0.01em;
+  --body-font-size: 1rem;
+  --container-max: 1200px;
+  --container-padding: 1rem;
+  --rail-width: 4rem;
+  --space-t: 0.25rem;
+  --space-s: 0.5rem;
+  --space-m: 1rem;
+  --space-l: 1.5rem;
+}
+
+@media (min-width: 601px) {
+  :root {
+    --container-padding: 1.5rem;
+  }
+}
+
+@media (min-width: 993px) {
+  :root {
+    --container-padding: 2rem;
+  }
+}
+
+// -- Global overrides --------------------------------------------
+
+body {
+  letter-spacing: var(--letter-spacing);
+}
+
+#main-content {
+  font-size: var(--body-font-size);
+}
+
+// -- Container ---------------------------------------------------
+
+.container {
+  width: 100%;
+  max-width: var(--container-max);
+  margin-inline: auto;
+  padding-inline: var(--container-padding);
+}
+
+// -- Nav rail ----------------------------------------------------
+
+nav:is(.left, .right) {
+  min-inline-size: var(--rail-width);
+  overflow-y: auto;
+
+  // Align standalone buttons (e.g. theme toggle) with nav-item icons
+  // only when the rail is expanded.
+  &.max > button {
+    margin-inline-start: 0.5rem;
+  }
+}
+
+// -- Grid fix ----------------------------------------------------
+
+.grid {
+  align-items: start;
+}
+
+// -- Logo light/dark swap ----------------------------------------
+
+.logo-dark {
+  display: none;
+}
+
+body.dark .logo-light {
+  display: none;
+}
+
+body.dark .logo-dark {
+  display: inline;
+}
+
+// -- Footer lists ------------------------------------------------
+
+footer ul {
+  list-style: none !important;
+  @include no-space;
+}
+
+footer li {
+  @include no-space(left);
+}
+
+footer li::before {
+  content: none !important;
+}
+
+footer nav {
+  display: block !important;
+  @include space(mt, m);
+}
+
+footer nav .grid > div {
+  @include space(mb, m);
+}
+
+// -- Directional margin & padding utility classes ----------------
+// Generated from the maps + mixins at the top of this file.
+// See docs/internal/css-conventions.md for usage.
+
+@each $bp, $min in $breakpoints {
+  @if not $min {
+    @include spacing-utilities($bp);
+  } @else {
+    @media (min-width: $min) {
+      @include spacing-utilities($bp);
+    }
+  }
+}
+
+// -- Reference links (suppress BeerCSS external-link icon) --------
+
+details.surface-variant a[target="_blank"]::after {
+  content: none !important;
+  display: none !important;
+}
+
+details.surface-variant a[target="_blank"] {
+  text-decoration: underline;
+}
+
+// -- Scope detail body (rendered markdown) -----------------------
+// goldmark's GFM extension renders `- [ ] task` as
+//   <li><input type="checkbox" disabled> …</li>
+// inside a regular <ul> — without adding the GitHub `task-list-item`
+// class. The disc bullet then sits next to the checkbox, which is
+// visually redundant. Suppress the bullet (and the bullet's
+// indentation) on any <li> whose first child element is a checkbox.
+// Scoped to `.scope-body` so unrelated <ul>s on the page keep their
+// default disc bullets.
+
+.scope-body {
+  li:has(> input[type="checkbox"]) {
+    list-style: none;
+    margin-inline-start: -1.25rem;
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+  }
+
+  li > input[type="checkbox"] {
+    margin: 0;
+    flex-shrink: 0;
+  }
+}
+
+// -- Honor the [hidden] attribute over class-based display -------
+// BeerCSS sets `display: flex` on `.row` and similar layout
+// classes, which beats the user-agent stylesheet's
+// `[hidden] { display: none }` whenever both apply (matching
+// specificity, but class-based wins because it comes later).
+// Restore the expected behavior with !important so any element
+// carrying the `hidden` attribute is collapsed regardless of which
+// layout class it also wears — used by the /scope page's
+// `#scope-superseded-by-row`, which is `class="row … " hidden` and
+// must stay collapsed on plans that aren't actually superseded.
+
+[hidden] {
+  display: none !important;
+}
+
+// -- Screen-reader only ------------------------------------------
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

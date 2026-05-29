@@ -38,6 +38,20 @@ See [Reference](reference.md) for the full command reference.
 /ship
 ```
 
+## Browsing your project
+
+```bash
+# Run from the root of an initialized stax project. Opens the local
+# Stax web UI in your default browser; blocks until Ctrl-C.
+stax
+```
+
+The web UI lists every scope and system in the project, with deep
+links between them (each scope card shows the systems it shapes; each
+system page shows every scope declaring it). See the
+[Reference](reference.md#stax) for the `--no-browser` and `--cwd`
+flags.
+
 ## Uninstall
 
 ### macOS / Linux

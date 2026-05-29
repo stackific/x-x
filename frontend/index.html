@@ -1,0 +1,50 @@
+{{#> layout title="Home" page="home" active="home" description="Stax — project overview."}}
+  <section class="container py-l">
+    <h4 class="mb-m">Stax</h4>
+
+    <div class="grid mb-l">
+      <a id="card-systems" href="/systems" class="s12 m6 row padding round surface-variant wave no-elevate middle-align">
+        <div class="row middle-align max">
+          <h3 class="no-margin mr-s" id="count-systems">0</h3>
+          <span class="small-text">Systems</span>
+        </div>
+      </a>
+      <a id="card-scopes" href="/scopes" class="s12 m6 row padding round surface-variant wave no-elevate middle-align">
+        <div class="row middle-align max">
+          <h3 class="no-margin mr-s" id="count-scopes">0</h3>
+          <span class="small-text">Scopes</span>
+        </div>
+      </a>
+    </div>
+
+    <h5 class="mb-m">Latest scopes</h5>
+    <div id="latest-scopes" aria-live="polite">
+      <p class="small-text">Loading…</p>
+    </div>
+  </section>
+
+  <template id="tpl-scope">
+    <a class="row padding round surface-variant wave no-elevate mb-s middle-align">
+      <i class="large" aria-hidden="true">flag</i>
+      <h6 class="small no-margin max ml-s" data-slot="title"></h6>
+      <div class="row wrap middle-align" data-slot="systems"></div>
+      <div class="row middle-align small-text ml-s">
+        <span data-slot="created"></span>
+        <span class="mx-s">·</span>
+        <span data-slot="status"></span>
+      </div>
+    </a>
+  </template>
+
+  <template id="tpl-system-link">
+    <a class="chip small no-elevate mr-t" data-stop></a>
+  </template>
+
+  <template id="tpl-empty">
+    <p class="small-text">No scopes yet.</p>
+  </template>
+
+  <template id="tpl-error">
+    <p class="small-text bold" data-slot="error"></p>
+  </template>
+{{/layout}}

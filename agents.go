@@ -44,7 +44,7 @@ func agentsTarget() (string, error) {
 // binary's embedded FS when absent. Lazy bootstrap — never refreshes an
 // existing directory. The first invocation of any `stax` command runs this
 // so a freshly-installed binary self-seeds without an explicit setup step.
-// The opportunistic 24h update check (maybeNotifyUpdate) handles refreshing
+// The opportunistic hourly update check (maybeNotifyUpdate) handles refreshing
 // the tree on subsequent runs.
 func ensureBundledAgents() error {
 	target, err := agentsTarget()
@@ -65,7 +65,7 @@ func ensureBundledAgents() error {
 // writeBundledAgents writes the binary's embedded agents/ tree to disk at
 // ~/.stax/agents/. When overwrite is true any existing tree is removed first
 // so the result is byte-identical to the binary's embed (this is what the
-// 24h update-check refresh wants). When overwrite is false the function
+// hourly update-check refresh wants). When overwrite is false the function
 // only creates what's missing.
 func writeBundledAgents(overwrite bool) error {
 	target, err := agentsTarget()

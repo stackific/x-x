@@ -65,6 +65,15 @@ func TestE2EShellConstantsMatchGo(t *testing.T) {
 		// Copilot / Continue / Cursor / Kilo / OpenCode / Pi / omp / Zed
 		// each bundle no per-agent config (configRel is ""), so no
 		// *_CONFIG_REL mirror is needed for them.
+
+		// Local-server constants — the bare-stax HTTP listener (server.go)
+		// and the /api/* path constants. The shell harness spawns the
+		// server and curls these paths, so any drift would make the e2e
+		// probe a different URL than the Go server registers.
+		"STAX_SERVER_LISTEN_ADDR": serverListenAddr,
+		"STAX_SERVER_DISPLAY_URL": serverDisplayURL,
+		"STAX_API_STATS_PATH":     apiStatsPath,
+		"STAX_API_SYSTEMS_PATH":   apiSystemsPath,
 	}
 
 	for name, expected := range want {

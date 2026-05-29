@@ -17,6 +17,12 @@ pre-commit:
       run: golangci-lint run --fix ./...
     gitleaks:
       run: gitleaks protect --staged --no-banner
+    # Frontend lint/format — tree-wide, mirroring the golangci-lint pattern
+    # above. Triggered when any staged file matches the glob; re-stages the
+    # frontend tree so auto-fixes land in the commit.
+    frontend-fmt:
+      glob: "frontend/**/*.{ts,tsx,html,scss,json}"
+      run: cd frontend && npm run lint:fix && cd .. && git add frontend
 
 commit-msg:
   commands:
@@ -47,3 +53,9 @@ pre-push:
       run: golangci-lint run ./...
     govulncheck:
       run: govulncheck ./...
+    # Frontend tree-wide checks — typecheck (tsc --noEmit) + lint (Biome) +
+    # dead-code (Knip). Composed in the `check` npm script. Glob gates the
+    # command on whether any frontend file is in the push diff.
+    frontend-check:
+      glob: "frontend/**/*.{ts,tsx,html,scss,json}"
+      run: cd frontend && npm run check

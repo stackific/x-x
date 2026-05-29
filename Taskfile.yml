@@ -11,9 +11,10 @@ tasks:
   # ---------- Setup ----------
 
   setup:
-    desc: Install git hooks from lefthook.yml
+    desc: Install git hooks and frontend dependencies
     cmds:
       - lefthook install
+      - test ! -d frontend || (cd frontend && npm install)
 
   # ---------- Quality (delegated to lefthook) ----------
 
@@ -30,12 +31,24 @@ tasks:
   # ---------- Dev runtime ----------
 
   run:
-    desc: Run the CLI (forwards extra args after `--`)
+    desc: Run the CLI with the latest embedded frontend (forwards extra args after `--`)
+    # Rebuild the frontend first so the //go:embed directive picks up the
+    # current `frontend/dist/`. Without this dep, `task run` would happily
+    # ship the last-built bundle even if the user just edited
+    # `frontend/src/...` — a "why am I seeing old UI?" footgun.
+    deps:
+      - frontend:build
     cmds:
       - go run . {{.CLI_ARGS}}
 
   build:
     desc: Cross-compile binaries for macOS, Linux, and Windows (amd64 + arm64) into ./bin
+    # Build the frontend first so every shipped binary embeds the latest
+    # `frontend/dist/`. The Go build's //go:embed directive is baked at
+    # compile time; without this dep, cross-compiled artifacts would
+    # ship the last-built (possibly stale) Vite output.
+    deps:
+      - frontend:build
     cmds:
       - mkdir -p bin
       - |
@@ -67,3 +80,35 @@ tasks:
     desc: Run only the end-to-end CLI tests (builds stax, drives every command)
     cmds:
       - ./scripts/e2e_test.sh
+
+  # ---------- Frontend ----------
+
+  frontend:dev:
+    desc: Run the Vite dev server
+    dir: frontend
+    cmds:
+      - npm run dev
+
+  frontend:build:
+    desc: Build the frontend for production (single bundle.js + bundle.css)
+    dir: frontend
+    cmds:
+      - npm run build
+
+  frontend:check:
+    desc: Frontend typecheck + Biome lint + Knip dead-code
+    dir: frontend
+    cmds:
+      - npm run check
+
+  frontend:lint:fix:
+    desc: Run Biome lint with auto-fix on the frontend
+    dir: frontend
+    cmds:
+      - npm run lint:fix
+
+  frontend:fmt:
+    desc: Format frontend code with Biome
+    dir: frontend
+    cmds:
+      - npm run fmt

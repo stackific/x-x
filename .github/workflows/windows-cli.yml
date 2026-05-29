@@ -84,6 +84,26 @@ jobs:
           which task
           task --version
 
+      # `task build` depends on `task frontend:build` (per Taskfile.yml)
+      # so the //go:embed all:frontend/dist directive resolves against a
+      # fresh dist tree. The golang:1.26-bookworm container ships Go but
+      # not Node — install it explicitly here so `npm ci && npm run
+      # build` succeeds before the cross-compile loop runs.
+      - name: install node
+        run: |
+          set -x
+          curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+          apt-get install -y nodejs
+          node --version
+          npm --version
+
+      # `task build` -> `task frontend:build` -> `npm run build` needs vite
+      # on PATH, which only exists after `npm ci` populates frontend/node_modules.
+      # The Taskfile's frontend:build does not install deps, so we install them here.
+      - name: install frontend deps
+        working-directory: frontend
+        run: npm ci
+
       - name: task build
         run: |
           set -x
@@ -196,6 +216,33 @@ jobs:
           Write-Host "=== & $bin -h ==="
           & $bin -h
           if ($LASTEXITCODE -ne 0) { throw "$bin -h exited $LASTEXITCODE" }
+
+      # scripts/e2e_test.ps1 does its own `go build` (release-flavored,
+      # version-stamped to v0.0.0-e2e for harness assertions). server.go's
+      # `//go:embed all:frontend/dist` requires `frontend/dist/` on disk at
+      # compile time, and `frontend/dist/` is gitignored — the upstream
+      # `build` job populated it inside its own container, but that
+      # workspace doesn't survive the artifact handoff. Mirror what the
+      # test.yml workflow does so the in-harness rebuild resolves the embed.
+      #
+      # Skipping `task frontend:build` and going straight to `npm run build`
+      # because the taskfile.dev installer drops `task.exe` at a mingw-style
+      # path (e.g. /c/Users/runneradmin/bin) that does not resolve on
+      # PowerShell's PATH, and `task frontend:build` is literally `npm run
+      # build` in `frontend/` anyway.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: build frontend (produces frontend/dist for the in-harness go build)
+        working-directory: frontend
+        run: npm run build
 
       - name: run e2e suite
         run: |

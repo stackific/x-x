@@ -69,17 +69,19 @@ func TestPrintNotice_ShapeIsInstallerParsable(t *testing.T) {
 }
 
 // TestPrintAbout_IncludesUsage guards the user-facing command catalog —
-// every subcommand surface advertised in docs/public/reference.md must also
-// appear in `stax -h` output. Adding a new subcommand without listing it
-// here will fail the test, prompting a usage-block update.
+// every subcommand surface advertised in docs/public/reference.md must
+// also appear in `stax -h` output, including the shared --cwd flag
+// footer. Adding a new subcommand without listing it here will fail the
+// test, prompting a usage-block update.
+//
+// The local-server HTTP routes (/api/stats, /api/systems) are
+// deliberately NOT listed in `-h` output — they're an internal
+// implementation detail behind bare-stax's web UI, not a user surface,
+// so no assertion looks for them here either.
 func TestPrintAbout_IncludesUsage(t *testing.T) {
 	out := captureStdout(t, printAbout)
 	for _, want := range []string{
 		"Usage:",
-		// Bare stax opens https://google.com — the URL itself must appear
-		// so a user reading `stax -h` sees what will happen, not just
-		// "open a browser".
-		"https://google.com",
 		"--no-browser",
 		"post-install",
 		"stax init",
@@ -89,9 +91,18 @@ func TestPrintAbout_IncludesUsage(t *testing.T) {
 		"stax plans list",
 		"stax plans lint",
 		"stax --version",
+		// The shared --cwd flag is advertised in a single footer block
+		// (one line, not per-subcommand) so the catalog stays scannable.
+		"--cwd <path>",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("about missing %q in %q", want, out)
+		}
+	}
+	// HTTP routes must NOT leak into the help text — pin the absence.
+	for _, banned := range []string{apiStatsPath, apiSystemsPath, serverDisplayURL} {
+		if strings.Contains(out, banned) {
+			t.Fatalf("about exposes internal server detail %q in %q", banned, out)
 		}
 	}
 }

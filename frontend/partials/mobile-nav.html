@@ -1,0 +1,32 @@
+<nav class="top s m left-align" aria-label="Mobile navigation">
+  <button class="circle transparent" data-ui="#mobile-menu" aria-label="Open menu">
+    <i aria-hidden="true">menu</i>
+  </button>
+  <div class="max"></div>
+  <button class="circle border" data-theme-toggle aria-label="Toggle dark mode">
+    <i aria-hidden="true">dark_mode</i>
+  </button>
+</nav>
+
+<dialog id="mobile-menu" class="left no-padding" aria-label="Navigation drawer">
+  <nav class="left max surface-container" aria-label="Navigation menu">
+    <header>
+      <button class="circle extra transparent" data-ui="#mobile-menu" aria-label="Close menu">
+        <i aria-hidden="true">menu_open</i>
+      </button>
+    </header>
+    <a href="/" data-nav-link data-active-key="home" onclick="ui('#mobile-menu')">
+      <i aria-hidden="true">home</i><span class="fw-5">Home</span>
+    </a>
+    <a href="/scopes" data-nav-link data-active-key="scopes" onclick="ui('#mobile-menu')">
+      <i aria-hidden="true">flag</i><span class="fw-5">Scopes</span>
+    </a>
+    <a href="/systems" data-nav-link data-active-key="systems" onclick="ui('#mobile-menu')">
+      <i aria-hidden="true">hub</i><span class="fw-5">Systems</span>
+    </a>
+    <div class="max"></div>
+    <a href="/search" data-nav-link data-active-key="search" onclick="ui('#mobile-menu')">
+      <i aria-hidden="true">search</i><span class="fw-5">Search</span>
+    </a>
+  </nav>
+</dialog>

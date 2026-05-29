@@ -1,0 +1,35 @@
+{{#> layout title="Scopes" page="scopes" active="scopes" description="Stax — planned scopes (EARS-criterion plan files)."}}
+  <section class="container py-l">
+    <h4 class="mb-m">Scopes</h4>
+    <p class="mb-l">Every planned scope in this project. Each scope lists the systems it shapes; open one to read the full plan.</p>
+
+    <div id="scopes-list" aria-live="polite">
+      <p class="small-text">Loading…</p>
+    </div>
+  </section>
+
+  <template id="tpl-scope">
+    <a class="row padding round surface-variant wave no-elevate mb-s middle-align">
+      <i class="large" aria-hidden="true">flag</i>
+      <h6 class="small no-margin max ml-s" data-slot="title"></h6>
+      <div class="row wrap middle-align" data-slot="systems"></div>
+      <div class="row middle-align small-text ml-s">
+        <span data-slot="created"></span>
+        <span class="mx-s">·</span>
+        <span data-slot="status"></span>
+      </div>
+    </a>
+  </template>
+
+  <template id="tpl-system-link">
+    <a class="chip small border primary-border primary-text no-elevate mr-t" data-stop></a>
+  </template>
+
+  <template id="tpl-empty">
+    <p class="small-text">No scopes found in this project.</p>
+  </template>
+
+  <template id="tpl-error">
+    <p class="small-text bold" data-slot="error"></p>
+  </template>
+{{/layout}}

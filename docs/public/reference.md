@@ -4,22 +4,24 @@
 stax [subcommand] [flags]
 ```
 
-Running `stax` with no arguments opens <https://google.com> in the OS-default browser (no-op on a headless box — see `stax` below). Use one of the subcommands below to do work.
+Running `stax` with no arguments starts the local Stax web UI and opens it in the OS-default browser. Use one of the subcommands below to do work.
+
+Every subcommand below also accepts `--cwd <path>` (git `-C` semantics): when set, stax behaves as if it were invoked from `<path>`. Useful for scripted callers that want to drive stax against a sibling project without changing the shell's working directory first.
 
 ## Commands
 
 | Command                       | Description                                                          |
 | ----------------------------- | -------------------------------------------------------------------- |
-| `stax`                         | Open <https://google.com> in the OS-default browser. Skipped automatically when no desktop session is detected (Linux without `DISPLAY` / `WAYLAND_DISPLAY`); in that case a diagnostic is written to stderr. |
-| `stax --no-browser`            | Same as bare `stax` but skip the browser launch. Exits silently after seeding `~/.stax/agents/` on first run. Use this in CI or any scripted invocation that should not pop a window. |
+| `stax`                         | Start the local Stax web UI and open it in the OS-default browser. Blocks until Ctrl-C. Requires the current directory to be an initialized stax project (see the [Project-scope marker check](#project-scope-marker-check)) — refuses to bind the listener and prints the init banner otherwise. |
+| `stax --no-browser`            | Same as bare `stax` but skip the browser handoff. The local UI keeps running; useful in CI or any scripted invocation that should not pop a window. Same project marker requirement as bare `stax`. |
 | `stax post-install`            | Installer hook subcommand. Triggers the first-run write of `~/.stax/agents/` and exits silently. `INSTALL.sh` / `INSTALL.ps1` use this; end users normally do not. Takes no arguments. |
-| `stax init [--agents ...] [--scope ...] [--prefix-width N] [--max-plan-lines N] [--review-per task\|plan]` | Install bundled agent skills + seed the project's `.stax/` scaffold. |
-| `stax skills remove --user`     | Uninstall bundled stax skillss from your user scope (`$HOME`).         |
-| `stax skills remove --project`  | Uninstall bundled stax skillss from the current directory.             |
-| `stax plans next-prefix`        | Print the next unused zero-padded plan prefix for `./.stax`.       |
-| `stax plans list`               | List plans in `./.stax` with slug, status, and declared systems.   |
-| `stax plans lint`               | Validate every plan file in `./.stax` against the project schema.  |
-| `stax plans slugify "<title>"`  | Print the kebab-case slug for a plan title.                          |
+| `stax init [--agents ...] [--scope ...] [--prefix-width N] [--max-plan-lines N] [--review-per task\|plan] [--cwd PATH]` | Install bundled agent skills + seed the project's `.stax/` scaffold. |
+| `stax skills remove --user`                  | Uninstall bundled stax skills from your user scope (`$HOME`). `--cwd` is rejected here — the wipe is always rooted at `$HOME`. |
+| `stax skills remove --project [--cwd PATH]`  | Uninstall bundled stax skills from the current directory.             |
+| `stax plans next-prefix [--cwd PATH]`        | Print the next unused zero-padded plan prefix for `./.stax`.       |
+| `stax plans list [--cwd PATH]`               | List plans in `./.stax` with slug, status, and declared systems.   |
+| `stax plans lint [--cwd PATH]`               | Validate every plan file in `./.stax` against the project schema.  |
+| `stax plans slugify [--cwd PATH] "<title>"`  | Print the kebab-case slug for a plan title.                          |
 | `stax --version`               | Print the version notice and exit. This is what `INSTALL.sh` / `INSTALL.ps1` parse to seed `~/.stax/.config.json`. |
 
 ### `stax init`
@@ -121,14 +123,13 @@ Same logic as `--user`, but rooted at the current working directory instead of `
 
 ### Project-scope marker check
 
-Every `stax plans` subcommand and `stax skills remove --project` require `./.stax/` to exist — it's how `stax` recognizes the current directory as a stax project. If it's missing, the command prints a two-line diagnostic on stderr and exits `2`:
+Bare `stax` (web UI), `stax --no-browser`, every `stax plans` subcommand, and `stax skills remove --project` all require the current directory to be an initialized stax project — the on-disk marker is `./.stax/_config.lock`. If it's missing, the command prints a one-line diagnostic on stderr and exits `2`:
 
 ```
-error: not a stax project: no .stax/ in <cwd>
-run `stax init` to initialize the current directory as a stax project.
+error: not a stax project — run `stax init` to initialize the current directory first.
 ```
 
-It runs *after* per-subcommand flag/positional validation, so a usage error (unknown flag, stray positional) still wins the diagnostic and gives the user the most actionable feedback first.
+For subcommands, the check runs *after* per-subcommand flag/positional validation, so a usage error (unknown flag, stray positional) still wins the diagnostic and gives the user the most actionable feedback first. For bare `stax` it runs after `--cwd` has been honored and after `ensureBundledAgents()` has materialized the user-scope embed, but before any listener is bound or browser launched.
 
 ### `stax plans next-prefix`
 
@@ -217,8 +218,8 @@ Takes exactly one positional argument; quote titles that contain spaces or shell
 ## Examples
 
 ```bash
-stax                              # opens https://google.com (or stderr diagnostic if headless)
-stax --no-browser                 # same, but skip the browser launch (silent)
+stax                              # opens the Stax web UI in the default browser; blocks on Ctrl-C
+stax --no-browser                 # same, but skip the browser handoff (UI keeps running)
 stax post-install                 # installer hook: seed ~/.stax/agents/ silently
 stax --version                    # prints e.g. v0.1.0 (installer-parseable notice)
 

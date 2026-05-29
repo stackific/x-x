@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	iofs "io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -75,14 +76,19 @@ func runPlansNextPrefix(args []string) {
 func planNextPrefix(args []string, staxDir string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("plans next-prefix", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	cwdFlag := fs.String("cwd", "", "change to this directory before running (like git -C)")
 	fs.Usage = func() {
-		_, _ = fmt.Fprintln(stderr, "Usage: stax plans next-prefix")
+		_, _ = fmt.Fprintln(stderr, "Usage: stax plans next-prefix [--cwd PATH]")
 	}
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() > 0 {
 		_, _ = fmt.Fprintf(stderr, "stax plans next-prefix takes no arguments (got %q)\n", fs.Arg(0))
+		return 2
+	}
+	if err := applyCwd(*cwdFlag); err != nil {
+		_, _ = fmt.Fprintln(stderr, "error:", err)
 		return 2
 	}
 	if err := checkProject(); err != nil {
@@ -179,17 +185,22 @@ func planList(args []string, staxDir string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	var statusFlag, systemFlag, keywordsFlag stringSliceFlag
 	orderFlag := fs.String("order", "desc", "sort by prefix: asc|desc (default desc = latest first)")
+	cwdFlag := fs.String("cwd", "", "change to this directory before running (like git -C)")
 	fs.Var(&statusFlag, "status", "keep only plans whose status matches (repeatable, comma-separated)")
 	fs.Var(&systemFlag, "system", "keep only plans whose systems contain this id (repeatable; OR semantics; matches the kebab `id:` from _data_systems.yaml)")
 	fs.Var(&keywordsFlag, "overflow-keywords", "case-insensitive substring(s) narrowing the output when the post-filter count exceeds plansListOverflowThreshold (repeatable; OR semantics; matched against plan body only)")
 	fs.Usage = func() {
-		_, _ = fmt.Fprintln(stderr, "Usage: stax plans list [--status NAME[,NAME...]] [--system ID] [--order asc|desc] [--overflow-keywords PATTERN[,PATTERN...]]")
+		_, _ = fmt.Fprintln(stderr, "Usage: stax plans list [--status NAME[,NAME...]] [--system ID] [--order asc|desc] [--overflow-keywords PATTERN[,PATTERN...]] [--cwd PATH]")
 	}
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() > 0 {
 		_, _ = fmt.Fprintf(stderr, "stax plans list takes no positional arguments (got %q)\n", fs.Arg(0))
+		return 2
+	}
+	if err := applyCwd(*cwdFlag); err != nil {
+		_, _ = fmt.Fprintln(stderr, "error:", err)
 		return 2
 	}
 	if err := checkProject(); err != nil {
@@ -323,7 +334,10 @@ func applyOverflowNarrow(rows []planRow, keywords []string, staxDir string, thre
 // caller can skip them; lintPlanFile surfaces those as per-file findings
 // on its own pass.
 func readPlanBody(path string) (string, bool) {
-	data, err := os.ReadFile(path) // #nosec G304 -- path is composed from a CLI-driven staxDir + slug.
+	if !isSafePlanPath(path) {
+		return "", false
+	}
+	data, err := iofs.ReadFile(os.DirFS(filepath.Dir(path)), filepath.Base(path))
 	if err != nil {
 		return "", false
 	}
@@ -469,7 +483,11 @@ func listPlans(staxDir string, width int, warnW io.Writer) ([]planRow, error) {
 // file lacks frontmatter or is missing a required field — warn-and-skip
 // so a single bad file never aborts the whole `plans list` walk.
 func parsePlan(path string, warnW io.Writer) (planRow, bool) {
-	data, err := os.ReadFile(path) // #nosec G304 -- path is constructed from a CLI-driven ReadDir of staxDir.
+	if !isSafePlanPath(path) {
+		_, _ = fmt.Fprintf(warnW, "warning: %s: contains a parent-directory segment; skipping\n", path)
+		return planRow{}, false
+	}
+	data, err := iofs.ReadFile(os.DirFS(filepath.Dir(path)), filepath.Base(path))
 	if err != nil {
 		_, _ = fmt.Fprintf(warnW, "warning: %s: %v; skipping\n", path, err)
 		return planRow{}, false
@@ -575,7 +593,35 @@ var (
 	// about the `id` and `name` keys; everything else (e.g. `brief`) is
 	// matched and discarded by setRegistryField.
 	registryKVLineRe = regexp.MustCompile(`^\s*([A-Za-z_][A-Za-z0-9_-]*):\s*(.*)$`)
+	// planSlugRe matches the post-prefix portion of a plan filename:
+	// one-or-more digits, a single hyphen, then a kebab-case slug
+	// (lowercase letters, digits, hyphens only). The /api/scope?id=<slug>
+	// handler validates user input against this regex before joining
+	// the slug into a filesystem path — a successful match guarantees
+	// the value contains no path separators, no `..` segments, and no
+	// shell-meaningful characters, which is what closes the CodeQL
+	// "uncontrolled data in path expression" finding.
+	planSlugRe = regexp.MustCompile(`^\d+-[a-z0-9-]+$`)
 )
+
+// isSafePlanPath rejects any plan-file path that contains a `..`
+// segment after lexical cleaning, so a tainted slug (or future
+// path-derived input) can never escape the project's `.stax/`
+// directory at the os.ReadFile boundary. Absolute paths are allowed
+// because tests legitimately pass `t.TempDir()/.stax/<file>.md`;
+// relative paths are allowed because production callers pass
+// `.stax/<file>.md`. The single thing we forbid is parent-directory
+// traversal — `..` is the only path component that could pull the
+// read out of the directory the caller intends.
+func isSafePlanPath(planPath string) bool {
+	cleaned := filepath.ToSlash(filepath.Clean(planPath))
+	for _, seg := range strings.Split(cleaned, "/") {
+		if seg == ".." {
+			return false
+		}
+	}
+	return true
+}
 
 // loadMaxPlanLines mirrors loadPrefixWidth for the max_plan_lines key in
 // _config.lock. Falls back to defaultMaxPlanLines on any failure.
@@ -614,14 +660,19 @@ func runPlansLint(args []string) {
 func planLint(args []string, staxDir string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("plans lint", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	cwdFlag := fs.String("cwd", "", "change to this directory before running (like git -C)")
 	fs.Usage = func() {
-		_, _ = fmt.Fprintln(stderr, "Usage: stax plans lint")
+		_, _ = fmt.Fprintln(stderr, "Usage: stax plans lint [--cwd PATH]")
 	}
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
 	if fs.NArg() > 0 {
 		_, _ = fmt.Fprintf(stderr, "stax plans lint takes no arguments (got %q)\n", fs.Arg(0))
+		return 2
+	}
+	if err := applyCwd(*cwdFlag); err != nil {
+		_, _ = fmt.Fprintln(stderr, "error:", err)
 		return 2
 	}
 	if err := checkProject(); err != nil {
@@ -683,10 +734,11 @@ func planLint(args []string, staxDir string, stdout, stderr io.Writer) int {
 //	         lintEarsTasks to translate before set-comparing against the
 //	         declared id array. Maps display name → id.
 //
-// Both maps are always non-nil so callers can index without a guard.
+// All maps are always non-nil so callers can index without a guard.
 type registry struct {
-	byID   map[string]string
-	byName map[string]string
+	byID    map[string]string
+	byName  map[string]string
+	byBrief map[string]string // id → brief, surfaced via /api/systems for the UI list view.
 }
 
 // parseRegistry walks the systems registry YAML and returns id↔name maps
@@ -701,14 +753,22 @@ type registry struct {
 // the broken plan referencing such a slug will surface its own lint
 // finding instead.
 func parseRegistry(path string) registry {
-	empty := registry{byID: make(map[string]string), byName: make(map[string]string)}
+	empty := registry{
+		byID:    make(map[string]string),
+		byName:  make(map[string]string),
+		byBrief: make(map[string]string),
+	}
 	f, err := os.Open(path) // #nosec G304 -- path = staxDir/staxSystemsFile, both constants.
 	if err != nil {
 		return empty
 	}
 	defer func() { _ = f.Close() }()
 
-	p := registryParser{reg: registry{byID: make(map[string]string), byName: make(map[string]string)}}
+	p := registryParser{reg: registry{
+		byID:    make(map[string]string),
+		byName:  make(map[string]string),
+		byBrief: make(map[string]string),
+	}}
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		p.feed(scanner.Text())
@@ -726,17 +786,20 @@ func parseRegistry(path string) registry {
 // so the per-line branches live in feed() and parseRegistry stays a thin
 // scan loop.
 type registryParser struct {
-	reg                registry
-	curID, curName     string
-	inSystems, inEntry bool
+	reg                      registry
+	curID, curName, curBrief string
+	inSystems, inEntry       bool
 }
 
 func (p *registryParser) flush() {
 	if p.inEntry && p.curID != "" && p.curName != "" {
 		p.reg.byID[p.curID] = p.curName
 		p.reg.byName[p.curName] = p.curID
+		if p.curBrief != "" {
+			p.reg.byBrief[p.curID] = p.curBrief
+		}
 	}
-	p.curID, p.curName = "", ""
+	p.curID, p.curName, p.curBrief = "", "", ""
 	p.inEntry = false
 }
 
@@ -765,13 +828,13 @@ func (p *registryParser) feed(line string) {
 		p.inEntry = true
 		if rest := strings.TrimSpace(m[2]); rest != "" {
 			if kv := registryKVLineRe.FindStringSubmatch(rest); kv != nil {
-				setRegistryField(&p.curID, &p.curName, kv[1], kv[2])
+				setRegistryField(&p.curID, &p.curName, &p.curBrief, kv[1], kv[2])
 			}
 		}
 		return
 	}
 	if kv := registryKVLineRe.FindStringSubmatch(line); kv != nil {
-		setRegistryField(&p.curID, &p.curName, kv[1], kv[2])
+		setRegistryField(&p.curID, &p.curName, &p.curBrief, kv[1], kv[2])
 	}
 }
 
@@ -779,13 +842,15 @@ func (p *registryParser) feed(line string) {
 // other key (`brief`, future ad-hoc fields) is dropped. Pulled out so the
 // item-start and continuation-line paths share one normalization
 // (whitespace trim + quote strip).
-func setRegistryField(id, name *string, key, raw string) {
+func setRegistryField(id, name, brief *string, key, raw string) {
 	v := strings.Trim(strings.TrimSpace(raw), `"'`)
 	switch key {
 	case "id":
 		*id = v
 	case "name":
 		*name = v
+	case "brief":
+		*brief = v
 	}
 }
 
@@ -1212,37 +1277,78 @@ func slugify(title string) string {
 	return strings.Trim(slugifySepRe.ReplaceAllString(strings.ToLower(title), "-"), "-")
 }
 
+// extractCwdFromHead consumes leading `--cwd <PATH>` / `--cwd=<PATH>`
+// pairs from args and returns the last value plus the remaining args.
+// Used by planSlugify because flag.Parse is unavailable to slugify
+// (its title positional may start with `-`). On a malformed `--cwd`
+// (no value after the bare form) it writes a usage error to stderr
+// and returns ok=false so the caller can exit 2 immediately. Multiple
+// occurrences keep the last value, mirroring flag.String's last-wins
+// semantics for the other plan subcommands.
+func extractCwdFromHead(args []string, stderr io.Writer) (cwd string, rest []string, ok bool) {
+	rest = args
+	for len(rest) > 0 {
+		switch {
+		case rest[0] == "--cwd":
+			if len(rest) < 2 {
+				_, _ = fmt.Fprintln(stderr, "stax plans slugify: --cwd requires a value")
+				return "", nil, false
+			}
+			cwd = rest[1]
+			rest = rest[2:]
+		case strings.HasPrefix(rest[0], "--cwd="):
+			cwd = strings.TrimPrefix(rest[0], "--cwd=")
+			rest = rest[1:]
+		default:
+			return cwd, rest, true
+		}
+	}
+	return cwd, rest, true
+}
+
 // runPlansSlugify takes a single positional argument (the title) and prints
 // its kebab-case slug to stdout. Exits 2 on missing/extra arguments or when
 // the title contains no characters that survive slugification. No project
 // check — slugify is a pure transform and is useful before `stax init`.
-// runPlansSlugify is the only subcommand that takes a single positional and
-// no flags. flag.Parse can't help here — the title may legitimately start
-// with `-` (e.g. "---draft note"), and flag.Parse would reject it as an
-// unknown flag. Instead we handle the three flag-like tokens we care
-// about manually: `-h`/`--help` print usage, `--` is a legacy separator
-// stripped if present, and everything else is treated as the title.
+// runPlansSlugify is the only subcommand that takes a single positional.
+// flag.Parse can't help here — the title may legitimately start with `-`
+// (e.g. "---draft note"), and flag.Parse would reject it as an unknown
+// flag. Instead we hand-parse the leading flag-like tokens we care about:
+// an optional `--cwd <PATH>` / `--cwd=<PATH>` pair (chdir before any
+// further work — kept for uniform flag parsing across every stax
+// subcommand even though slugify itself is cwd-independent), `-h`/`--help`
+// print usage, `--` is a legacy separator stripped if present, and
+// everything else is treated as the title.
 func runPlansSlugify(args []string) {
 	os.Exit(planSlugify(args, os.Stdout, os.Stderr))
 }
 
 // planSlugify is the testable body of runPlansSlugify. Exit-code
-// contract: 0 happy (or -h/--help), 2 usage error (missing/extra args
-// or unsluggable title). No staxDir argument because slugify is a pure
-// transform — useful before `stax init`, so it deliberately skips the
-// project marker check.
+// contract: 0 happy (or -h/--help), 2 usage error (missing/extra args,
+// bad --cwd, or unsluggable title). No staxDir argument because slugify
+// is a pure transform — useful before `stax init`, so it deliberately
+// skips the project marker check.
 func planSlugify(args []string, stdout, stderr io.Writer) int {
+	cwdPath, rest, ok := extractCwdFromHead(args, stderr)
+	if !ok {
+		return 2
+	}
+	args = rest
 	if len(args) >= 1 {
 		switch args[0] {
 		case "-h", "--help":
-			_, _ = fmt.Fprintln(stderr, `Usage: stax plans slugify "<title>"`)
+			_, _ = fmt.Fprintln(stderr, `Usage: stax plans slugify [--cwd PATH] "<title>"`)
 			return 0
 		case "--":
 			args = args[1:]
 		}
 	}
+	if err := applyCwd(cwdPath); err != nil {
+		_, _ = fmt.Fprintln(stderr, "error:", err)
+		return 2
+	}
 	if len(args) != 1 {
-		_, _ = fmt.Fprintln(stderr, `Usage: stax plans slugify "<title>"`)
+		_, _ = fmt.Fprintln(stderr, `Usage: stax plans slugify [--cwd PATH] "<title>"`)
 		_, _ = fmt.Fprintln(stderr, `stax plans slugify takes exactly one positional argument: the title (quote it)`)
 		return 2
 	}

@@ -111,11 +111,15 @@ ensure_on_path() {
   return 1
 }
 
-# Seed ~/.stax/agents/ from the binary's embed via a bare invocation. Same
-# trick the release installer uses; the 24h update check is bound to bare
-# invocations and handles refreshes from then on.
+# Seed ~/.stax/agents/ from the binary's embed via the dedicated
+# post-install hook. Bare `stax` now launches the loopback web UI AND
+# requires `<cwd>/.stax/_config.lock` to be present (it's a per-project
+# tool from the user's point of view), so it would fail with
+# "not a stax project" when invoked from the installer's working
+# directory. `post-install` is the installer-only entry point that
+# just materialises ~/.stax/agents/ and exits.
 info "Seeding ~/.stax/agents/ from binary"
-"${INSTALL_DIR}/${BINARY}" >/dev/null
+"${INSTALL_DIR}/${BINARY}" post-install >/dev/null
 
 if ensure_on_path; then
   info "Installed. Run: ${BINARY} --help"

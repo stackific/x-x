@@ -473,3 +473,94 @@ const (
 	installShURL  = "https://stackific.com/stax/INSTALL.sh"
 	installPS1URL = "https://stackific.com/stax/INSTALL.ps1"
 )
+
+// Local-server settings — read by runServer / runDefault. The listen
+// address is pinned to the loopback interface so the server never
+// accepts connections from elsewhere on the network: this is a per-user
+// CLI assistant, not a shared service. Port 7829 is the documented
+// preferred port; when it is already in use, listenWithFallback walks
+// forward through serverPortFallbackAttempts adjacent ports (7830,
+// 7831, …) so a second concurrent `stax` invocation lands on a free
+// port rather than failing with "address already in use".
+const (
+	// serverListenAddr is the preferred host:port the bare-stax HTTP
+	// server binds first. The bind host is the literal `127.0.0.1` (not
+	// `localhost`) so the listen is deterministic — `net.Listen("tcp",
+	// "localhost:N")` would resolve through DNS / /etc/hosts and land
+	// on whichever stack the resolver picks first, which differs across
+	// macOS, Linux, and WSL. Pinning the IPv4 loopback removes that
+	// variability and rules out an accidental bind to 0.0.0.0 if a
+	// future config slips a hostname through.
+	serverListenAddr = "127.0.0.1:7829"
+
+	// serverDisplayURL is the http:// URL printed in help text, the
+	// banner stdout line, and handed off to the OS-default browser.
+	// Uses `localhost` rather than `127.0.0.1` because browsers treat
+	// the literal `localhost` as a secure context by default (per the
+	// W3C secure-contexts spec) and it reads better in logs. The split
+	// between bind host and display host is intentional — see
+	// serverListenAddr above for the rationale on each side.
+	serverDisplayURL = "http://localhost:7829"
+
+	// serverPortFallbackAttempts bounds how many adjacent ports the
+	// listener will try after the preferred port fails with EADDRINUSE.
+	// Stops after 100 attempts (7830..7929 inclusive) so a permanently
+	// claimed range surfaces as a clear error rather than an infinite
+	// loop, while still leaving plenty of headroom for a dozen
+	// concurrent stax instances on the same machine.
+	serverPortFallbackAttempts = 100
+
+	// serverReadHeaderTimeout caps how long the server will wait for a
+	// client's request headers. Short, fixed value because the server
+	// serves only its own narrow API (no slow-client uploads); a hung
+	// client must not pin a goroutine indefinitely.
+	serverReadHeaderTimeout = 5 * time.Second
+
+	// serverShutdownTimeout bounds the graceful-shutdown wait after
+	// SIGINT/SIGTERM. Five seconds is plenty for the in-flight handlers
+	// (a JSON encode and a YAML walk) to drain; longer would make
+	// Ctrl-C feel sluggish on a hung handler.
+	serverShutdownTimeout = 5 * time.Second
+)
+
+// API path constants. Surfaced as named constants so the handler
+// registration (server.go) and the e2e probes (scripts/e2e_test.sh)
+// can both reference one source of truth — renaming an endpoint is
+// then a one-line edit here plus the mirror in the shell harness.
+//
+// `scope` in the user-facing API is the same artifact the CLI calls a
+// `plan` — `.stax/<prefix>-<slug>.md`. The naming split is deliberate:
+// the bundled skill that authors these files is `/scope`, so the web
+// UI surfaces them under the same name. Backend code keeps the
+// historical `plan` term because the CLI subcommands (`stax plans
+// next-prefix`, etc.) and the on-disk filename conventions are
+// stable; only the HTTP API and frontend page routes use `scope`.
+const (
+	apiStatsPath   = "/api/stats"
+	apiSystemsPath = "/api/systems"
+	apiScopesPath  = "/api/scopes"
+	apiScopePath   = "/api/scope"
+	apiSearchPath  = "/api/search"
+)
+
+// frontendAssetsURLPrefix is the URL prefix Vite emits non-hashed assets
+// under (vite.config.ts assetFileNames). The handleFrontend cache-control
+// middleware narrows its long-lived Cache-Control header to this subtree
+// so churnier files at the dist root (bundle.css, bundle.js, *.html)
+// keep their default revalidation behavior.
+const frontendAssetsURLPrefix = "/assets/"
+
+// woff2Ext is the font extension that gets the year-long immutable
+// Cache-Control header. Narrowed from "everything under /assets/" so an
+// SVG or future asset that does change between releases isn't pinned in
+// the browser cache.
+const woff2Ext = ".woff2"
+
+// assetImmutableCacheControl is the Cache-Control header the embedded
+// server attaches to /assets/*.woff2 responses: a year-long public
+// cache with the `immutable` token so warm navigations don't even
+// revalidate. Material Symbols glyphs change rarely; a stale font
+// renders stale icons (visually harmless), so trading freshness for
+// the elimination of the per-navigation If-Modified-Since round trip
+// is the right call.
+const assetImmutableCacheControl = "public, max-age=31536000, immutable"

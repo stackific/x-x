@@ -1958,21 +1958,22 @@ func TestInlineSlugSet(t *testing.T) {
 	}
 }
 
-// TestSetRegistryField pins the key dispatch (id, name, other-ignored)
-// and the value normalization (quote-strip + whitespace-trim) that the
-// hand-rolled parser relies on for both single-line and continuation
-// forms.
+// TestSetRegistryField pins the key dispatch (id, name, brief,
+// other-ignored) and the value normalization (quote-strip +
+// whitespace-trim) that the hand-rolled parser relies on for both
+// single-line and continuation forms.
 func TestSetRegistryField(t *testing.T) {
-	var id, name string
-	setRegistryField(&id, &name, "id", `"auth-service"`)
-	setRegistryField(&id, &name, "name", `   Auth Service   `)
-	if id != "auth-service" || name != "Auth Service" {
-		t.Fatalf("got id=%q name=%q", id, name)
+	var id, name, brief string
+	setRegistryField(&id, &name, &brief, "id", `"auth-service"`)
+	setRegistryField(&id, &name, &brief, "name", `   Auth Service   `)
+	setRegistryField(&id, &name, &brief, "brief", `"OAuth and session management."`)
+	if id != "auth-service" || name != "Auth Service" || brief != "OAuth and session management." {
+		t.Fatalf("got id=%q name=%q brief=%q", id, name, brief)
 	}
 	// Unknown keys are silently dropped.
-	setRegistryField(&id, &name, "brief", "ignored")
-	if id != "auth-service" || name != "Auth Service" {
-		t.Fatalf("unknown-key mutated state: id=%q name=%q", id, name)
+	setRegistryField(&id, &name, &brief, "unknown", "ignored")
+	if id != "auth-service" || name != "Auth Service" || brief != "OAuth and session management." {
+		t.Fatalf("unknown-key mutated state: id=%q name=%q brief=%q", id, name, brief)
 	}
 }
 
@@ -2280,5 +2281,196 @@ func TestPlanSlugify_Unsluggable(t *testing.T) {
 	}
 	if !strings.Contains(errb.String(), "no slug-able characters") {
 		t.Fatalf("diagnostic missing: %q", errb.String())
+	}
+}
+
+// ---- --cwd on every plans subcommand ----
+
+// TestPlanNextPrefix_CwdFlag pins the project-marker check + scan path
+// against a target directory passed via --cwd. Start in an unscaffolded
+// outer dir (would normally fail the marker check) and ensure --cwd
+// shifts the check onto an initialized sibling project.
+func TestPlanNextPrefix_CwdFlag(t *testing.T) {
+	outer := t.TempDir()
+	chdir(t, outer)
+	target := t.TempDir()
+	seedProject(t, target)
+	// Drop one existing plan inside the target so next-prefix returns
+	// something more interesting than "0001".
+	if err := os.WriteFile(filepath.Join(target, staxDir, "0007-existing"+planFileExt), nil, 0o600); err != nil {
+		t.Fatalf("seed plan: %v", err)
+	}
+	var out, errb bytes.Buffer
+	rc := planNextPrefix([]string{"--cwd", target}, staxDir, &out, &errb)
+	if rc != 0 {
+		t.Fatalf("rc=%d stderr=%q", rc, errb.String())
+	}
+	if out.String() != "0008\n" {
+		t.Fatalf("stdout = %q, want 0008\\n (scan must run inside --cwd target)", out.String())
+	}
+}
+
+// TestPlanNextPrefix_CwdMissing pins the --cwd validation: a missing
+// path errors out with rc=2 (usage error) and a --cwd-attributed
+// diagnostic, BEFORE the project-marker check fires (which would
+// otherwise produce a misleading "not a stax project" banner).
+func TestPlanNextPrefix_CwdMissing(t *testing.T) {
+	chdir(t, t.TempDir())
+	missing := filepath.Join(t.TempDir(), "no-such-dir")
+	var out, errb bytes.Buffer
+	rc := planNextPrefix([]string{"--cwd", missing}, staxDir, &out, &errb)
+	if rc != 2 {
+		t.Fatalf("rc=%d, want 2", rc)
+	}
+	if !strings.Contains(errb.String(), "--cwd") {
+		t.Fatalf("diagnostic must mention --cwd: %q", errb.String())
+	}
+	if strings.Contains(errb.String(), "not a stax project") {
+		t.Fatalf("diagnostic should NOT mention the marker check: %q", errb.String())
+	}
+}
+
+// TestPlanList_CwdFlag is the listing analog: chdir away from the
+// project, point --cwd at it, and verify the rows come from the target.
+func TestPlanList_CwdFlag(t *testing.T) {
+	chdir(t, t.TempDir())
+	target := t.TempDir()
+	seedProject(t, target)
+	plans := filepath.Join(target, staxDir)
+	seedListPlan(t, plans, "0001-a"+planFileExt, "valid", "auth", "x")
+	seedListPlan(t, plans, "0002-b"+planFileExt, "deprecated", "billing", "x")
+	var out, errb bytes.Buffer
+	rc := planList([]string{"--cwd", target}, staxDir, &out, &errb)
+	if rc != 0 {
+		t.Fatalf("rc=%d stderr=%q", rc, errb.String())
+	}
+	// Default --order=desc → 0002 first.
+	want := "0002-b\tdeprecated\tbilling\n0001-a\tvalid\tauth\n"
+	if out.String() != want {
+		t.Fatalf("stdout = %q, want %q", out.String(), want)
+	}
+}
+
+// TestPlanLint_CwdFlag pins lint's --cwd path: an initialized project
+// under target is linted even though the test process started in an
+// unscaffolded outer dir.
+func TestPlanLint_CwdFlag(t *testing.T) {
+	chdir(t, t.TempDir())
+	target := t.TempDir()
+	seedProject(t, target)
+	plans := filepath.Join(target, staxDir)
+	if err := os.WriteFile(filepath.Join(plans, staxSystemsFile),
+		[]byte("systems:\n  - id: auth\n    name: Auth Service\n"), 0o600); err != nil {
+		t.Fatalf("write registry: %v", err)
+	}
+	plan := "---\ntitle: a\nstatus: valid\nsystems: [auth]\ncreated: 2026-05-23T14:30:00Z\n---\n\n## Goal\ng\n\n## Approach\nA\n\n## Tasks\n- [ ] The Auth Service shall do.\n"
+	if err := os.WriteFile(filepath.Join(plans, "0001-a"+planFileExt), []byte(plan), 0o600); err != nil {
+		t.Fatalf("write plan: %v", err)
+	}
+	var out, errb bytes.Buffer
+	rc := planLint([]string{"--cwd", target}, staxDir, &out, &errb)
+	if rc != 0 {
+		t.Fatalf("rc=%d stdout=%q stderr=%q", rc, out.String(), errb.String())
+	}
+	if !strings.Contains(out.String(), "0001-a"+planFileExt+": ok") {
+		t.Fatalf("expected per-file ok in stdout: %q", out.String())
+	}
+}
+
+// TestPlanSlugify_CwdFlag exercises both `--cwd PATH` and `--cwd=PATH`
+// forms on slugify. Slugify itself is cwd-independent — the test only
+// proves the flag is accepted without disrupting the title positional.
+func TestPlanSlugify_CwdFlag(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	other := t.TempDir()
+	cases := []struct {
+		name string
+		args []string
+	}{
+		{"separate-value", []string{"--cwd", other, "Hello World"}},
+		{"equals-value", []string{"--cwd=" + other, "Hello World"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			chdir(t, dir)
+			var out, errb bytes.Buffer
+			if rc := planSlugify(c.args, &out, &errb); rc != 0 {
+				t.Fatalf("rc=%d stderr=%q", rc, errb.String())
+			}
+			if out.String() != "hello-world\n" {
+				t.Fatalf("stdout = %q, want hello-world\\n", out.String())
+			}
+		})
+	}
+}
+
+// TestPlanSlugify_CwdMissingValue rejects a bare `--cwd` with no value.
+// Pin matches the hand-parsed validator path (slugify can't use
+// flag.Parse because its title positional may legitimately start with
+// `-`).
+func TestPlanSlugify_CwdMissingValue(t *testing.T) {
+	var out, errb bytes.Buffer
+	rc := planSlugify([]string{"--cwd"}, &out, &errb)
+	if rc != 2 {
+		t.Fatalf("rc=%d, want 2", rc)
+	}
+	if !strings.Contains(errb.String(), "--cwd requires a value") {
+		t.Fatalf("diagnostic missing: %q", errb.String())
+	}
+}
+
+// TestPlanSlugify_CwdRejectsMissingPath pins the validation chain past
+// the flag-consumer: a syntactically OK `--cwd <path>` whose target
+// doesn't exist still surfaces as an error attributed to --cwd, before
+// the title positional is examined.
+func TestPlanSlugify_CwdRejectsMissingPath(t *testing.T) {
+	chdir(t, t.TempDir())
+	missing := filepath.Join(t.TempDir(), "no-such-dir")
+	var out, errb bytes.Buffer
+	rc := planSlugify([]string{"--cwd", missing, "anything"}, &out, &errb)
+	if rc != 2 {
+		t.Fatalf("rc=%d, want 2", rc)
+	}
+	if !strings.Contains(errb.String(), "--cwd") {
+		t.Fatalf("diagnostic must mention --cwd: %q", errb.String())
+	}
+}
+
+// TestExtractCwdFromHead drives the hand-parsed --cwd consumer used by
+// slugify. Three cases: separate value, =value form, no flag at all.
+// The "no flag" case must leave rest untouched even when its first
+// element looks flag-ish (a leading `-`) — this is what protects
+// slugify's right to receive titles that start with dashes.
+func TestExtractCwdFromHead(t *testing.T) {
+	var errb bytes.Buffer
+	cases := []struct {
+		name    string
+		args    []string
+		wantCwd string
+		wantRst []string
+		wantOK  bool
+	}{
+		{"absent", []string{"Hello"}, "", []string{"Hello"}, true},
+		{"separate", []string{"--cwd", "/tmp/x", "Hello"}, "/tmp/x", []string{"Hello"}, true},
+		{"equals", []string{"--cwd=/tmp/x", "Hello"}, "/tmp/x", []string{"Hello"}, true},
+		{"dash-title", []string{"---draft"}, "", []string{"---draft"}, true},
+		{"last-wins", []string{"--cwd", "/a", "--cwd=/b", "Hello"}, "/b", []string{"Hello"}, true},
+		{"missing-value", []string{"--cwd"}, "", nil, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			errb.Reset()
+			cwd, rest, ok := extractCwdFromHead(c.args, &errb)
+			if ok != c.wantOK {
+				t.Fatalf("ok=%v want %v (stderr=%q)", ok, c.wantOK, errb.String())
+			}
+			if cwd != c.wantCwd {
+				t.Fatalf("cwd=%q want %q", cwd, c.wantCwd)
+			}
+			if strings.Join(rest, "|") != strings.Join(c.wantRst, "|") {
+				t.Fatalf("rest=%v want %v", rest, c.wantRst)
+			}
+		})
 	}
 }

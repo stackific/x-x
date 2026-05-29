@@ -1,0 +1,33 @@
+{{#> layout title="System" page="system" active="systems" description="Stax — system detail."}}
+  <section class="container py-l">
+    <a href="/systems" class="link small-text mb-m">&larr; All systems</a>
+    <div class="row middle-align mb-m">
+      <i class="large mr-s" aria-hidden="true">hub</i>
+      <h4 id="system-name" class="max no-margin">Loading…</h4>
+    </div>
+
+    <div id="system-plans" aria-live="polite">
+      <p class="small-text">Loading plans…</p>
+    </div>
+  </section>
+
+  <template id="tpl-plan">
+    <a class="row padding round surface-variant wave no-elevate mb-s middle-align">
+      <i aria-hidden="true">flag</i>
+      <h6 class="small no-margin max ml-s" data-slot="title"></h6>
+      <div class="row middle-align small-text">
+        <span data-slot="created"></span>
+        <span class="mx-s">·</span>
+        <span data-slot="status"></span>
+      </div>
+    </a>
+  </template>
+
+  <template id="tpl-empty">
+    <p class="small-text">No plans for this system yet.</p>
+  </template>
+
+  <template id="tpl-error">
+    <p class="small-text bold" data-slot="error"></p>
+  </template>
+{{/layout}}

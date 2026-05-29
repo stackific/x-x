@@ -1,5 +1,6 @@
 .DS_Store
 /bin/
+.stax
 
 # /stax and /stax.exe — accidental `go build` output at the module root.
 # Go names a main package's binary after its directory, so a bare
