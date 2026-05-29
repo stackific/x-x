@@ -1,4 +1,4 @@
-# Stax by [Stackific Inc.](https://stackific.com)
+# Stax by [Stackific Inc.](https://stackific.com/stax)
 
 An evidence-based, spec-driven agent skillset with enterprise accuracy at startup speed with just 2-skill vocabulary: `/scope` and `/ship`. 
 

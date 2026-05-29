@@ -3,7 +3,7 @@ title: Add tax exempt customer flag for nonprofits and resellers
 status: superseded
 systems: [billing]
 superseded_by: [0034-add-stripe-tax-integration-for-sales-tax-compliance]
-created: 2025-09-10T07:42:19Z
+created: 2025-09-14T11:24:55Z
 ---
 
 ## Goal

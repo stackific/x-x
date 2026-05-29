@@ -2,7 +2,7 @@
 title: Build product engagement scorecard refresh
 status: valid
 systems: [analytics-warehouse]
-created: 2025-11-11T21:47:17Z
+created: 2026-01-08T16:40:00Z
 ---
 
 ## Goal

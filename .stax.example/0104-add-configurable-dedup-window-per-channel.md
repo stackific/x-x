@@ -3,7 +3,7 @@ title: Add configurable dedup window per channel
 status: valid
 systems: [notification-bus]
 extends: [0090-suppress-duplicate-notifications-within-five-minutes]
-created: 2026-05-16T08:45:00Z
+created: 2026-05-27T04:55:44Z
 ---
 
 ## Goal

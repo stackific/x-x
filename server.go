@@ -394,10 +394,13 @@ func handleAPISystems(w http.ResponseWriter, r *http.Request) {
 // translates that into a 404. plans is empty (not nil) when the id is
 // known but no plan declares it, so the JSON encodes an explicit `[]`.
 //
-// Plan order is filename sort descending — newest plans first, because
-// the numeric prefix is zero-padded sequential. Matches the default of
-// `stax plans list` (which also emits desc) and gives the UI the most
-// recent work above the fold.
+// Plan order is by frontmatter `created` descending — newest plans
+// first. Sorting by `created:` (not by filename slug) matches the
+// same expectation /api/scopes serves and decouples the displayed
+// order from prefix-vs-date drift on backdated edits or hand-
+// renumbered files. Ties on `created:` fall back to slug descending
+// so the higher-prefix wins, matching the old filename-sort behavior
+// in the common monotonic case.
 func readSystemDetail(staxDir, id string) (systemDetailResponse, bool) {
 	reg := parseRegistry(filepath.Join(staxDir, staxSystemsFile))
 	name, known := reg.byID[id]
@@ -406,8 +409,6 @@ func readSystemDetail(staxDir, id string) (systemDetailResponse, bool) {
 	}
 
 	files, _ := filepath.Glob(filepath.Join(staxDir, "*"+planFileExt))
-	sort.Sort(sort.Reverse(sort.StringSlice(files)))
-
 	plans := make([]planDetail, 0, len(files))
 	for _, f := range files {
 		detail, ok := readPlanForAPI(f, id)
@@ -416,6 +417,12 @@ func readSystemDetail(staxDir, id string) (systemDetailResponse, bool) {
 		}
 		plans = append(plans, detail)
 	}
+	sort.Slice(plans, func(i, j int) bool {
+		if plans[i].Created != plans[j].Created {
+			return plans[i].Created > plans[j].Created
+		}
+		return plans[i].Slug > plans[j].Slug
+	})
 	return systemDetailResponse{ID: id, Name: name, Plans: plans}, true
 }
 
@@ -512,12 +519,18 @@ func handleAPIScope(w http.ResponseWriter, r *http.Request) {
 
 // readScopesForAPI is the testable body of handleAPIScopes: walks
 // staxDir for plan files and returns one row per parseable plan,
-// sorted by slug (which equals filename order because the prefix is
-// zero-padded sequential). Missing staxDir returns an empty slice so
-// the UI's empty state surfaces naturally.
+// sorted by frontmatter `created` timestamp descending — newest first.
+// Sorting by `created:` (not by filename slug) is what the UI's "latest"
+// affordances expect; the slug's numeric prefix only matches creation
+// order when prefix assignment is monotonic with `created:`, which the
+// `stax plans next-prefix` workflow guarantees for fresh plans but not
+// for backdated edits or hand-renumbered files. Ties on `created:`
+// fall back to slug descending so the higher-prefix wins, matching the
+// old filename-sort behavior in the common monotonic case. Missing
+// staxDir returns an empty slice so the UI's empty state surfaces
+// naturally.
 func readScopesForAPI(staxDir string) []scopeListItem {
 	files, _ := filepath.Glob(filepath.Join(staxDir, "*"+planFileExt))
-	sort.Sort(sort.Reverse(sort.StringSlice(files)))
 	out := make([]scopeListItem, 0, len(files))
 	for _, f := range files {
 		row, ok := parsePlan(f, io.Discard)
@@ -535,6 +548,12 @@ func readScopesForAPI(staxDir string) []scopeListItem {
 			HasOpenTasks: strings.Contains(body, "- [ ]"),
 		})
 	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Created != out[j].Created {
+			return out[i].Created > out[j].Created
+		}
+		return out[i].Slug > out[j].Slug
+	})
 	return out
 }
 

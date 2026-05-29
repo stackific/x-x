@@ -2,7 +2,7 @@
 title: Build customer churn prediction feature table
 status: valid
 systems: [analytics-warehouse, feature-store]
-created: 2025-10-28T15:27:16Z
+created: 2026-01-08T12:40:00Z
 ---
 
 ## Goal

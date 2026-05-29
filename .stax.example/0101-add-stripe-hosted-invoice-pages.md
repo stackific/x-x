@@ -3,7 +3,7 @@ title: Add Stripe hosted invoice pages
 status: valid
 systems: [billing]
 supersedes: [0020-generate-pdf-invoices-for-annual-subscriptions]
-created: 2026-05-10T09:00:00Z
+created: 2026-05-27T01:55:44Z
 ---
 
 ## Goal

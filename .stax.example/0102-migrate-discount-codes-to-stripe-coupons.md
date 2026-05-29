@@ -3,7 +3,7 @@ title: Migrate discount codes to Stripe coupons
 status: valid
 systems: [billing]
 supersedes: [0028-apply-percentage-discounts-at-checkout-via-coupon-codes]
-created: 2026-05-12T14:20:00Z
+created: 2026-05-27T02:55:44Z
 ---
 
 ## Goal

@@ -3,7 +3,7 @@ title: Add feature store canary rollback watcher
 status: valid
 systems: [feature-store]
 extends: [0081-add-canary-feature-deployment-workflow]
-created: 2026-05-18T13:10:00Z
+created: 2026-05-27T05:55:44Z
 ---
 
 ## Goal

@@ -3,7 +3,7 @@ title: Apply percentage discounts at checkout via coupon codes
 status: superseded
 systems: [billing]
 superseded_by: [0102-migrate-discount-codes-to-stripe-coupons]
-created: 2025-09-04T12:15:00Z
+created: 2025-09-05T04:24:12Z
 ---
 
 ## Goal

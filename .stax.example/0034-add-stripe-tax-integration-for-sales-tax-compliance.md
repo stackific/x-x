@@ -3,7 +3,7 @@ title: Add Stripe Tax integration for sales tax compliance
 status: valid
 systems: [billing]
 supersedes: [0022-apply-eu-vat-to-customers-in-the-european-economic-area, 0030-add-tax-exempt-customer-flag-for-nonprofits-and-resellers]
-created: 2025-09-19T13:56:58Z
+created: 2025-10-09T15:50:00Z
 ---
 
 ## Goal

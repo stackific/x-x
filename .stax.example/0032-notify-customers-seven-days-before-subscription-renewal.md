@@ -2,7 +2,7 @@
 title: Notify customers seven days before subscription renewal
 status: valid
 systems: [billing, notification-bus]
-created: 2025-09-11T17:15:45Z
+created: 2025-09-14T13:24:55Z
 ---
 
 ## Goal

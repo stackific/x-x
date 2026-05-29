@@ -2,7 +2,7 @@
 title: Add column level data lineage documentation
 status: valid
 systems: [analytics-warehouse]
-created: 2025-10-22T05:16:03Z
+created: 2026-01-08T11:40:00Z
 ---
 
 ## Goal

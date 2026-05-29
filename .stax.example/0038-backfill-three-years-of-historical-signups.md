@@ -2,7 +2,7 @@
 title: Backfill three years of historical signups
 status: valid
 systems: [analytics-warehouse]
-created: 2025-10-04T15:10:32Z
+created: 2025-10-09T19:50:00Z
 ---
 
 ## Goal

@@ -3,7 +3,7 @@ title: Suppress duplicate notifications within five minutes
 status: valid
 systems: [notification-bus]
 extended_by: [0104-add-configurable-dedup-window-per-channel]
-created: 2026-05-01T16:00:00Z
+created: 2026-05-04T17:17:24Z
 ---
 
 ## Goal

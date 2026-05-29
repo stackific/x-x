@@ -2,7 +2,7 @@
 title: Add SLA monitoring for daily warehouse refresh
 status: valid
 systems: [analytics-warehouse]
-created: 2025-11-10T20:04:15Z
+created: 2026-01-08T15:40:00Z
 ---
 
 ## Goal

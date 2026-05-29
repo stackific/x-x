@@ -2,7 +2,7 @@
 title: Add SCD Type 2 tracking for plan changes
 status: valid
 systems: [analytics-warehouse]
-created: 2025-10-05T12:54:33Z
+created: 2025-10-09T20:50:00Z
 ---
 
 ## Goal

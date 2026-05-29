@@ -2,7 +2,7 @@
 title: Add cross region active active failover for ingest
 status: deprecated
 systems: [ingest-pipeline]
-created: 2026-05-20T10:00:00Z
+created: 2026-05-27T06:55:44Z
 ---
 
 ## Goal
