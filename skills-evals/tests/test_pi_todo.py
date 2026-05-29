@@ -14,7 +14,7 @@ skill the Claude tests exercise via `/scope TASK`.
 Flow per the user's spec:
   1. Invoke the scope skill with the TODO task. Auto-reply 'yes' until
      the planner stops asking.
-  2. PlanJudge scores the plan file that landed under .stax/.
+  2. WorkItemJudge scores the work-item file that landed under .stax/.
   3. Invoke the stax skill. Auto-reply 'yes' until the executor stops
      asking.
   4. ArtifactJudge scores the files the executor produced.
@@ -28,7 +28,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from skills_evals.judges import ArtifactJudge, PlanJudge
+from skills_evals.judges import ArtifactJudge, WorkItemJudge
 from skills_evals.pi_driver import DEFAULT_MAX_TURNS, drive_command
 
 TASK = "build me a single HTML and localStorage-based todo list app"
@@ -58,11 +58,11 @@ def test_pi_builds_todo_app(workspace: Path, tmp_path: Path) -> None:
     f"Inspect {transcripts / 'scope.jsonl'} to see what it was asking."
   )
 
-  plan_judgment = PlanJudge().evaluate(TASK, workspace)
-  print(f"\n[plan] score={plan_judgment.score:.2f} reason={plan_judgment.reason}")
-  assert plan_judgment.passed, (
-    f"PlanJudge failed: score={plan_judgment.score:.2f} "
-    f"reason={plan_judgment.reason}"
+  work_item_judgment = WorkItemJudge().evaluate(TASK, workspace)
+  print(f"\n[work-item] score={work_item_judgment.score:.2f} reason={work_item_judgment.reason}")
+  assert work_item_judgment.passed, (
+    f"WorkItemJudge failed: score={work_item_judgment.score:.2f} "
+    f"reason={work_item_judgment.reason}"
   )
 
   # --- /ship ---

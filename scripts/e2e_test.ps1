@@ -55,7 +55,7 @@ Set-Variable -Option Constant -Name SKILLS_SUBDIR                   -Value 'skil
 Set-Variable -Option Constant -Name STAX_LOCK_FILE                  -Value '_config.lock'
 Set-Variable -Option Constant -Name STAX_SYSTEMS_FILE               -Value '_data_systems.yaml'
 Set-Variable -Option Constant -Name DEFAULT_PREFIX_WIDTH            -Value 4
-Set-Variable -Option Constant -Name PLANS_LIST_OVERFLOW_THRESHOLD   -Value 20
+Set-Variable -Option Constant -Name WORK_ITEMS_LIST_OVERFLOW_THRESHOLD   -Value 20
 
 Set-Variable -Option Constant -Name SKILL_SCOPE_DIR     -Value 'scope'
 Set-Variable -Option Constant -Name SKILL_SHIP_DIR      -Value 'ship'
@@ -510,7 +510,7 @@ function Initialize-ProjectScaffold {
   $lockJson = @"
 {
   "prefix_width": $DEFAULT_PREFIX_WIDTH,
-  "max_plan_lines": 30,
+  "max_work_item_lines": 30,
   "review_per": "task"
 }
 "@
@@ -518,7 +518,7 @@ function Initialize-ProjectScaffold {
 }
 
 # Zero-padded prefix helper — mirrors the bash `prefix WIDTH N`. Used by every
-# plan-file fixture in the plans-list/plans-lint sections.
+# work-item-file fixture in the work-items-list/work-items-lint sections.
 function Format-Prefix {
   param(
     [int]$Width,
@@ -527,8 +527,8 @@ function Format-Prefix {
   return $N.ToString().PadLeft($Width, '0')
 }
 
-# Writes a minimally-valid plan file (frontmatter + body) for use by tests
-# that exercise `plans list`. Body is the third positional so cases can
+# Writes a minimally-valid work-item file (frontmatter + body) for use by tests
+# that exercise `work-items list`. Body is the third positional so cases can
 # override per test.
 function Write-Plan {
   param(
@@ -730,10 +730,10 @@ Assert-Contains 'post-install listed'          $RunOut 'stax post-install'
 Assert-Contains 'init listed'                  $RunOut 'stax init'
 Assert-Contains 'skills remove --user listed'  $RunOut 'stax skills remove --user'
 Assert-Contains 'skills remove --project listed' $RunOut 'stax skills remove --project'
-Assert-Contains 'plans next-prefix listed'     $RunOut 'stax plans next-prefix'
-Assert-Contains 'plans list listed'            $RunOut 'stax plans list'
-Assert-Contains 'plans lint listed'            $RunOut 'stax plans lint'
-Assert-Contains 'plans slugify listed'         $RunOut 'stax plans slugify'
+Assert-Contains 'work-items next-prefix listed'     $RunOut 'stax work-items next-prefix'
+Assert-Contains 'work-items list listed'            $RunOut 'stax work-items list'
+Assert-Contains 'work-items lint listed'            $RunOut 'stax work-items lint'
+Assert-Contains 'work-items slugify listed'         $RunOut 'stax work-items slugify'
 Assert-Contains 'cwd flag listed'              $RunOut '--cwd <path>'
 # Help text MUST NOT leak server internals — the HTTP routes and the
 # listen URL are implementation details behind the web UI, not user
@@ -770,99 +770,99 @@ Invoke-XX skills remove --user --project
 Assert-Eq       'exit 2'     $RunRC 2
 Assert-Contains 'diagnostic' $RunErr 'mutually exclusive'
 
-# ---------- plans subcommand routing ----------
+# ---------- work-items subcommand routing ----------
 
-Start-Case 'stax plans (no subcommand) prints usage to stderr and exits 2'
-Invoke-XX plans
+Start-Case 'stax work-items (no subcommand) prints usage to stderr and exits 2'
+Invoke-XX work-items
 Assert-Eq       'exit 2'       $RunRC 2
-Assert-Contains 'usage header' $RunErr 'Usage: stax plans <subcommand>'
+Assert-Contains 'usage header' $RunErr 'Usage: stax work-items <subcommand>'
 Assert-Contains 'next-prefix'  $RunErr 'next-prefix'
 Assert-Contains 'list'         $RunErr 'list'
 Assert-Contains 'lint'         $RunErr 'lint'
 Assert-Contains 'slugify'      $RunErr 'slugify'
 
-Start-Case 'stax plans <typo> exits 2 with diagnostic'
-Invoke-XX plans frobnicate
+Start-Case 'stax work-items <typo> exits 2 with diagnostic'
+Invoke-XX work-items frobnicate
 Assert-Eq       'exit 2'     $RunRC 2
-Assert-Contains 'diagnostic' $RunErr 'unknown plans subcommand: frobnicate'
+Assert-Contains 'diagnostic' $RunErr 'unknown work-items subcommand: frobnicate'
 
-# ---------- plans slugify (no project-marker check) ----------
+# ---------- work-items slugify (no project-marker check) ----------
 
-Start-Case 'plans slugify lowercases ASCII'
-Invoke-XX plans slugify 'Add Payment Retry'
+Start-Case 'work-items slugify lowercases ASCII'
+Invoke-XX work-items slugify 'Add Payment Retry'
 Assert-Eq 'exit 0'      $RunRC 0
 Assert-Eq 'slug printed' $RunOut 'add-payment-retry'
 
-Start-Case 'plans slugify collapses runs of non-alnum'
-Invoke-XX plans slugify 'foo!!!bar---baz'
+Start-Case 'work-items slugify collapses runs of non-alnum'
+Invoke-XX work-items slugify 'foo!!!bar---baz'
 Assert-Eq 'exit 0'      $RunRC 0
 Assert-Eq 'slug printed' $RunOut 'foo-bar-baz'
 
-Start-Case 'plans slugify trims leading/trailing dashes'
-Invoke-XX plans slugify '---foo---'
+Start-Case 'work-items slugify trims leading/trailing dashes'
+Invoke-XX work-items slugify '---foo---'
 Assert-Eq 'exit 0'       $RunRC 0
 Assert-Eq 'slug printed' $RunOut 'foo'
 
-Start-Case 'plans slugify accepts a double-dash-prefixed title WITHOUT --'
+Start-Case 'work-items slugify accepts a double-dash-prefixed title WITHOUT --'
 # runPlansSlugify bypasses flag.Parse so `--draft note` is treated as the
 # title verbatim, not as a flag. Without that fix, flag.Parse would reject
 # this with "flag provided but not defined: -draft".
-Invoke-XX plans slugify '--draft note'
+Invoke-XX work-items slugify '--draft note'
 Assert-Eq 'exit 0'         $RunRC 0
 Assert-Eq 'double-dash slug' $RunOut 'draft-note'
 
-Start-Case 'plans slugify accepts pure numerics'
-Invoke-XX plans slugify '12345'
+Start-Case 'work-items slugify accepts pure numerics'
+Invoke-XX work-items slugify '12345'
 Assert-Eq 'exit 0'       $RunRC 0
 Assert-Eq 'numeric slug' $RunOut '12345'
 
-Start-Case 'plans slugify rejects missing argument'
-Invoke-XX plans slugify
+Start-Case 'work-items slugify rejects missing argument'
+Invoke-XX work-items slugify
 Assert-Eq       'exit 2'     $RunRC 2
 Assert-Contains 'diagnostic' $RunErr 'takes exactly one positional argument'
 
-Start-Case 'plans slugify rejects multiple positional arguments'
-Invoke-XX plans slugify foo bar
+Start-Case 'work-items slugify rejects multiple positional arguments'
+Invoke-XX work-items slugify foo bar
 Assert-Eq       'exit 2'     $RunRC 2
 Assert-Contains 'diagnostic' $RunErr 'takes exactly one positional argument'
 
-Start-Case 'plans slugify rejects an unsluggable title'
-Invoke-XX plans slugify '!!! ??? ###'
+Start-Case 'work-items slugify rejects an unsluggable title'
+Invoke-XX work-items slugify '!!! ??? ###'
 Assert-Eq       'exit 2'     $RunRC 2
 Assert-Contains 'diagnostic' $RunErr 'no slug-able characters'
 
-Start-Case 'plans slugify works outside a stax project'
+Start-Case 'work-items slugify works outside a stax project'
 $noProject = New-FreshProject
 Push-Location $noProject
 try {
-  Invoke-XX plans slugify 'Some Title'
+  Invoke-XX work-items slugify 'Some Title'
   Assert-Eq 'exit 0'       $RunRC 0
   Assert-Eq 'slug printed' $RunOut 'some-title'
 } finally { Pop-Location }
 
 # ---------- project-marker check ----------
 
-Start-Case 'plans next-prefix in non-project exits 2 with diagnostic'
+Start-Case 'work-items next-prefix in non-project exits 2 with diagnostic'
 $noProj = New-FreshProject
 Push-Location $noProj
 try {
-  Invoke-XX plans next-prefix
+  Invoke-XX work-items next-prefix
   Assert-Eq       'exit 2'     $RunRC 2
   Assert-Contains 'diagnostic' $RunErr 'not a stax project'
 } finally { Pop-Location }
 
-Start-Case 'plans list in non-project exits 2 with diagnostic'
+Start-Case 'work-items list in non-project exits 2 with diagnostic'
 Push-Location $noProj
 try {
-  Invoke-XX plans list
+  Invoke-XX work-items list
   Assert-Eq       'exit 2'     $RunRC 2
   Assert-Contains 'diagnostic' $RunErr 'not a stax project'
 } finally { Pop-Location }
 
-Start-Case 'plans lint in non-project exits 2 with diagnostic'
+Start-Case 'work-items lint in non-project exits 2 with diagnostic'
 Push-Location $noProj
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 2'     $RunRC 2
   Assert-Contains 'diagnostic' $RunErr 'not a stax project'
 } finally { Pop-Location }
@@ -870,25 +870,25 @@ try {
 Start-Case 'project-marker-check diagnostic does not leak internal path components'
 Push-Location $noProj
 try {
-  Invoke-XX plans list
+  Invoke-XX work-items list
   Assert-NotContains 'no .stax/ leak'      $RunErr $STAX_DIR
   Assert-NotContains 'no lock file leak'     $RunErr $STAX_LOCK_FILE
   Assert-NotContains 'no registry file leak' $RunErr $STAX_SYSTEMS_FILE
 } finally { Pop-Location }
 
-# ---------- plans next-prefix ----------
+# ---------- work-items next-prefix ----------
 
-Start-Case 'plans next-prefix returns the zero-padded first prefix on a fresh project'
+Start-Case 'work-items next-prefix returns the zero-padded first prefix on a fresh project'
 $proj = New-FreshProject
 Initialize-ProjectScaffold $proj
 Push-Location $proj
 try {
-  Invoke-XX plans next-prefix
+  Invoke-XX work-items next-prefix
   Assert-Eq 'exit 0'        $RunRC 0
   Assert-Eq 'first prefix'  $RunOut '0001'
 } finally { Pop-Location }
 
-Start-Case 'plans next-prefix walks past existing plans'
+Start-Case 'work-items next-prefix walks past existing work items'
 $projB = New-FreshProject
 Initialize-ProjectScaffold $projB
 $staxDir = Join-Path $projB $STAX_DIR
@@ -897,34 +897,34 @@ Write-Plan $staxDir '0005-echo.md'    'valid' 'auth-service'
 Write-Plan $staxDir '0002-bravo.md'   'valid' 'auth-service'
 Push-Location $projB
 try {
-  Invoke-XX plans next-prefix
+  Invoke-XX work-items next-prefix
   Assert-Eq 'exit 0'           $RunRC 0
   Assert-Eq 'next after 0005' $RunOut '0006'
 } finally { Pop-Location }
 
-Start-Case 'plans next-prefix honors prefix_width pin from _config.lock'
+Start-Case 'work-items next-prefix honors prefix_width pin from _config.lock'
 $projC = New-FreshProject
 Initialize-ProjectScaffold $projC
 $lockC = Join-Path (Join-Path $projC $STAX_DIR) $STAX_LOCK_FILE
-Set-Content -LiteralPath $lockC -Value '{"prefix_width":6,"max_plan_lines":30,"review_per":"task"}' -Encoding ascii
+Set-Content -LiteralPath $lockC -Value '{"prefix_width":6,"max_work_item_lines":30,"review_per":"task"}' -Encoding ascii
 Push-Location $projC
 try {
-  Invoke-XX plans next-prefix
+  Invoke-XX work-items next-prefix
   Assert-Eq 'exit 0'             $RunRC 0
   Assert-Eq '6-wide first prefix' $RunOut '000001'
 } finally { Pop-Location }
 
-Start-Case 'plans next-prefix rejects positional arguments'
+Start-Case 'work-items next-prefix rejects positional arguments'
 Push-Location $proj
 try {
-  Invoke-XX plans next-prefix extra
+  Invoke-XX work-items next-prefix extra
   Assert-Eq       'exit 2'     $RunRC 2
   Assert-Contains 'diagnostic' $RunErr 'takes no arguments'
 } finally { Pop-Location }
 
-# ---------- plans list ----------
+# ---------- work-items list ----------
 
-Start-Case 'plans list emits tab-separated rows sorted by prefix descending (default)'
+Start-Case 'work-items list emits tab-separated rows sorted by prefix descending (default)'
 $projL = New-FreshProject
 Initialize-ProjectScaffold $projL
 $staxDirL = Join-Path $projL $STAX_DIR
@@ -933,7 +933,7 @@ Write-Plan $staxDirL '0001-alpha.md'   'valid'      'auth,billing'
 Write-Plan $staxDirL '0003-charlie.md' 'superseded' 'auth'
 Push-Location $projL
 try {
-  Invoke-XX plans list
+  Invoke-XX work-items list
   Assert-Eq 'exit 0' $RunRC 0
   $expected = @(
     "0003-charlie`tsuperseded`tauth"
@@ -943,10 +943,10 @@ try {
   Assert-Eq 'desc order, tab-separated' $RunOut $expected
 } finally { Pop-Location }
 
-Start-Case 'plans list --order=asc reverses to prefix-ascending'
+Start-Case 'work-items list --order=asc reverses to prefix-ascending'
 Push-Location $projL
 try {
-  Invoke-XX plans list --order=asc
+  Invoke-XX work-items list --order=asc
   Assert-Eq 'exit 0' $RunRC 0
   $expected = @(
     "0001-alpha`tvalid`tauth,billing"
@@ -956,18 +956,18 @@ try {
   Assert-Eq 'asc order' $RunOut $expected
 } finally { Pop-Location }
 
-Start-Case 'plans list --status filter keeps only matching rows'
+Start-Case 'work-items list --status filter keeps only matching rows'
 Push-Location $projL
 try {
-  Invoke-XX plans list --status valid
+  Invoke-XX work-items list --status valid
   Assert-Eq 'exit 0'           $RunRC 0
   Assert-Eq 'only valid rows' $RunOut "0001-alpha`tvalid`tauth,billing"
 } finally { Pop-Location }
 
-Start-Case 'plans list --status accepts comma list'
+Start-Case 'work-items list --status accepts comma list'
 Push-Location $projL
 try {
-  Invoke-XX plans list --status 'valid,superseded'
+  Invoke-XX work-items list --status 'valid,superseded'
   Assert-Eq 'exit 0' $RunRC 0
   $expected = @(
     "0003-charlie`tsuperseded`tauth"
@@ -976,10 +976,10 @@ try {
   Assert-Eq 'comma-list filter (desc)' $RunOut $expected
 } finally { Pop-Location }
 
-Start-Case 'plans list --system filter matches by kebab id'
+Start-Case 'work-items list --system filter matches by kebab id'
 Push-Location $projL
 try {
-  Invoke-XX plans list --system billing
+  Invoke-XX work-items list --system billing
   Assert-Eq 'exit 0' $RunRC 0
   $expected = @(
     "0002-bravo`tdeprecated`tbilling"
@@ -988,45 +988,45 @@ try {
   Assert-Eq 'system filter' $RunOut $expected
 } finally { Pop-Location }
 
-Start-Case 'plans list combined --status and --system intersects both'
+Start-Case 'work-items list combined --status and --system intersects both'
 Push-Location $projL
 try {
-  Invoke-XX plans list --status valid --system auth
+  Invoke-XX work-items list --status valid --system auth
   Assert-Eq 'exit 0' $RunRC 0
   Assert-Eq 'status+system intersection' $RunOut "0001-alpha`tvalid`tauth,billing"
 } finally { Pop-Location }
 
-Start-Case 'plans list --system <unknown id> returns zero rows'
+Start-Case 'work-items list --system <unknown id> returns zero rows'
 Push-Location $projL
 try {
-  Invoke-XX plans list --system never-declared
+  Invoke-XX work-items list --system never-declared
   Assert-Eq 'exit 0'    $RunRC 0
   Assert-Eq 'empty out' $RunOut ''
 } finally { Pop-Location }
 
-Start-Case 'plans list rejects positional arguments'
+Start-Case 'work-items list rejects positional arguments'
 Push-Location $projL
 try {
-  Invoke-XX plans list foo
+  Invoke-XX work-items list foo
   Assert-Eq       'exit 2'     $RunRC 2
   Assert-Contains 'diagnostic' $RunErr 'takes no positional'
 } finally { Pop-Location }
 
-Start-Case 'plans list warns on malformed frontmatter but keeps siblings'
+Start-Case 'work-items list warns on malformed frontmatter but keeps siblings'
 $projWarn = New-FreshProject
 Initialize-ProjectScaffold $projWarn
 $staxDirW = Join-Path $projWarn $STAX_DIR
 Write-Plan $staxDirW '0002-ok.md' 'valid' 'auth'
-Set-Content -LiteralPath (Join-Path $staxDirW '0001-broken.md') -Value 'not a plan' -Encoding ascii
+Set-Content -LiteralPath (Join-Path $staxDirW '0001-broken.md') -Value 'not a work item' -Encoding ascii
 Push-Location $projWarn
 try {
-  Invoke-XX plans list
+  Invoke-XX work-items list
   Assert-Eq       'exit 0'       $RunRC 0
-  Assert-Eq       'kept the OK plan' $RunOut "0002-ok`tvalid`tauth"
+  Assert-Eq       'kept the OK work item' $RunOut "0002-ok`tvalid`tauth"
   Assert-Contains 'warned about broken' $RunErr '0001-broken.md'
 } finally { Pop-Location }
 
-Start-Case 'plans list ignores files that do not match the <prefix>-<slug>.md pattern'
+Start-Case 'work-items list ignores files that do not match the <prefix>-<slug>.md pattern'
 $projP = New-FreshProject
 Initialize-ProjectScaffold $projP
 $staxDirP = Join-Path $projP $STAX_DIR
@@ -1036,14 +1036,14 @@ Set-Content -LiteralPath (Join-Path $staxDirP '123-short.md')   -Value 'x' -Enco
 Set-Content -LiteralPath (Join-Path $staxDirP '0002-noext')     -Value 'x' -Encoding ascii
 Push-Location $projP
 try {
-  Invoke-XX plans list
+  Invoke-XX work-items list
   Assert-Eq 'exit 0'         $RunRC 0
   Assert-Eq 'only keep'      $RunOut "0001-keep`tvalid`tauth"
 } finally { Pop-Location }
 
-# ---------- plans lint (subset; full lint is exercised by the bash e2e) ----------
+# ---------- work-items lint (subset; full lint is exercised by the bash e2e) ----------
 
-Start-Case 'plans lint passes on a happy-path plan'
+Start-Case 'work-items lint passes on a happy-path work item'
 $projLN = New-FreshProject
 Initialize-ProjectScaffold $projLN
 $staxDirLN = Join-Path $projLN $STAX_DIR
@@ -1069,12 +1069,12 @@ g
 Set-Content -LiteralPath $plan1 -Value $body1 -Encoding ascii
 Push-Location $projLN
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 0' $RunRC 0
   Assert-Contains 'ok line' $RunOut '0001-foo.md: ok'
 } finally { Pop-Location }
 
-Start-Case 'plans lint flags filename slug mismatch with title'
+Start-Case 'work-items lint flags filename slug mismatch with title'
 $projLN2 = New-FreshProject
 Initialize-ProjectScaffold $projLN2
 $staxDirLN2 = Join-Path $projLN2 $STAX_DIR
@@ -1100,12 +1100,12 @@ g
 Set-Content -LiteralPath $plan2 -Value $body2 -Encoding ascii
 Push-Location $projLN2
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'           $RunRC 1
   Assert-Contains 'filename↔title finding' $RunOut 'does not match slugify(title)'
 } finally { Pop-Location }
 
-Start-Case 'plans lint flags an unknown declared system'
+Start-Case 'work-items lint flags an unknown declared system'
 $projLN3 = New-FreshProject
 Initialize-ProjectScaffold $projLN3
 $staxDirLN3 = Join-Path $projLN3 $STAX_DIR
@@ -1131,12 +1131,12 @@ g
 Set-Content -LiteralPath $plan3 -Value $body3 -Encoding ascii
 Push-Location $projLN3
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'    $RunRC 1
   Assert-Contains 'finding'   $RunOut 'declared system "ghost-service" is not in'
 } finally { Pop-Location }
 
-Start-Case 'plans lint flags a dangling supersedes link'
+Start-Case 'work-items lint flags a dangling supersedes link'
 $projLN4 = New-FreshProject
 Initialize-ProjectScaffold $projLN4
 $staxDirLN4 = Join-Path $projLN4 $STAX_DIR
@@ -1163,7 +1163,7 @@ g
 Set-Content -LiteralPath $plan4 -Value $body4 -Encoding ascii
 Push-Location $projLN4
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'  $RunRC 1
   Assert-Contains 'finding' $RunOut 'supersedes "00099-nope"'
 } finally { Pop-Location }
@@ -1176,7 +1176,7 @@ $projInit = New-FreshProject
 Push-Location $projInit
 try {
   Invoke-XX init --scope project --agents claude `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq       'exit 0'             $RunRC 0
   Assert-IsDir    '.claude/skills present' (Join-Path $projInit $CLAUDE_SKILLS_REL)
   Assert-IsDir    'bundled stax skill landed' (Join-Path $projInit (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
@@ -1187,7 +1187,7 @@ try {
   # Lock file pins
   $lockContent = Get-Content -Raw -LiteralPath (Join-Path $projInit $Script:STAX_LOCK_PATH)
   Assert-Contains 'lock honors --prefix-width=4'   $lockContent '"prefix_width": 4'
-  Assert-Contains 'lock honors --max-plan-lines=30' $lockContent '"max_plan_lines": 30'
+  Assert-Contains 'lock honors --max-work-item-lines=30' $lockContent '"max_work_item_lines": 30'
   Assert-Contains 'lock honors --review-per=task'   $lockContent '"review_per": "task"'
 } finally { Pop-Location }
 
@@ -1197,7 +1197,7 @@ $projInitBoth = New-FreshProject
 Push-Location $projInitBoth
 try {
   Invoke-XX init --scope project --agents 'claude,codex' `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   Assert-IsDir 'claude skills tree' (Join-Path $projInitBoth (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-IsDir 'codex skills tree'  (Join-Path $projInitBoth (Join-Path $CODEX_SKILLS_REL  $SKILL_SHIP_DIR))
@@ -1209,7 +1209,7 @@ $projInitAll = New-FreshProject
 Push-Location $projInitAll
 try {
   Invoke-XX init --scope project --agents 'claude,codex,opencode' `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   Assert-IsDir 'claude skills tree'   (Join-Path $projInitAll (Join-Path $CLAUDE_SKILLS_REL   $SKILL_SHIP_DIR))
   Assert-IsDir 'codex skills tree'    (Join-Path $projInitAll (Join-Path $CODEX_SKILLS_REL    $SKILL_SHIP_DIR))
@@ -1222,10 +1222,10 @@ $projInitRe = New-FreshProject
 Push-Location $projInitRe
 try {
   Invoke-XX init --scope project --agents claude `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq 'first init exit 0' $RunRC 0
   Invoke-XX init --scope project --agents claude `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq       'second init exit 2' $RunRC 2
   Assert-Contains 'already-init banner' $RunErr 'already initialized'
 } finally { Pop-Location }
@@ -1236,20 +1236,20 @@ $projBad = New-FreshProject
 Push-Location $projBad
 try {
   Invoke-XX init --scope project --agents claude `
-                    --prefix-width=-1 --max-plan-lines 30 --review-per task
+                    --prefix-width=-1 --max-work-item-lines 30 --review-per task
   Assert-Eq       'exit 1'     $RunRC 1
   Assert-Contains 'diagnostic' $RunErr '--prefix-width must be positive'
 } finally { Pop-Location }
 
-Start-Case 'init --max-plan-lines=0 is rejected'
+Start-Case 'init --max-work-item-lines=0 is rejected'
 Reset-UserHome
 $projBad2 = New-FreshProject
 Push-Location $projBad2
 try {
   Invoke-XX init --scope project --agents claude `
-                    --prefix-width 4 --max-plan-lines 0 --review-per task
+                    --prefix-width 4 --max-work-item-lines 0 --review-per task
   Assert-Eq       'exit 1'     $RunRC 1
-  Assert-Contains 'diagnostic' $RunErr '--max-plan-lines must be positive'
+  Assert-Contains 'diagnostic' $RunErr '--max-work-item-lines must be positive'
 } finally { Pop-Location }
 
 Start-Case 'init --review-per=commit is rejected'
@@ -1258,7 +1258,7 @@ $projBad3 = New-FreshProject
 Push-Location $projBad3
 try {
   Invoke-XX init --scope project --agents claude `
-                    --prefix-width 4 --max-plan-lines 30 --review-per commit
+                    --prefix-width 4 --max-work-item-lines 30 --review-per commit
   Assert-Eq       'exit 1'     $RunRC 1
   Assert-Contains 'diagnostic' $RunErr 'invalid --review-per'
 } finally { Pop-Location }
@@ -1269,7 +1269,7 @@ $projBad4 = New-FreshProject
 Push-Location $projBad4
 try {
   Invoke-XX init --scope workspace --agents claude `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq       'exit 1'     $RunRC 1
   Assert-Contains 'diagnostic' $RunErr 'invalid --scope'
 } finally { Pop-Location }
@@ -1280,20 +1280,20 @@ $projBad5 = New-FreshProject
 Push-Location $projBad5
 try {
   Invoke-XX init --scope project --agents workspace `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq       'exit 1'     $RunRC 1
   Assert-Contains 'diagnostic' $RunErr 'unknown agent'
 } finally { Pop-Location }
 
 # ---------- init (interactive, fed via stdin) ----------
 
-Start-Case 'init interactive: prompts for agents/scope/prefix-width/max-plan-lines/review-per'
+Start-Case 'init interactive: prompts for agents/scope/prefix-width/max-work-item-lines/review-per'
 Reset-UserHome
 $projInt = New-FreshProject
 Push-Location $projInt
 try {
   # Order: agents (blank = all defaults to all), scope (1=project),
-  # prefix-width (blank = default), max-plan-lines (blank = default),
+  # prefix-width (blank = default), max-work-item-lines (blank = default),
   # review-per (1=task).
   $Script:NextStdin = "`n1`n`n`n1`n"
   Invoke-XX init
@@ -1313,7 +1313,7 @@ $projSR = New-FreshProject
 Push-Location $projSR
 try {
   Invoke-XX init --scope project --agents claude `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'init exit 0' $RunRC 0
   Assert-IsDir 'skill present pre-remove' (Join-Path $projSR (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
   Invoke-XX skills remove --project
@@ -1337,7 +1337,7 @@ $projOW = New-FreshProject
 Push-Location $projOW
 try {
   Invoke-XX init --scope project --agents claude `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq 'init exit 0' $RunRC 0
   # Seed a sibling user-authored skill that stax must NOT touch.
   $siblingDir = Join-Path $projOW (Join-Path $CLAUDE_SKILLS_REL 'user-authored')
@@ -1363,14 +1363,14 @@ $userInitCwd = New-FreshProject
 Push-Location $userInitCwd
 try {
   Invoke-XX init --scope user --agents claude `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq 'exit 0' $RunRC 0
   $userClaudeSkill = Join-Path $env:USERPROFILE (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR)
   Assert-IsCopyNotSymlink 'stax skill is a copy, not symlink' $userClaudeSkill
   # User-scope MUST also drop the .stax/ scaffold into cwd. Scope only
   # decides where SKILLS land (project tree vs $env:USERPROFILE); the
   # project marker check keyed on <cwd>/$STAX_LOCK_PATH is what makes cwd usable
-  # with /scope, /ship, and the `stax plans *` CLI subcommands.
+  # with /scope, /ship, and the `stax work-items *` CLI subcommands.
   Assert-IsFile 'user-scope seeds _config.lock in cwd' (Join-Path $userInitCwd $Script:STAX_LOCK_PATH)
   Assert-IsFile 'user-scope seeds _data_systems.yaml in cwd' (Join-Path $userInitCwd $Script:STAX_SYSTEMS_PATH)
 } finally { Pop-Location }
@@ -1400,7 +1400,7 @@ try {
   $env:HOME = $divergedHome
   $env:USERPROFILE = $SandboxHome
   Invoke-XX init --scope user --agents claude `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   Assert-IsDir 'install under USERPROFILE' (Join-Path $env:USERPROFILE (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'NOT under HOME'        (Join-Path $env:HOME (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
@@ -1410,17 +1410,17 @@ try {
 
 # ---------- CRLF tolerance ----------
 
-Start-Case 'plans list tolerates CRLF line endings in plan files'
+Start-Case 'work-items list tolerates CRLF line endings in work-item files'
 $projCR = New-FreshProject
 Initialize-ProjectScaffold $projCR
 $staxDirCR = Join-Path $projCR $STAX_DIR
 $crlfPath = Join-Path $staxDirCR '0001-crlf.md'
-# Write plan with explicit CRLF — mimics what Windows editors produce.
+# Write work item with explicit CRLF — mimics what Windows editors produce.
 $crlfBody = "---`r`ntitle: crlf`r`nstatus: valid`r`nsystems: [auth]`r`ncreated: 2026-05-23T14:30:00Z`r`n---`r`n`r`n## Goal`r`ng`r`n`r`n## Approach`r`n- A`r`n`r`n## Tasks`r`n- [ ] The Auth Service shall do.`r`n"
 [System.IO.File]::WriteAllText($crlfPath, $crlfBody)
 Push-Location $projCR
 try {
-  Invoke-XX plans list
+  Invoke-XX work-items list
   Assert-Eq 'exit 0'         $RunRC 0
   Assert-Eq 'crlf row parsed' $RunOut "0001-crlf`tvalid`tauth"
 } finally { Pop-Location }
@@ -1430,14 +1430,14 @@ try {
 # Windows reserves CON, PRN, AUX, NUL, COM1-9, LPT1-9 as basenames. Older
 # builds + Win32 APIs refuse creation outright; modern Windows (>=10 1903)
 # accepts the create via .NET / NT-path APIs that bypass the Win32 reserved-
-# name filter. The CLI never produces such names because every plan slug is
+# name filter. The CLI never produces such names because every work item slug is
 # prefixed with `\d{N}-` (so the basename is `<prefix>-<slug>`, never `CON`),
 # and listPlans / scanHighestPrefix both anchor on that format via regex.
 # This test verifies that anchor: if reserved-name files land in .stax/
-# (whatever way), `plans list` ignores them and `plans next-prefix` keeps
+# (whatever way), `work-items list` ignores them and `work-items next-prefix` keeps
 # walking the conforming siblings.
 
-Start-Case 'plans list ignores reserved-name files at the .stax/ root'
+Start-Case 'work-items list ignores reserved-name files at the .stax/ root'
 $projRes = New-FreshProject
 Initialize-ProjectScaffold $projRes
 $staxDirRes = Join-Path $projRes $STAX_DIR
@@ -1461,17 +1461,17 @@ if ($createdReserved.Count -eq 0) {
 } else {
   Push-Location $projRes
   try {
-    Invoke-XX plans list
+    Invoke-XX work-items list
     Assert-Eq 'exit 0' $RunRC 0
-    Assert-Eq 'only conforming plan listed' $RunOut "0001-foo`tvalid`tauth"
-    Invoke-XX plans next-prefix
+    Assert-Eq 'only conforming work item listed' $RunOut "0001-foo`tvalid`tauth"
+    Invoke-XX work-items next-prefix
     Assert-Eq 'next-prefix unaffected by reserved-name files' $RunOut '0002'
   } finally { Pop-Location }
 }
 
 # ---------- case-insensitive filesystem ----------
 
-Start-Case 'plans list treats filenames case-insensitively (Windows NTFS default)'
+Start-Case 'work-items list treats filenames case-insensitively (Windows NTFS default)'
 $projCI = New-FreshProject
 Initialize-ProjectScaffold $projCI
 $staxDirCI = Join-Path $projCI $STAX_DIR
@@ -1480,11 +1480,11 @@ Write-Plan $staxDirCI '0001-foo.md' 'valid' 'auth'
 # on NTFS. Just assert the original is reachable both ways.
 Push-Location $projCI
 try {
-  Invoke-XX plans list
+  Invoke-XX work-items list
   Assert-Eq 'exit 0' $RunRC 0
   Assert-Eq 'lowercase reads OK' $RunOut "0001-foo`tvalid`tauth"
-  # Same `plans list`, lookup-by-uppercase shouldn't duplicate the row.
-  Invoke-XX plans list --system AUTH
+  # Same `work-items list`, lookup-by-uppercase shouldn't duplicate the row.
+  Invoke-XX work-items list --system AUTH
   Assert-Eq 'uppercase --system does NOT case-fold to match' $RunOut ''
 } finally { Pop-Location }
 
@@ -1497,7 +1497,7 @@ New-Item -ItemType Directory -Force -Path $spacedDir | Out-Null
 Push-Location $spacedDir
 try {
   Invoke-XX init --scope project --agents claude `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   Assert-IsDir 'skills present at spaced path' (Join-Path $spacedDir (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-IsFile 'lock present at spaced path'  (Join-Path $spacedDir $Script:STAX_LOCK_PATH)
@@ -1505,16 +1505,16 @@ try {
 
 # ---------- BOM tolerance in _config.lock ----------
 
-Start-Case 'plans next-prefix tolerates a UTF-8 BOM in _config.lock'
+Start-Case 'work-items next-prefix tolerates a UTF-8 BOM in _config.lock'
 $projBOM = New-FreshProject
 Initialize-ProjectScaffold $projBOM
 $lockBOM = Join-Path (Join-Path $projBOM $STAX_DIR) $STAX_LOCK_FILE
 $bomBytes = [System.Text.Encoding]::UTF8.GetPreamble() +
-            [System.Text.Encoding]::UTF8.GetBytes('{"prefix_width":5,"max_plan_lines":30,"review_per":"task"}')
+            [System.Text.Encoding]::UTF8.GetBytes('{"prefix_width":5,"max_work_item_lines":30,"review_per":"task"}')
 [System.IO.File]::WriteAllBytes($lockBOM, $bomBytes)
 Push-Location $projBOM
 try {
-  Invoke-XX plans next-prefix
+  Invoke-XX work-items next-prefix
   # Go's encoding/json rejects a leading BOM, so the lock parse fails and we
   # fall back to defaultPrefixWidth (4). Document the fallback so a future
   # decision to BOM-strip explicitly is intentional.
@@ -1531,12 +1531,12 @@ New-Item -ItemType Directory -Force -Path $fwdDir | Out-Null
 Push-Location ($fwdDir -replace '\\', '/')
 try {
   Invoke-XX init --scope project --agents claude `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   Assert-IsDir 'skills present under fwdslash cwd' (Join-Path $fwdDir (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
-# ---------- plans list: --overflow-keywords + threshold behavior ----------
+# ---------- work-items list: --overflow-keywords + threshold behavior ----------
 #
 # The overflow-keywords flag is contract-laden:
 #   - No-op below threshold (always returns all rows)
@@ -1544,8 +1544,8 @@ try {
 #   - Body-only match (frontmatter scalars don't count)
 #   - Case-insensitive literal substring; multiple keywords = OR
 
-# Helper: seed N body-only plans whose body is exactly the supplied content.
-function Write-PlanWithBody {
+# Helper: seed N body-only work items whose body is exactly the supplied content.
+function Write-WorkItemWithBody {
   param(
     [Parameter(Mandatory)][string]$StaxDir,
     [Parameter(Mandatory)][string]$Name,
@@ -1561,132 +1561,132 @@ $Body
   Set-Content -LiteralPath (Join-Path $StaxDir $Name) -Value $fm -Encoding ascii
 }
 
-function Add-ManyPlans {
+function Add-ManyWorkItems {
   param(
     [Parameter(Mandatory)][string]$StaxDir,
     [Parameter(Mandatory)][int]$Count,
     [string]$Body = 'generic body'
   )
   for ($i = 1; $i -le $Count; $i++) {
-    $name = '{0:D4}-plan{1:D3}.md' -f $i, $i
-    Write-PlanWithBody -StaxDir $StaxDir -Name $name -Body "$i $Body"
+    $name = '{0:D4}-work-item{1:D3}.md' -f $i, $i
+    Write-WorkItemWithBody -StaxDir $StaxDir -Name $name -Body "$i $Body"
   }
 }
 
-Start-Case 'plans list --overflow-keywords is a no-op below threshold'
+Start-Case 'work-items list --overflow-keywords is a no-op below threshold'
 $projOK1 = New-FreshProject
 Initialize-ProjectScaffold $projOK1
 $staxDirOK1 = Join-Path $projOK1 $STAX_DIR
-Add-ManyPlans -StaxDir $staxDirOK1 -Count 5 -Body 'no match here'
+Add-ManyWorkItems -StaxDir $staxDirOK1 -Count 5 -Body 'no match here'
 Push-Location $projOK1
 try {
-  Invoke-XX plans list --overflow-keywords zzz-never-matches
+  Invoke-XX work-items list --overflow-keywords zzz-never-matches
   Assert-Eq 'exit 0' $RunRC 0
   $rowCount = ($RunOut -split "`n").Count
   Assert-Eq 'all 5 rows returned (no-op below threshold)' $rowCount 5
 } finally { Pop-Location }
 
-Start-Case 'plans list --overflow-keywords engages above threshold, matches body'
+Start-Case 'work-items list --overflow-keywords engages above threshold, matches body'
 $projOK2 = New-FreshProject
 Initialize-ProjectScaffold $projOK2
 $staxDirOK2 = Join-Path $projOK2 $STAX_DIR
-$over = $PLANS_LIST_OVERFLOW_THRESHOLD + 5
-Add-ManyPlans -StaxDir $staxDirOK2 -Count $over -Body 'generic body'
+$over = $WORK_ITEMS_LIST_OVERFLOW_THRESHOLD + 5
+Add-ManyWorkItems -StaxDir $staxDirOK2 -Count $over -Body 'generic body'
 # Replace one body with a keyword the harness will look for.
-Write-PlanWithBody -StaxDir $staxDirOK2 -Name '0007-plan007.md' -Body 'this plan covers exponential retry backoff'
+Write-WorkItemWithBody -StaxDir $staxDirOK2 -Name '0007-work-item007.md' -Body 'this work item covers exponential retry backoff'
 Push-Location $projOK2
 try {
-  Invoke-XX plans list --overflow-keywords retry
+  Invoke-XX work-items list --overflow-keywords retry
   Assert-Eq       'exit 0'          $RunRC 0
-  Assert-Contains 'matched plan in output' $RunOut 'plan007'
+  Assert-Contains 'matched work item in output' $RunOut 'work-item007'
   $rowCount = ($RunOut -split "`n").Count
   Assert-Eq 'exactly the matched row' $rowCount 1
 } finally { Pop-Location }
 
-Start-Case 'plans list --overflow-keywords falls back to top-N when no body matches'
+Start-Case 'work-items list --overflow-keywords falls back to top-N when no body matches'
 $projOK3 = New-FreshProject
 Initialize-ProjectScaffold $projOK3
 $staxDirOK3 = Join-Path $projOK3 $STAX_DIR
-Add-ManyPlans -StaxDir $staxDirOK3 -Count ($PLANS_LIST_OVERFLOW_THRESHOLD + 3) -Body 'nothing relevant here'
+Add-ManyWorkItems -StaxDir $staxDirOK3 -Count ($WORK_ITEMS_LIST_OVERFLOW_THRESHOLD + 3) -Body 'nothing relevant here'
 Push-Location $projOK3
 try {
-  Invoke-XX plans list --overflow-keywords zzz-never-matches
+  Invoke-XX work-items list --overflow-keywords zzz-never-matches
   Assert-Eq 'exit 0' $RunRC 0
   $rowCount = ($RunOut -split "`n").Count
-  Assert-Eq 'falls back to threshold rows' $rowCount $PLANS_LIST_OVERFLOW_THRESHOLD
+  Assert-Eq 'falls back to threshold rows' $rowCount $WORK_ITEMS_LIST_OVERFLOW_THRESHOLD
 } finally { Pop-Location }
 
-Start-Case 'plans list --overflow-keywords matches body-only (frontmatter ignored)'
+Start-Case 'work-items list --overflow-keywords matches body-only (frontmatter ignored)'
 $projOK4 = New-FreshProject
 Initialize-ProjectScaffold $projOK4
 $staxDirOK4 = Join-Path $projOK4 $STAX_DIR
-Add-ManyPlans -StaxDir $staxDirOK4 -Count ($PLANS_LIST_OVERFLOW_THRESHOLD + 1) -Body 'generic body'
+Add-ManyWorkItems -StaxDir $staxDirOK4 -Count ($WORK_ITEMS_LIST_OVERFLOW_THRESHOLD + 1) -Body 'generic body'
 Push-Location $projOK4
 try {
-  # 'auth' appears in every plan's frontmatter (systems: [auth]) but NEVER in body.
-  Invoke-XX plans list --overflow-keywords auth
+  # 'auth' appears in every work item's frontmatter (systems: [auth]) but NEVER in body.
+  Invoke-XX work-items list --overflow-keywords auth
   Assert-Eq 'exit 0' $RunRC 0
   $rowCount = ($RunOut -split "`n").Count
-  Assert-Eq 'frontmatter-only keyword triggers top-N fallback' $rowCount $PLANS_LIST_OVERFLOW_THRESHOLD
+  Assert-Eq 'frontmatter-only keyword triggers top-N fallback' $rowCount $WORK_ITEMS_LIST_OVERFLOW_THRESHOLD
 } finally { Pop-Location }
 
-Start-Case 'plans list --overflow-keywords is case-insensitive'
+Start-Case 'work-items list --overflow-keywords is case-insensitive'
 $projOK5 = New-FreshProject
 Initialize-ProjectScaffold $projOK5
 $staxDirOK5 = Join-Path $projOK5 $STAX_DIR
-Add-ManyPlans -StaxDir $staxDirOK5 -Count $PLANS_LIST_OVERFLOW_THRESHOLD -Body 'generic body'
-Write-PlanWithBody -StaxDir $staxDirOK5 -Name "$('{0:D4}' -f ($PLANS_LIST_OVERFLOW_THRESHOLD + 1))-extra.md" -Body 'Uppercase MATCH inside body'
+Add-ManyWorkItems -StaxDir $staxDirOK5 -Count $WORK_ITEMS_LIST_OVERFLOW_THRESHOLD -Body 'generic body'
+Write-WorkItemWithBody -StaxDir $staxDirOK5 -Name "$('{0:D4}' -f ($WORK_ITEMS_LIST_OVERFLOW_THRESHOLD + 1))-extra.md" -Body 'Uppercase MATCH inside body'
 Push-Location $projOK5
 try {
-  Invoke-XX plans list --overflow-keywords match
+  Invoke-XX work-items list --overflow-keywords match
   Assert-Eq       'exit 0' $RunRC 0
   Assert-Contains 'lowercase keyword matches uppercase body' $RunOut 'extra'
 } finally { Pop-Location }
 
-Start-Case 'plans list --overflow-keywords accepts multiple terms (OR semantics)'
+Start-Case 'work-items list --overflow-keywords accepts multiple terms (OR semantics)'
 $projOK6 = New-FreshProject
 Initialize-ProjectScaffold $projOK6
 $staxDirOK6 = Join-Path $projOK6 $STAX_DIR
-Add-ManyPlans -StaxDir $staxDirOK6 -Count $PLANS_LIST_OVERFLOW_THRESHOLD -Body 'generic body'
-Write-PlanWithBody -StaxDir $staxDirOK6 -Name "$('{0:D4}' -f ($PLANS_LIST_OVERFLOW_THRESHOLD + 1))-alpha.md" -Body 'mentions webhook only'
-Write-PlanWithBody -StaxDir $staxDirOK6 -Name "$('{0:D4}' -f ($PLANS_LIST_OVERFLOW_THRESHOLD + 2))-bravo.md" -Body 'mentions retry only'
+Add-ManyWorkItems -StaxDir $staxDirOK6 -Count $WORK_ITEMS_LIST_OVERFLOW_THRESHOLD -Body 'generic body'
+Write-WorkItemWithBody -StaxDir $staxDirOK6 -Name "$('{0:D4}' -f ($WORK_ITEMS_LIST_OVERFLOW_THRESHOLD + 1))-alpha.md" -Body 'mentions webhook only'
+Write-WorkItemWithBody -StaxDir $staxDirOK6 -Name "$('{0:D4}' -f ($WORK_ITEMS_LIST_OVERFLOW_THRESHOLD + 2))-bravo.md" -Body 'mentions retry only'
 Push-Location $projOK6
 try {
-  Invoke-XX plans list --overflow-keywords 'webhook,retry'
+  Invoke-XX work-items list --overflow-keywords 'webhook,retry'
   Assert-Eq       'exit 0' $RunRC 0
   Assert-Contains 'OR match: alpha present' $RunOut 'alpha'
   Assert-Contains 'OR match: bravo present' $RunOut 'bravo'
 } finally { Pop-Location }
 
-Start-Case 'plans list --overflow-keywords repeated flag = comma list'
+Start-Case 'work-items list --overflow-keywords repeated flag = comma list'
 Push-Location $projOK6
 try {
-  Invoke-XX plans list --overflow-keywords webhook --overflow-keywords retry
+  Invoke-XX work-items list --overflow-keywords webhook --overflow-keywords retry
   Assert-Eq       'exit 0' $RunRC 0
   Assert-Contains 'repeated-flag alpha' $RunOut 'alpha'
   Assert-Contains 'repeated-flag bravo' $RunOut 'bravo'
 } finally { Pop-Location }
 
-Start-Case 'plans list combined --system + --overflow-keywords narrows correctly'
+Start-Case 'work-items list combined --system + --overflow-keywords narrows correctly'
 $projOK7 = New-FreshProject
 Initialize-ProjectScaffold $projOK7
 $staxDirOK7 = Join-Path $projOK7 $STAX_DIR
-$over7 = $PLANS_LIST_OVERFLOW_THRESHOLD + 5
+$over7 = $WORK_ITEMS_LIST_OVERFLOW_THRESHOLD + 5
 for ($i = 1; $i -le $over7; $i++) {
   $name7 = '{0:D4}-payment{0:D3}.md' -f $i
   $body7 = "---`nstatus: valid`nsystems: [payment-service]`n---`n$i generic body"
   Set-Content -LiteralPath (Join-Path $staxDirOK7 $name7) -Value $body7 -Encoding ascii
 }
 $plan7Match = '0007-payment007.md'
-$plan7MatchBody = "---`nstatus: valid`nsystems: [payment-service]`n---`nthis plan covers exponential retry backoff"
+$plan7MatchBody = "---`nstatus: valid`nsystems: [payment-service]`n---`nthis work item covers exponential retry backoff"
 Set-Content -LiteralPath (Join-Path $staxDirOK7 $plan7Match) -Value $plan7MatchBody -Encoding ascii
-# An unrelated-system plan with the same body keyword — must be filtered out by --system.
+# An unrelated-system work item with the same body keyword — must be filtered out by --system.
 $plan7Unrelated = '0099-unrelated.md'
 $plan7UnrelatedBody = "---`nstatus: valid`nsystems: [other-system]`n---`nalso mentions retry"
 Set-Content -LiteralPath (Join-Path $staxDirOK7 $plan7Unrelated) -Value $plan7UnrelatedBody -Encoding ascii
 Push-Location $projOK7
 try {
-  Invoke-XX plans list --system payment-service --overflow-keywords retry
+  Invoke-XX work-items list --system payment-service --overflow-keywords retry
   Assert-Eq           'exit 0' $RunRC 0
   Assert-Contains     'payment007 in match'             $RunOut 'payment007'
   Assert-NotContains  'unrelated filtered out before narrow' $RunOut 'unrelated'
@@ -1694,7 +1694,7 @@ try {
   Assert-Eq 'exactly one match (id ∩ keyword)' $rowCount 1
 } finally { Pop-Location }
 
-Start-Case 'plans list --status + --system + --overflow-keywords narrows status∩system > threshold'
+Start-Case 'work-items list --status + --system + --overflow-keywords narrows status∩system > threshold'
 # Proves --overflow-keywords is the layer that does the work when --status
 # and --system are already applied. Pre-overflow count must exceed the
 # threshold AFTER status+system filtering, and the distractors that share
@@ -1705,40 +1705,40 @@ Start-Case 'plans list --status + --system + --overflow-keywords narrows status�
 $projSSO = New-FreshProject
 Initialize-ProjectScaffold $projSSO
 $staxDirSSO = Join-Path $projSSO $STAX_DIR
-# Threshold+2 plans, all status=valid + system=payment-service, body
+# Threshold+2 work items, all status=valid + system=payment-service, body
 # WITHOUT the keyword. Two of them (5, 17) get overwritten below with
 # bodies that DO contain "retry".
-$overSSO = $PLANS_LIST_OVERFLOW_THRESHOLD + 2
+$overSSO = $WORK_ITEMS_LIST_OVERFLOW_THRESHOLD + 2
 for ($i = 1; $i -le $overSSO; $i++) {
-  $nameSSO = '{0:D4}-plan{1:D3}.md' -f $i, $i
+  $nameSSO = '{0:D4}-work-item{1:D3}.md' -f $i, $i
   $bodySSO = "---`nstatus: valid`nsystems: [payment-service]`n---`n$i generic body content"
   Set-Content -LiteralPath (Join-Path $staxDirSSO $nameSSO) -Value $bodySSO -Encoding ascii
 }
 foreach ($matchN in 5, 17) {
-  $matchName = '{0:D4}-plan{1:D3}.md' -f $matchN, $matchN
-  $matchBody = "---`nstatus: valid`nsystems: [payment-service]`n---`nplan $matchN covers exponential retry backoff"
+  $matchName = '{0:D4}-work-item{1:D3}.md' -f $matchN, $matchN
+  $matchBody = "---`nstatus: valid`nsystems: [payment-service]`n---`nwork item $matchN covers exponential retry backoff"
   Set-Content -LiteralPath (Join-Path $staxDirSSO $matchName) -Value $matchBody -Encoding ascii
 }
 # Cross-filter distractors: each carries "retry" in body but fails one
 # of --status (deprecated) or --system (other-service). Must be dropped
 # BEFORE the overflow narrow ever runs.
-$ssoWrongStatusBody = "---`nstatus: deprecated`nsystems: [payment-service]`n---`ndeprecated plan that mentions retry"
+$ssoWrongStatusBody = "---`nstatus: deprecated`nsystems: [payment-service]`n---`ndeprecated work item that mentions retry"
 Set-Content -LiteralPath (Join-Path $staxDirSSO '0098-wrong-status.md') -Value $ssoWrongStatusBody -Encoding ascii
-$ssoWrongSystemBody = "---`nstatus: valid`nsystems: [other-service]`n---`nother-service plan that mentions retry"
+$ssoWrongSystemBody = "---`nstatus: valid`nsystems: [other-service]`n---`nother-service work item that mentions retry"
 Set-Content -LiteralPath (Join-Path $staxDirSSO '0099-wrong-system.md') -Value $ssoWrongSystemBody -Encoding ascii
 Push-Location $projSSO
 try {
-  Invoke-XX plans list --status valid --system payment-service --overflow-keywords retry
+  Invoke-XX work-items list --status valid --system payment-service --overflow-keywords retry
   Assert-Eq          'exit 0'                                    $RunRC 0
-  Assert-Contains    'plan005 in match'                          $RunOut 'plan005'
-  Assert-Contains    'plan017 in match'                          $RunOut 'plan017'
+  Assert-Contains    'work-item005 in match'                          $RunOut 'work-item005'
+  Assert-Contains    'work-item017 in match'                          $RunOut 'work-item017'
   Assert-NotContains 'wrong-status filtered by --status filter'     $RunOut 'wrong-status'
   Assert-NotContains 'wrong-system filtered by --system filter'     $RunOut 'wrong-system'
   $rowCountSSO = ($RunOut -split "`n").Count
   Assert-Eq 'exactly two matchers survive (status ∩ system ∩ keyword)' $rowCountSSO 2
 } finally { Pop-Location }
 
-Start-Case 'plans list --order=desc explicit default'
+Start-Case 'work-items list --order=desc explicit default'
 $projOK8 = New-FreshProject
 Initialize-ProjectScaffold $projOK8
 $staxDirOK8 = Join-Path $projOK8 $STAX_DIR
@@ -1746,21 +1746,21 @@ Write-Plan $staxDirOK8 '0001-alpha.md' 'valid' 'auth'
 Write-Plan $staxDirOK8 '0002-bravo.md' 'valid' 'auth'
 Push-Location $projOK8
 try {
-  Invoke-XX plans list --order=desc
+  Invoke-XX work-items list --order=desc
   Assert-Eq 'exit 0' $RunRC 0
   $expected = @("0002-bravo`tvalid`tauth", "0001-alpha`tvalid`tauth") -join "`n"
   Assert-Eq 'explicit desc matches default' $RunOut $expected
 } finally { Pop-Location }
 
-Start-Case 'plans list --order=bogus rejected'
+Start-Case 'work-items list --order=bogus rejected'
 Push-Location $projOK8
 try {
-  Invoke-XX plans list --order=bogus
+  Invoke-XX work-items list --order=bogus
   Assert-Eq       'exit 2'     $RunRC 2
   Assert-Contains 'diagnostic' $RunErr '--order must be'
 } finally { Pop-Location }
 
-Start-Case 'plans list --system <id1>,<id2> OR semantics via comma list'
+Start-Case 'work-items list --system <id1>,<id2> OR semantics via comma list'
 $projOK9 = New-FreshProject
 Initialize-ProjectScaffold $projOK9
 $staxDirOK9 = Join-Path $projOK9 $STAX_DIR
@@ -1769,22 +1769,22 @@ Write-Plan $staxDirOK9 '0002-b.md' 'valid' 'payment-audit-log'
 Write-Plan $staxDirOK9 '0003-c.md' 'valid' 'other-system'
 Push-Location $projOK9
 try {
-  Invoke-XX plans list --system 'checkout-service,payment-audit-log' --order=asc
+  Invoke-XX work-items list --system 'checkout-service,payment-audit-log' --order=asc
   Assert-Eq 'exit 0' $RunRC 0
   $expected = @("0001-a`tvalid`tcheckout-service", "0002-b`tvalid`tpayment-audit-log") -join "`n"
   Assert-Eq 'comma-list OR' $RunOut $expected
 } finally { Pop-Location }
 
-Start-Case 'plans list --system repeated flag matches comma form'
+Start-Case 'work-items list --system repeated flag matches comma form'
 Push-Location $projOK9
 try {
-  Invoke-XX plans list --system checkout-service --system payment-audit-log --order=asc
+  Invoke-XX work-items list --system checkout-service --system payment-audit-log --order=asc
   Assert-Eq 'exit 0' $RunRC 0
   $expected = @("0001-a`tvalid`tcheckout-service", "0002-b`tvalid`tpayment-audit-log") -join "`n"
   Assert-Eq 'repeated-flag OR' $RunOut $expected
 } finally { Pop-Location }
 
-Start-Case 'plans list --system matches any element of a multi-id systems array'
+Start-Case 'work-items list --system matches any element of a multi-id systems array'
 $projOK10 = New-FreshProject
 Initialize-ProjectScaffold $projOK10
 $staxDirOK10 = Join-Path $projOK10 $STAX_DIR
@@ -1792,14 +1792,14 @@ Write-Plan $staxDirOK10 '0001-multi.md' 'valid' 'checkout-service,payment-audit-
 Write-Plan $staxDirOK10 '0002-other.md' 'valid' 'other-system'
 Push-Location $projOK10
 try {
-  Invoke-XX plans list --system payment-audit-log
+  Invoke-XX work-items list --system payment-audit-log
   Assert-Eq 'exit 0' $RunRC 0
   Assert-Eq 'single-id flag matches multi-id row' $RunOut "0001-multi`tvalid`tcheckout-service,payment-audit-log"
 } finally { Pop-Location }
 
-# ---------- plans lint: full per-check matrix ----------
+# ---------- work-items lint: full per-check matrix ----------
 
-# Writes a complete, lint-clean plan to .stax/name with the given status,
+# Writes a complete, lint-clean work item to .stax/name with the given status,
 # inline systems id list, and EARS subject display name. Cases override one
 # field to trip a single finding.
 function Write-FullPlan {
@@ -1831,20 +1831,20 @@ g
   Set-Content -LiteralPath (Join-Path $StaxDir $Name) -Value $body -Encoding ascii
 }
 
-Start-Case 'plans lint passes on a clean single-system plan'
+Start-Case 'work-items lint passes on a clean single-system work item'
 $projLNa = New-FreshProject
 Initialize-ProjectScaffold $projLNa
 Write-Registry (Join-Path $projLNa $STAX_DIR) 'Auth Service'
 Write-FullPlan (Join-Path $projLNa $STAX_DIR) '0001-foo.md' 'valid' 'auth-service' 'Auth Service'
 Push-Location $projLNa
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 0'    $RunRC 0
   Assert-Contains 'ok line'   $RunOut '0001-foo.md: ok'
   Assert-Contains 'summary'   $RunErr '1 ok'
 } finally { Pop-Location }
 
-Start-Case 'plans lint passes on a clean multi-system plan'
+Start-Case 'work-items lint passes on a clean multi-system work item'
 $projLNb = New-FreshProject
 Initialize-ProjectScaffold $projLNb
 Write-Registry (Join-Path $projLNb $STAX_DIR) 'Auth Service,Billing Service'
@@ -1870,49 +1870,49 @@ g
 Set-Content -LiteralPath (Join-Path $staxDirLNb '0001-foo.md') -Value $body -Encoding ascii
 Push-Location $projLNb
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 0'  $RunRC 0
   Assert-Contains 'ok line' $RunOut '0001-foo.md: ok'
 } finally { Pop-Location }
 
-Start-Case 'plans lint flags a bad filename (non-conforming pattern)'
+Start-Case 'work-items lint flags a bad filename (non-conforming pattern)'
 $projLNc = New-FreshProject
 Initialize-ProjectScaffold $projLNc
 Write-Registry (Join-Path $projLNc $STAX_DIR) 'Auth Service'
 Write-FullPlan (Join-Path $projLNc $STAX_DIR) 'BAD-NAME.md' 'valid' 'auth-service' 'Auth Service'
 Push-Location $projLNc
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'                $RunRC 1
   Assert-Contains 'filename finding'      $RunOut 'does not match'
 } finally { Pop-Location }
 
-Start-Case 'plans lint flags a missing _data_systems.yaml entry'
+Start-Case 'work-items lint flags a missing _data_systems.yaml entry'
 $projLNd = New-FreshProject
 Initialize-ProjectScaffold $projLNd
-# Registry has only Auth; plan references ghost.
+# Registry has only Auth; work item references ghost.
 Write-Registry (Join-Path $projLNd $STAX_DIR) 'Auth Service'
 Write-FullPlan (Join-Path $projLNd $STAX_DIR) '0001-foo.md' 'valid' 'ghost-service' 'Ghost Service'
 Push-Location $projLNd
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'                  $RunRC 1
   Assert-Contains 'id-not-in-registry'      $RunOut 'declared system "ghost-service" is not in'
 } finally { Pop-Location }
 
-Start-Case 'plans lint flags an invalid status'
+Start-Case 'work-items lint flags an invalid status'
 $projLNe = New-FreshProject
 Initialize-ProjectScaffold $projLNe
 Write-Registry (Join-Path $projLNe $STAX_DIR) 'Auth Service'
 Write-FullPlan (Join-Path $projLNe $STAX_DIR) '0001-foo.md' 'bogus' 'auth-service' 'Auth Service'
 Push-Location $projLNe
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'           $RunRC 1
   Assert-Contains 'status finding'   $RunOut 'status "bogus" is not one of'
 } finally { Pop-Location }
 
-Start-Case 'plans lint flags a missing title:'
+Start-Case 'work-items lint flags a missing title:'
 $projLNf = New-FreshProject
 Initialize-ProjectScaffold $projLNf
 Write-Registry (Join-Path $projLNf $STAX_DIR) 'Auth Service'
@@ -1936,12 +1936,12 @@ g
 Set-Content -LiteralPath (Join-Path $staxDirLNf '0001-foo.md') -Value $bodyMissingTitle -Encoding ascii
 Push-Location $projLNf
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'          $RunRC 1
   Assert-Contains 'title finding'   $RunOut 'missing required `title:`'
 } finally { Pop-Location }
 
-Start-Case 'plans lint flags an empty title:'
+Start-Case 'work-items lint flags an empty title:'
 $projLNg = New-FreshProject
 Initialize-ProjectScaffold $projLNg
 Write-Registry (Join-Path $projLNg $STAX_DIR) 'Auth Service'
@@ -1966,12 +1966,12 @@ g
 Set-Content -LiteralPath (Join-Path $staxDirLNg '0001-foo.md') -Value $bodyEmptyTitle -Encoding ascii
 Push-Location $projLNg
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'                  $RunRC 1
   Assert-Contains 'empty-title finding'     $RunOut '`title:` value is empty'
 } finally { Pop-Location }
 
-Start-Case 'plans lint flags a missing created:'
+Start-Case 'work-items lint flags a missing created:'
 $projLNh = New-FreshProject
 Initialize-ProjectScaffold $projLNh
 Write-Registry (Join-Path $projLNh $STAX_DIR) 'Auth Service'
@@ -1995,12 +1995,12 @@ g
 Set-Content -LiteralPath (Join-Path $staxDirLNh '0001-foo.md') -Value $bodyMissingCreated -Encoding ascii
 Push-Location $projLNh
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'             $RunRC 1
   Assert-Contains 'created finding'    $RunOut 'missing required `created:`'
 } finally { Pop-Location }
 
-Start-Case 'plans lint flags a malformed created: timestamp'
+Start-Case 'work-items lint flags a malformed created: timestamp'
 $projLNi = New-FreshProject
 Initialize-ProjectScaffold $projLNi
 Write-Registry (Join-Path $projLNi $STAX_DIR) 'Auth Service'
@@ -2025,12 +2025,12 @@ g
 Set-Content -LiteralPath (Join-Path $staxDirLNi '0001-foo.md') -Value $bodyBadCreated -Encoding ascii
 Push-Location $projLNi
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'                     $RunRC 1
   Assert-Contains 'malformed-created finding'  $RunOut '"yesterday" is not an ISO 8601'
 } finally { Pop-Location }
 
-Start-Case 'plans lint flags date-only created: (no time component)'
+Start-Case 'work-items lint flags date-only created: (no time component)'
 $projLNj = New-FreshProject
 Initialize-ProjectScaffold $projLNj
 Write-Registry (Join-Path $projLNj $STAX_DIR) 'Auth Service'
@@ -2055,12 +2055,12 @@ g
 Set-Content -LiteralPath (Join-Path $staxDirLNj '0001-foo.md') -Value $bodyDateOnly -Encoding ascii
 Push-Location $projLNj
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'                 $RunRC 1
   Assert-Contains 'date-only finding'      $RunOut '"2026-05-23" is not an ISO 8601'
 } finally { Pop-Location }
 
-Start-Case 'plans lint flags title-not-first (frontmatter order)'
+Start-Case 'work-items lint flags title-not-first (frontmatter order)'
 $projLNk = New-FreshProject
 Initialize-ProjectScaffold $projLNk
 Write-Registry (Join-Path $projLNk $STAX_DIR) 'Auth Service'
@@ -2085,12 +2085,12 @@ g
 Set-Content -LiteralPath (Join-Path $staxDirLNk '0001-foo.md') -Value $bodyOrderTitle -Encoding ascii
 Push-Location $projLNk
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'                  $RunRC 1
   Assert-Contains 'title-first finding'     $RunOut 'must be the first frontmatter field'
 } finally { Pop-Location }
 
-Start-Case 'plans lint flags created-not-last (frontmatter order)'
+Start-Case 'work-items lint flags created-not-last (frontmatter order)'
 $projLNm = New-FreshProject
 Initialize-ProjectScaffold $projLNm
 Write-Registry (Join-Path $projLNm $STAX_DIR) 'Auth Service'
@@ -2115,12 +2115,12 @@ g
 Set-Content -LiteralPath (Join-Path $staxDirLNm '0001-foo.md') -Value $bodyOrderCreated -Encoding ascii
 Push-Location $projLNm
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'                  $RunRC 1
   Assert-Contains 'created-last finding'    $RunOut 'must be the last frontmatter field'
 } finally { Pop-Location }
 
-Start-Case 'plans lint flags dangling supersedes link'
+Start-Case 'work-items lint flags dangling supersedes link'
 $projLNn = New-FreshProject
 Initialize-ProjectScaffold $projLNn
 Write-Registry (Join-Path $projLNn $STAX_DIR) 'Auth Service'
@@ -2146,12 +2146,12 @@ g
 Set-Content -LiteralPath (Join-Path $staxDirLNn '0001-foo.md') -Value $bodyDangling -Encoding ascii
 Push-Location $projLNn
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'                   $RunRC 1
   Assert-Contains 'dangling-supersedes'      $RunOut 'supersedes "00099-nope"'
 } finally { Pop-Location }
 
-Start-Case 'plans lint flags dangling extends link'
+Start-Case 'work-items lint flags dangling extends link'
 $projLNo = New-FreshProject
 Initialize-ProjectScaffold $projLNo
 Write-Registry (Join-Path $projLNo $STAX_DIR) 'Auth Service'
@@ -2177,12 +2177,12 @@ g
 Set-Content -LiteralPath (Join-Path $staxDirLNo '0001-foo.md') -Value $bodyDanglingExt -Encoding ascii
 Push-Location $projLNo
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'                $RunRC 1
   Assert-Contains 'dangling-extends'      $RunOut 'extends "00099-nope"'
 } finally { Pop-Location }
 
-Start-Case 'plans lint rejects self-supersedes'
+Start-Case 'work-items lint rejects self-supersedes'
 $projLNp = New-FreshProject
 Initialize-ProjectScaffold $projLNp
 Write-Registry (Join-Path $projLNp $STAX_DIR) 'Auth Service'
@@ -2208,12 +2208,12 @@ g
 Set-Content -LiteralPath (Join-Path $staxDirLNp '0001-foo.md') -Value $bodySelfSup -Encoding ascii
 Push-Location $projLNp
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'                   $RunRC 1
-  Assert-Contains 'self-supersedes finding'  $RunOut 'cannot reference the plan itself'
+  Assert-Contains 'self-supersedes finding'  $RunOut 'cannot reference the work item itself'
 } finally { Pop-Location }
 
-Start-Case 'plans lint rejects self-extends'
+Start-Case 'work-items lint rejects self-extends'
 $projLNq = New-FreshProject
 Initialize-ProjectScaffold $projLNq
 Write-Registry (Join-Path $projLNq $STAX_DIR) 'Auth Service'
@@ -2239,12 +2239,12 @@ g
 Set-Content -LiteralPath (Join-Path $staxDirLNq '0001-foo.md') -Value $bodySelfExt -Encoding ascii
 Push-Location $projLNq
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'                 $RunRC 1
-  Assert-Contains 'self-extends finding'   $RunOut 'cannot reference the plan itself'
+  Assert-Contains 'self-extends finding'   $RunOut 'cannot reference the work item itself'
 } finally { Pop-Location }
 
-Start-Case 'plans lint flags missing extends back-link (bidirectional)'
+Start-Case 'work-items lint flags missing extends back-link (bidirectional)'
 $projLNr = New-FreshProject
 Initialize-ProjectScaffold $projLNr
 Write-Registry (Join-Path $projLNr $STAX_DIR) 'Auth Service'
@@ -2272,12 +2272,12 @@ g
 Set-Content -LiteralPath (Join-Path $staxDirLNr '0001-foo.md') -Value $bodyAExtB -Encoding ascii
 Push-Location $projLNr
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'                       $RunRC 1
-  Assert-Contains 'missing back-link finding'    $RunOut 'does not list this plan in its `extended_by:`'
+  Assert-Contains 'missing back-link finding'    $RunOut 'does not list this work item in its `extended_by:`'
 } finally { Pop-Location }
 
-Start-Case 'plans lint flags missing supersedes back-link (bidirectional)'
+Start-Case 'work-items lint flags missing supersedes back-link (bidirectional)'
 $projLNs = New-FreshProject
 Initialize-ProjectScaffold $projLNs
 Write-Registry (Join-Path $projLNs $STAX_DIR) 'Auth Service'
@@ -2304,12 +2304,12 @@ g
 Set-Content -LiteralPath (Join-Path $staxDirLNs '0001-foo.md') -Value $bodyASupB -Encoding ascii
 Push-Location $projLNs
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'                       $RunRC 1
-  Assert-Contains 'missing back-link finding'    $RunOut 'does not list this plan in its `superseded_by:`'
+  Assert-Contains 'missing back-link finding'    $RunOut 'does not list this work item in its `superseded_by:`'
 } finally { Pop-Location }
 
-Start-Case 'plans lint passes bidirectional supersedes when both sides linked'
+Start-Case 'work-items lint passes bidirectional supersedes when both sides linked'
 $projLNt = New-FreshProject
 Initialize-ProjectScaffold $projLNt
 Write-Registry (Join-Path $projLNt $STAX_DIR) 'Auth Service'
@@ -2354,12 +2354,12 @@ Set-Content -LiteralPath (Join-Path $staxDirLNt '0001-foo.md') -Value $bodySup -
 Set-Content -LiteralPath (Join-Path $staxDirLNt '0002-bar.md') -Value $bodySupedBy -Encoding ascii
 Push-Location $projLNt
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 0'    $RunRC 0
   Assert-Contains 'summary'   $RunErr '2 ok'
 } finally { Pop-Location }
 
-Start-Case 'plans lint flags EARS subject not in registry'
+Start-Case 'work-items lint flags EARS subject not in registry'
 $projLNu = New-FreshProject
 Initialize-ProjectScaffold $projLNu
 Write-Registry (Join-Path $projLNu $STAX_DIR) 'Auth Service'
@@ -2385,12 +2385,12 @@ g
 Set-Content -LiteralPath (Join-Path $staxDirLNu '0001-foo.md') -Value $bodyUnknownSubject -Encoding ascii
 Push-Location $projLNu
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'                  $RunRC 1
   Assert-Contains 'unknown-subject finding' $RunOut 'EARS subject "Phantom Service" is not in'
 } finally { Pop-Location }
 
-Start-Case 'plans lint flags EARS-subject ↔ systems set divergence'
+Start-Case 'work-items lint flags EARS-subject ↔ systems set divergence'
 $projLNv = New-FreshProject
 Initialize-ProjectScaffold $projLNv
 Write-Registry (Join-Path $projLNv $STAX_DIR) 'Auth Service,Billing Service'
@@ -2416,13 +2416,13 @@ g
 Set-Content -LiteralPath (Join-Path $staxDirLNv '0001-foo.md') -Value $bodyDiverge -Encoding ascii
 Push-Location $projLNv
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'                        $RunRC 1
   Assert-Contains 'subject-not-declared finding'  $RunOut 'EARS tasks name systems not in `systems:`'
   Assert-Contains 'declared-not-used finding'     $RunOut '`systems:` declares systems not used in any EARS task'
 } finally { Pop-Location }
 
-Start-Case 'plans lint flags filename slug not matching slugify(title)'
+Start-Case 'work-items lint flags filename slug not matching slugify(title)'
 $projLNw = New-FreshProject
 Initialize-ProjectScaffold $projLNw
 Write-Registry (Join-Path $projLNw $STAX_DIR) 'Auth Service'
@@ -2448,12 +2448,12 @@ g
 Set-Content -LiteralPath (Join-Path $staxDirLNw '0001-foo.md') -Value $bodyTitleMismatch -Encoding ascii
 Push-Location $projLNw
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'                        $RunRC 1
   Assert-Contains 'title↔filename finding'        $RunOut 'does not match slugify(title)'
 } finally { Pop-Location }
 
-Start-Case 'plans lint flags missing required section ## Goal'
+Start-Case 'work-items lint flags missing required section ## Goal'
 $projLNx = New-FreshProject
 Initialize-ProjectScaffold $projLNx
 Write-Registry (Join-Path $projLNx $STAX_DIR) 'Auth Service'
@@ -2475,17 +2475,17 @@ created: 2026-05-23T14:30:00Z
 Set-Content -LiteralPath (Join-Path $staxDirLNx '0001-foo.md') -Value $bodyMissingGoal -Encoding ascii
 Push-Location $projLNx
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'           $RunRC 1
   Assert-Contains 'goal finding'     $RunOut 'missing required section "## Goal"'
 } finally { Pop-Location }
 
-Start-Case 'plans lint flags file exceeding max_plan_lines'
+Start-Case 'work-items lint flags file exceeding max_work_item_lines'
 $projLNy = New-FreshProject
 Initialize-ProjectScaffold $projLNy
-# Pin max_plan_lines=15 so a 30-line file trips the cap.
+# Pin max_work_item_lines=15 so a 30-line file trips the cap.
 $lockY = Join-Path (Join-Path $projLNy $STAX_DIR) $STAX_LOCK_FILE
-Set-Content -LiteralPath $lockY -Value '{"prefix_width":4,"max_plan_lines":15,"review_per":"task"}' -Encoding ascii
+Set-Content -LiteralPath $lockY -Value '{"prefix_width":4,"max_work_item_lines":15,"review_per":"task"}' -Encoding ascii
 Write-Registry (Join-Path $projLNy $STAX_DIR) 'Auth Service'
 $staxDirLNy = Join-Path $projLNy $STAX_DIR
 $bodyLong = @"
@@ -2516,12 +2516,12 @@ g
 Set-Content -LiteralPath (Join-Path $staxDirLNy '0001-foo.md') -Value $bodyLong -Encoding ascii
 Push-Location $projLNy
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'                $RunRC 1
   Assert-Contains 'line-cap finding'      $RunOut 'max is 15'
 } finally { Pop-Location }
 
-Start-Case 'plans lint flags missing frontmatter entirely'
+Start-Case 'work-items lint flags missing frontmatter entirely'
 $projLNz = New-FreshProject
 Initialize-ProjectScaffold $projLNz
 Write-Registry (Join-Path $projLNz $STAX_DIR) 'Auth Service'
@@ -2529,7 +2529,7 @@ $staxDirLNz = Join-Path $projLNz $STAX_DIR
 Set-Content -LiteralPath (Join-Path $staxDirLNz '0001-foo.md') -Value "no frontmatter here`n" -Encoding ascii
 Push-Location $projLNz
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'                  $RunRC 1
   Assert-Contains 'no-frontmatter finding'  $RunOut 'missing YAML frontmatter'
 } finally { Pop-Location }
@@ -2543,7 +2543,7 @@ Assert-Contains 'usage header'          $RunErr 'Usage: stax init'
 Assert-Contains 'agents flag listed'    $RunErr '--agents'
 Assert-Contains 'scope flag listed'     $RunErr '--scope'
 Assert-Contains 'prefix-width listed'   $RunErr '--prefix-width'
-Assert-Contains 'max-plan-lines listed' $RunErr '--max-plan-lines'
+Assert-Contains 'max-work-item-lines listed' $RunErr '--max-work-item-lines'
 Assert-Contains 'review-per listed'     $RunErr '--review-per'
 
 Start-Case 'init --agents=claude single-agent install'
@@ -2552,7 +2552,7 @@ $projF1 = New-FreshProject
 Push-Location $projF1
 try {
   Invoke-XX init --scope project --agents=claude `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq        'exit 0'                  $RunRC 0
   Assert-IsDir     'claude skills present'   (Join-Path $projF1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'codex skills NOT present' (Join-Path $projF1 (Join-Path $CODEX_SKILLS_REL $SKILL_SHIP_DIR))
@@ -2564,7 +2564,7 @@ $projF2 = New-FreshProject
 Push-Location $projF2
 try {
   Invoke-XX init --scope project --agents=codex `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq        'exit 0'                   $RunRC 0
   Assert-IsDir     'codex skills present'    (Join-Path $projF2 (Join-Path $CODEX_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'claude skills NOT present' (Join-Path $projF2 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
@@ -2576,7 +2576,7 @@ $projF2o = New-FreshProject
 Push-Location $projF2o
 try {
   Invoke-XX init --scope project --agents=opencode `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq        'exit 0'                     $RunRC 0
   Assert-IsDir     'opencode skills present'    (Join-Path $projF2o (Join-Path $OPENCODE_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'claude skills NOT present'  (Join-Path $projF2o (Join-Path $CLAUDE_SKILLS_REL   $SKILL_SHIP_DIR))
@@ -2589,7 +2589,7 @@ $projCP1 = New-FreshProject
 Push-Location $projCP1
 try {
   Invoke-XX init --scope project --agents=copilot `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   # Project scope: same `.agents/skills` path Codex uses.
   Assert-IsDir 'copilot project skills present' `
@@ -2604,7 +2604,7 @@ $projCP2 = New-FreshProject
 Push-Location $projCP2
 try {
   Invoke-XX init --scope user --agents=copilot `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   # User scope: copilot reuses Codex's `.agents/skills` (cross-agent open
   # spec, one of two official Copilot CLI user-scope paths). Skills land
@@ -2621,7 +2621,7 @@ $projPi1 = New-FreshProject
 Push-Location $projPi1
 try {
   Invoke-XX init --scope project --agents=pi `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   # Project scope: same `.agents\skills` path Codex and Copilot use,
   # documented for pi in pi-mono/packages/coding-agent/docs/skills.md
@@ -2638,7 +2638,7 @@ $projPi2 = New-FreshProject
 Push-Location $projPi2
 try {
   Invoke-XX init --scope user --agents=pi `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   # User scope: pi reads `~/.agents/skills/` (one of two documented
   # global locations per pi-mono/packages/coding-agent/docs/skills.md,
@@ -2656,7 +2656,7 @@ $projCL1 = New-FreshProject
 Push-Location $projCL1
 try {
   Invoke-XX init --scope project --agents=cline `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   # Cline reads project skills from `.cline\skills` per docs.cline.bot/
   # customization/overview. Sibling agent dirs stay absent.
@@ -2674,7 +2674,7 @@ $projCL2 = New-FreshProject
 Push-Location $projCL2
 try {
   Invoke-XX init --scope user --agents=cline `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   # User scope: cline's `.cline\skills` resolves relative to $HOME.
   # Skills land under USERPROFILE, project cwd stays untouched.
@@ -2690,7 +2690,7 @@ $projOmp1 = New-FreshProject
 Push-Location $projOmp1
 try {
   Invoke-XX init --scope project --agents=omp `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   # Project scope: omp reuses the cross-agent `.agents\skills` path
   # (Codex and Copilot do the same). omp's documented `agents` skill
@@ -2716,7 +2716,7 @@ $projOmp2 = New-FreshProject
 Push-Location $projOmp2
 try {
   Invoke-XX init --scope user --agents=omp `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   # User scope: omp's `agents` provider scans `$HOME\.agents\skills` —
   # same path Codex and Copilot use at user scope.
@@ -2732,7 +2732,7 @@ $projAg1 = New-FreshProject
 Push-Location $projAg1
 try {
   Invoke-XX init --scope project --agents=antigravity `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   # Antigravity's workspace skill path defaults to `.agents\skills`, the
   # cross-agent open spec path Codex, Copilot, Pi, and omp also use
@@ -2758,7 +2758,7 @@ $projAg2 = New-FreshProject
 Push-Location $projAg2
 try {
   Invoke-XX init --scope user --agents=antigravity `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   # User scope: Antigravity reads `~\.gemini\antigravity\skills` (NOT
   # the cross-agent `~\.agents\skills` fallback). This proves the
@@ -2778,7 +2778,7 @@ $projCont1 = New-FreshProject
 Push-Location $projCont1
 try {
   Invoke-XX init --scope project --agents=continue `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   Assert-IsDir 'continue project skills present' `
     (Join-Path $projCont1 (Join-Path $CONTINUE_SKILLS_REL $SKILL_SHIP_DIR))
@@ -2794,7 +2794,7 @@ $projCont2 = New-FreshProject
 Push-Location $projCont2
 try {
   Invoke-XX init --scope user --agents=continue `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   Assert-IsDir 'continue user-scope skills landed' `
     (Join-Path $env:USERPROFILE (Join-Path $CONTINUE_SKILLS_REL $SKILL_SHIP_DIR))
@@ -2808,7 +2808,7 @@ $projCur1 = New-FreshProject
 Push-Location $projCur1
 try {
   Invoke-XX init --scope project --agents=cursor `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   Assert-IsDir 'cursor project skills present' `
     (Join-Path $projCur1 (Join-Path $CURSOR_SKILLS_REL $SKILL_SHIP_DIR))
@@ -2824,7 +2824,7 @@ $projCur2 = New-FreshProject
 Push-Location $projCur2
 try {
   Invoke-XX init --scope user --agents=cursor `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   # Cursor diverges at user scope (userSkillsRel override) — same
   # shape as Antigravity. Skills land at `~\.cursor\skills`; the
@@ -2844,7 +2844,7 @@ $projKilo1 = New-FreshProject
 Push-Location $projKilo1
 try {
   Invoke-XX init --scope project --agents=kilo `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   Assert-IsDir 'kilo project skills present' `
     (Join-Path $projKilo1 (Join-Path $KILO_SKILLS_REL $SKILL_SHIP_DIR))
@@ -2860,7 +2860,7 @@ $projKilo2 = New-FreshProject
 Push-Location $projKilo2
 try {
   Invoke-XX init --scope user --agents=kilo `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   Assert-IsDir 'kilo user-scope skills landed' `
     (Join-Path $env:USERPROFILE (Join-Path $KILO_SKILLS_REL $SKILL_SHIP_DIR))
@@ -2874,7 +2874,7 @@ $projZed1 = New-FreshProject
 Push-Location $projZed1
 try {
   Invoke-XX init --scope project --agents=zed `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   Assert-IsDir 'zed project skills present' `
     (Join-Path $projZed1 (Join-Path $ZED_SKILLS_REL $SKILL_SHIP_DIR))
@@ -2890,7 +2890,7 @@ $projZed2 = New-FreshProject
 Push-Location $projZed2
 try {
   Invoke-XX init --scope user --agents=zed `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   # Zed honors the cross-agent path at BOTH scopes — same as omp/
   # Codex/Copilot/Pi at user scope.
@@ -2906,36 +2906,36 @@ $projF3 = New-FreshProject
 Push-Location $projF3
 try {
   Invoke-XX init --scope project --agents claude `
-                    --prefix-width 6 --max-plan-lines 30 --review-per task
+                    --prefix-width 6 --max-work-item-lines 30 --review-per task
   Assert-Eq 'exit 0' $RunRC 0
   $lockContent = Get-Content -Raw -LiteralPath (Join-Path $projF3 $Script:STAX_LOCK_PATH)
   Assert-Contains 'lock has prefix_width=6'   $lockContent '"prefix_width": 6'
-  Invoke-XX plans next-prefix
+  Invoke-XX work-items next-prefix
   Assert-Eq '6-wide prefix on next-prefix' $RunOut '000001'
 } finally { Pop-Location }
 
-Start-Case 'init --max-plan-lines=50 seeds the lock with 50'
+Start-Case 'init --max-work-item-lines=50 seeds the lock with 50'
 Reset-UserHome
 $projF4 = New-FreshProject
 Push-Location $projF4
 try {
   Invoke-XX init --scope project --agents claude `
-                    --prefix-width 4 --max-plan-lines 50 --review-per task
+                    --prefix-width 4 --max-work-item-lines 50 --review-per task
   Assert-Eq 'exit 0' $RunRC 0
   $lockContent = Get-Content -Raw -LiteralPath (Join-Path $projF4 $Script:STAX_LOCK_PATH)
-  Assert-Contains 'lock has max_plan_lines=50' $lockContent '"max_plan_lines": 50'
+  Assert-Contains 'lock has max_work_item_lines=50' $lockContent '"max_work_item_lines": 50'
 } finally { Pop-Location }
 
-Start-Case 'init --review-per=plan seeds the lock with plan'
+Start-Case 'init --review-per=work-item seeds the lock with work-item'
 Reset-UserHome
 $projF5 = New-FreshProject
 Push-Location $projF5
 try {
   Invoke-XX init --scope project --agents claude `
-                    --prefix-width 4 --max-plan-lines 30 --review-per plan
+                    --prefix-width 4 --max-work-item-lines 30 --review-per work-item
   Assert-Eq 'exit 0' $RunRC 0
   $lockContent = Get-Content -Raw -LiteralPath (Join-Path $projF5 $Script:STAX_LOCK_PATH)
-  Assert-Contains 'lock has review_per=plan' $lockContent '"review_per": "plan"'
+  Assert-Contains 'lock has review_per=work-item' $lockContent '"review_per": "work-item"'
 } finally { Pop-Location }
 
 Start-Case 'init --scope=user installs to user home, not project cwd'
@@ -2944,7 +2944,7 @@ $projF6 = New-FreshProject
 Push-Location $projF6
 try {
   Invoke-XX init --scope user --agents claude `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq        'exit 0'                       $RunRC 0
   Assert-IsDir     'install under USERPROFILE'    (Join-Path $env:USERPROFILE (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'no install under project cwd' (Join-Path $projF6 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
@@ -2960,7 +2960,7 @@ $projF7 = New-FreshProject
 Push-Location $projF7
 try {
   Invoke-XX init --scope project --agents= `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq       'exit 1'     $RunRC 1
   Assert-Contains 'diagnostic' $RunErr '--agents'
 } finally { Pop-Location }
@@ -2971,20 +2971,20 @@ $projF8 = New-FreshProject
 Push-Location $projF8
 try {
   Invoke-XX init --scope project --agents claude `
-                    --prefix-width 0 --max-plan-lines 30 --review-per task
+                    --prefix-width 0 --max-work-item-lines 30 --review-per task
   Assert-Eq       'exit 1'     $RunRC 1
   Assert-Contains 'diagnostic' $RunErr '--prefix-width must be positive'
 } finally { Pop-Location }
 
-Start-Case 'init --max-plan-lines=-5 is rejected'
+Start-Case 'init --max-work-item-lines=-5 is rejected'
 Reset-UserHome
 $projF9 = New-FreshProject
 Push-Location $projF9
 try {
   Invoke-XX init --scope project --agents claude `
-                    --prefix-width 4 --max-plan-lines=-5 --review-per task
+                    --prefix-width 4 --max-work-item-lines=-5 --review-per task
   Assert-Eq       'exit 1'     $RunRC 1
-  Assert-Contains 'diagnostic' $RunErr '--max-plan-lines must be positive'
+  Assert-Contains 'diagnostic' $RunErr '--max-work-item-lines must be positive'
 } finally { Pop-Location }
 
 Start-Case 'init --review-per (no value) is rejected'
@@ -2993,7 +2993,7 @@ $projFa = New-FreshProject
 Push-Location $projFa
 try {
   Invoke-XX init --scope project --agents claude `
-                    --prefix-width 4 --max-plan-lines 30 --review-per ''
+                    --prefix-width 4 --max-work-item-lines 30 --review-per ''
   Assert-Eq       'exit 1'     $RunRC 1
   Assert-Contains 'diagnostic' $RunErr 'invalid --review-per'
 } finally { Pop-Location }
@@ -3005,17 +3005,17 @@ Reset-UserHome
 $projI1 = New-FreshProject
 Push-Location $projI1
 try {
-  # agents=1,2 (both), scope=1 (project), prefix-width=(default), max-plan-lines=(default), review-per=(default=task)
+  # agents=1,2 (both), scope=1 (project), prefix-width=(default), max-work-item-lines=(default), review-per=(default=task)
   $Script:NextStdin = "1,2`n1`n`n`n`n"
   Invoke-XX init
   Assert-Eq 'exit 0' $RunRC 0
   $lockI1 = Get-Content -Raw -LiteralPath (Join-Path $projI1 $Script:STAX_LOCK_PATH)
   Assert-Contains 'default prefix_width' $lockI1 "`"prefix_width`": $DEFAULT_PREFIX_WIDTH"
-  Assert-Contains 'default max_plan_lines' $lockI1 '"max_plan_lines": 30'
+  Assert-Contains 'default max_work_item_lines' $lockI1 '"max_work_item_lines": 30'
   Assert-Contains 'default review_per task' $lockI1 '"review_per": "task"'
 } finally { Pop-Location }
 
-Start-Case 'init interactive: review-per=2 (plan) chosen via prompt'
+Start-Case 'init interactive: review-per=2 (work-item) chosen via prompt'
 Reset-UserHome
 $projI2 = New-FreshProject
 Push-Location $projI2
@@ -3024,7 +3024,7 @@ try {
   Invoke-XX init
   Assert-Eq 'exit 0' $RunRC 0
   $lockI2 = Get-Content -Raw -LiteralPath (Join-Path $projI2 $Script:STAX_LOCK_PATH)
-  Assert-Contains 'review_per plan via prompt' $lockI2 '"review_per": "plan"'
+  Assert-Contains 'review_per work item via prompt' $lockI2 '"review_per": "work-item"'
 } finally { Pop-Location }
 
 Start-Case 'init interactive: custom prefix-width via prompt'
@@ -3037,7 +3037,7 @@ try {
   Assert-Eq 'exit 0' $RunRC 0
   $lockI3 = Get-Content -Raw -LiteralPath (Join-Path $projI3 $Script:STAX_LOCK_PATH)
   Assert-Contains 'prefix_width=7'    $lockI3 '"prefix_width": 7'
-  Assert-Contains 'max_plan_lines=42' $lockI3 '"max_plan_lines": 42'
+  Assert-Contains 'max_work_item_lines=42' $lockI3 '"max_work_item_lines": 42'
 } finally { Pop-Location }
 
 Start-Case 'init interactive: invalid scope choice exits non-zero'
@@ -3090,7 +3090,7 @@ $projM1 = New-FreshProject
 Push-Location $projM1
 try {
   Invoke-XX init --scope project --agents claude `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'exit 0' $RunRC 0
   Assert-IsFile 'settings.json written' (Join-Path $projM1 $Script:CLAUDE_SETTINGS_PATH)
   $settings = Get-Content -Raw -LiteralPath (Join-Path $projM1 $Script:CLAUDE_SETTINGS_PATH)
@@ -3113,7 +3113,7 @@ Set-Content -LiteralPath (Join-Path $projM2 $Script:CLAUDE_SETTINGS_PATH) -Value
 Push-Location $projM2
 try {
   Invoke-XX init --scope project --agents claude `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq 'exit 0' $RunRC 0
   $merged = Get-Content -Raw -LiteralPath (Join-Path $projM2 $Script:CLAUDE_SETTINGS_PATH)
   Assert-Contains 'user model preserved'    $merged '"opus-4-7"'
@@ -3143,11 +3143,11 @@ Set-Content -LiteralPath (Join-Path $projM3 $Script:CLAUDE_SETTINGS_PATH) -Value
 Push-Location $projM3
 try {
   Invoke-XX init --scope project --agents claude `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq 'exit 0' $RunRC 0
   $merged3 = Get-Content -Raw -LiteralPath (Join-Path $projM3 $Script:CLAUDE_SETTINGS_PATH)
   Assert-Contains 'user hook command preserved' $merged3 'my-custom-tool'
-  Assert-Contains 'bundled hook landed'         $merged3 'stax plans lint'
+  Assert-Contains 'bundled hook landed'         $merged3 'stax work-items lint'
 } finally { Pop-Location }
 
 Start-Case 'init merges into an empty settings.json file (seeds it)'
@@ -3159,7 +3159,7 @@ Set-Content -LiteralPath (Join-Path $projM4 $Script:CLAUDE_SETTINGS_PATH) -Value
 Push-Location $projM4
 try {
   Invoke-XX init --scope project --agents claude `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq 'exit 0' $RunRC 0
   $merged4 = Get-Content -Raw -LiteralPath (Join-Path $projM4 $Script:CLAUDE_SETTINGS_PATH)
   Assert-Contains 'empty file seeded with hooks' $merged4 '"hooks"'
@@ -3187,12 +3187,12 @@ Set-Content -LiteralPath (Join-Path $projM5 $Script:CODEX_HOOKS_PATH) -Value $pr
 Push-Location $projM5
 try {
   Invoke-XX init --scope project --agents codex `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq 'exit 0' $RunRC 0
   $merged5 = Get-Content -Raw -LiteralPath (Join-Path $projM5 $Script:CODEX_HOOKS_PATH)
   Assert-Contains 'user-only key preserved' $merged5 '"userOnlyKey": true'
   Assert-Contains 'user tool preserved'     $merged5 'user-tool'
-  Assert-Contains 'bundled hook present'    $merged5 'stax plans lint'
+  Assert-Contains 'bundled hook present'    $merged5 'stax work-items lint'
 } finally { Pop-Location }
 
 # ==========================================================================
@@ -3207,15 +3207,15 @@ $projU1 = New-FreshProject
 Push-Location $projU1
 try {
   Invoke-XX init --scope project --agents claude `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'init exit 0' $RunRC 0
   $settingsPath = Join-Path $projU1 $Script:CLAUDE_SETTINGS_PATH
   $beforeContent = Get-Content -Raw -LiteralPath $settingsPath
-  Assert-Contains 'bundled hook present before remove' $beforeContent 'stax plans lint'
+  Assert-Contains 'bundled hook present before remove' $beforeContent 'stax work-items lint'
   Invoke-XX skills remove --project
   Assert-Eq    'remove exit 0' $RunRC 0
   $afterContent = Get-Content -Raw -LiteralPath $settingsPath
-  Assert-NotContains 'bundled hook removed'  $afterContent 'stax plans lint'
+  Assert-NotContains 'bundled hook removed'  $afterContent 'stax work-items lint'
 } finally { Pop-Location }
 
 Start-Case 'skills remove --project leaves user-tweaked hooks alone'
@@ -3224,17 +3224,17 @@ $projU2 = New-FreshProject
 Push-Location $projU2
 try {
   Invoke-XX init --scope project --agents claude `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq 'init exit 0' $RunRC 0
   # Modify the bundled hook command — now it's user-tweaked, deep-equal to
   # the shipped record fails, and the un-merge must leave it alone.
   $settingsPath2 = Join-Path $projU2 $Script:CLAUDE_SETTINGS_PATH
-  (Get-Content -Raw -LiteralPath $settingsPath2).Replace('stax plans lint', 'stax plans lint --verbose') |
+  (Get-Content -Raw -LiteralPath $settingsPath2).Replace('stax work-items lint', 'stax work-items lint --verbose') |
     Set-Content -LiteralPath $settingsPath2 -Encoding ascii
   Invoke-XX skills remove --project
   Assert-Eq 'remove exit 0' $RunRC 0
   $after2 = Get-Content -Raw -LiteralPath $settingsPath2
-  Assert-Contains 'tweaked hook survived' $after2 'stax plans lint --verbose'
+  Assert-Contains 'tweaked hook survived' $after2 'stax work-items lint --verbose'
 } finally { Pop-Location }
 
 Start-Case 'skills remove --project leaves user-authored hooks alone'
@@ -3243,7 +3243,7 @@ $projU3 = New-FreshProject
 Push-Location $projU3
 try {
   Invoke-XX init --scope project --agents claude `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq 'init exit 0' $RunRC 0
   $settingsPath3 = Join-Path $projU3 $Script:CLAUDE_SETTINGS_PATH
   # Append a wholly user-authored hook record.
@@ -3255,7 +3255,7 @@ try {
   Assert-Eq 'remove exit 0' $RunRC 0
   $after3 = Get-Content -Raw -LiteralPath $settingsPath3
   Assert-Contains    'user-only hook survived' $after3 'user-only-tool'
-  Assert-NotContains 'bundled hook removed'    $after3 'stax plans lint'
+  Assert-NotContains 'bundled hook removed'    $after3 'stax work-items lint'
 } finally { Pop-Location }
 
 Start-Case 'skills remove --project leaves user-authored sibling skills alongside ours'
@@ -3264,7 +3264,7 @@ $projU4 = New-FreshProject
 Push-Location $projU4
 try {
   Invoke-XX init --scope project --agents claude `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq 'init exit 0' $RunRC 0
   $sibling = Join-Path $projU4 (Join-Path $CLAUDE_SKILLS_REL 'my-private-skill')
   New-Item -ItemType Directory -Force -Path $sibling | Out-Null
@@ -3286,7 +3286,7 @@ $projRMU = New-FreshProject
 Push-Location $projRMU
 try {
   Invoke-XX init --scope user --agents 'claude,codex' `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq    'init exit 0' $RunRC 0
   $preClaude = Join-Path $env:USERPROFILE (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR)
   $preCodex  = Join-Path $env:USERPROFILE (Join-Path $CODEX_SKILLS_REL  $SKILL_SHIP_DIR)
@@ -3321,29 +3321,29 @@ try {
 
 # ---------- Windows-specific: file-attribute / hidden ----------
 
-Start-Case 'plans list does NOT special-case hidden files (returns them in walk output)'
+Start-Case 'work-items list does NOT special-case hidden files (returns them in walk output)'
 $projH = New-FreshProject
 Initialize-ProjectScaffold $projH
 $staxDirH = Join-Path $projH $STAX_DIR
 Write-Plan $staxDirH '0001-keep.md' 'valid' 'auth'
 # listPlans walks via os.ReadDir + a filename-regex match; it does not
-# consult the Win32 hidden attribute. A user who hides a plan file for
-# their own organizational reasons should still see it in `plans list`,
+# consult the Win32 hidden attribute. A user who hides a work-item file for
+# their own organizational reasons should still see it in `work-items list`,
 # matching POSIX dotfile-handling semantics elsewhere in the CLI.
 $hidden = Join-Path $staxDirH '0002-hidden.md'
 Write-Plan $staxDirH '0002-hidden.md' 'valid' 'auth'
 (Get-Item -LiteralPath $hidden).Attributes = 'Hidden'
 Push-Location $projH
 try {
-  Invoke-XX plans list
+  Invoke-XX work-items list
   Assert-Eq        'exit 0' $RunRC 0
-  Assert-Contains  'visible plan listed' $RunOut '0001-keep'
-  Assert-Contains  'hidden plan also listed' $RunOut '0002-hidden'
+  Assert-Contains  'visible work item listed' $RunOut '0001-keep'
+  Assert-Contains  'hidden work item also listed' $RunOut '0002-hidden'
 } finally { Pop-Location }
 
 # ---------- Windows-specific: read-only files ----------
 
-Start-Case 'plans lint reads a read-only plan file successfully'
+Start-Case 'work-items lint reads a read-only work-item file successfully'
 $projRO = New-FreshProject
 Initialize-ProjectScaffold $projRO
 Write-Registry (Join-Path $projRO $STAX_DIR) 'Auth Service'
@@ -3352,7 +3352,7 @@ $roPath = Join-Path (Join-Path $projRO $STAX_DIR) '0001-foo.md'
 (Get-Item -LiteralPath $roPath).Attributes = 'ReadOnly'
 Push-Location $projRO
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 0'  $RunRC 0
   Assert-Contains 'ok line' $RunOut '0001-foo.md: ok'
 } finally {
@@ -3381,7 +3381,7 @@ if ($shortPath -and $shortPath -ne $candidate) {
   Push-Location $shortPath
   try {
     Invoke-XX init --scope project --agents claude `
-                      --prefix-width 4 --max-plan-lines 30 --review-per task
+                      --prefix-width 4 --max-work-item-lines 30 --review-per task
     Assert-Eq    'exit 0' $RunRC 0
     Assert-IsDir 'install at long-name resolution' (Join-Path $candidate (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
   } finally { Pop-Location }
@@ -3391,33 +3391,33 @@ if ($shortPath -and $shortPath -ne $candidate) {
 
 # ---------- Windows-specific: trailing whitespace + odd characters in args ----------
 
-Start-Case 'plans slugify handles a title with leading/trailing whitespace'
-Invoke-XX plans slugify '   Foo Bar   '
+Start-Case 'work-items slugify handles a title with leading/trailing whitespace'
+Invoke-XX work-items slugify '   Foo Bar   '
 Assert-Eq 'exit 0' $RunRC 0
 Assert-Eq 'whitespace stripped' $RunOut 'foo-bar'
 
-Start-Case 'plans slugify handles a title with embedded tab characters'
-Invoke-XX plans slugify "Foo`tBar`tBaz"
+Start-Case 'work-items slugify handles a title with embedded tab characters'
+Invoke-XX work-items slugify "Foo`tBar`tBaz"
 Assert-Eq 'exit 0' $RunRC 0
 Assert-Eq 'tabs collapsed to single dash' $RunOut 'foo-bar-baz'
 
-Start-Case 'plans slugify handles a title with embedded newlines'
-Invoke-XX plans slugify "Foo`nBar"
+Start-Case 'work-items slugify handles a title with embedded newlines'
+Invoke-XX work-items slugify "Foo`nBar"
 Assert-Eq 'exit 0' $RunRC 0
 Assert-Eq 'newline collapsed to single dash' $RunOut 'foo-bar'
 
-Start-Case 'plans slugify accepts a title with leading dashes after --'
-Invoke-XX plans slugify -- '-leading-dash-title'
+Start-Case 'work-items slugify accepts a title with leading dashes after --'
+Invoke-XX work-items slugify -- '-leading-dash-title'
 Assert-Eq 'exit 0' $RunRC 0
 Assert-Eq 'leading dashes trimmed' $RunOut 'leading-dash-title'
 
-Start-Case 'plans slugify drops non-ASCII characters'
-Invoke-XX plans slugify 'café Søk'
+Start-Case 'work-items slugify drops non-ASCII characters'
+Invoke-XX work-items slugify 'café Søk'
 Assert-Eq 'exit 0' $RunRC 0
 Assert-Eq 'non-ASCII collapsed' $RunOut 'caf-s-k'
 
-Start-Case 'plans slugify rejects wholly non-ASCII titles as unsluggable'
-Invoke-XX plans slugify '日本語'
+Start-Case 'work-items slugify rejects wholly non-ASCII titles as unsluggable'
+Invoke-XX work-items slugify '日本語'
 Assert-Eq       'exit 2'     $RunRC 2
 Assert-Contains 'diagnostic' $RunErr 'no slug-able characters'
 
@@ -3443,99 +3443,99 @@ Start-Case 'project-marker-check diagnostic uses generic wording on Windows too'
 $noProjW = New-FreshProject
 Push-Location $noProjW
 try {
-  Invoke-XX plans next-prefix
+  Invoke-XX work-items next-prefix
   Assert-Eq       'exit 2'     $RunRC 2
   Assert-Contains 'banner'     $RunErr 'not a stax project'
-  Assert-NotContains 'no plans-dir leak'  $RunErr $STAX_DIR
+  Assert-NotContains 'no work-items-dir leak'  $RunErr $STAX_DIR
   Assert-NotContains 'no stax init mention is ok' $RunErr 'C:\'
 } finally { Pop-Location }
 
 # ---------- Windows-specific: lock-file parsing tolerates extra whitespace ----------
 
-Start-Case 'plans next-prefix tolerates pretty-printed _config.lock'
+Start-Case 'work-items next-prefix tolerates pretty-printed _config.lock'
 $projWS = New-FreshProject
 Initialize-ProjectScaffold $projWS
 $lockWS = Join-Path (Join-Path $projWS $STAX_DIR) $STAX_LOCK_FILE
 $prettyLock = @"
 {
     "prefix_width": 5,
-    "max_plan_lines": 25,
-    "review_per": "plan"
+    "max_work_item_lines": 25,
+    "review_per": "work-item"
 }
 "@
 Set-Content -LiteralPath $lockWS -Value $prettyLock -Encoding ascii
 Push-Location $projWS
 try {
-  Invoke-XX plans next-prefix
+  Invoke-XX work-items next-prefix
   Assert-Eq 'exit 0' $RunRC 0
   Assert-Eq '5-wide first prefix' $RunOut '00001'
 } finally { Pop-Location }
 
 # ---------- Windows-specific: malformed _config.lock falls back to defaults ----------
 
-Start-Case 'plans next-prefix falls back to default on malformed _config.lock'
+Start-Case 'work-items next-prefix falls back to default on malformed _config.lock'
 $projMal = New-FreshProject
 Initialize-ProjectScaffold $projMal
 $lockMal = Join-Path (Join-Path $projMal $STAX_DIR) $STAX_LOCK_FILE
 Set-Content -LiteralPath $lockMal -Value '{this is not json' -Encoding ascii
 Push-Location $projMal
 try {
-  Invoke-XX plans next-prefix
+  Invoke-XX work-items next-prefix
   Assert-Eq 'exit 0' $RunRC 0
   Assert-Eq 'falls back to defaultPrefixWidth' $RunOut '0001'
 } finally { Pop-Location }
 
 # ---------- Windows-specific: zero prefix_width falls back to default ----------
 
-Start-Case 'plans next-prefix falls back when prefix_width is non-positive'
+Start-Case 'work-items next-prefix falls back when prefix_width is non-positive'
 $projZ = New-FreshProject
 Initialize-ProjectScaffold $projZ
 $lockZ = Join-Path (Join-Path $projZ $STAX_DIR) $STAX_LOCK_FILE
 Set-Content -LiteralPath $lockZ -Value '{"prefix_width": 0}' -Encoding ascii
 Push-Location $projZ
 try {
-  Invoke-XX plans next-prefix
+  Invoke-XX work-items next-prefix
   Assert-Eq 'exit 0' $RunRC 0
   Assert-Eq 'fall back on prefix_width=0' $RunOut '0001'
 } finally { Pop-Location }
 
-# ---------- Windows-specific: plans list with no plans returns empty ----------
+# ---------- Windows-specific: work-items list with no work items returns empty ----------
 
-Start-Case 'plans list on fresh project returns empty output (no rows, no error)'
+Start-Case 'work-items list on fresh project returns empty output (no rows, no error)'
 $projEmpty = New-FreshProject
 Initialize-ProjectScaffold $projEmpty
 Push-Location $projEmpty
 try {
-  Invoke-XX plans list
+  Invoke-XX work-items list
   Assert-Eq 'exit 0'   $RunRC 0
   Assert-Eq 'empty stdout' $RunOut ''
 } finally { Pop-Location }
 
-Start-Case 'plans list --order=asc on fresh project returns empty'
+Start-Case 'work-items list --order=asc on fresh project returns empty'
 Push-Location $projEmpty
 try {
-  Invoke-XX plans list --order=asc
+  Invoke-XX work-items list --order=asc
   Assert-Eq 'exit 0' $RunRC 0
   Assert-Eq 'empty asc'  $RunOut ''
 } finally { Pop-Location }
 
-Start-Case 'plans lint on fresh project returns 0 with 0 ok'
+Start-Case 'work-items lint on fresh project returns 0 with 0 ok'
 Push-Location $projEmpty
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 0'                $RunRC 0
   Assert-Contains 'summary on empty proj' $RunErr '0 ok'
 } finally { Pop-Location }
 
 # ---------- Windows-specific: extra long titles & filenames ----------
 
-Start-Case 'plans slugify produces a slug for a 200-char title'
+Start-Case 'work-items slugify produces a slug for a 200-char title'
 $longTitle = ('Lorem ' * 40).TrimEnd()
-Invoke-XX plans slugify $longTitle
+Invoke-XX work-items slugify $longTitle
 Assert-Eq 'exit 0' $RunRC 0
 Assert-Contains 'slug starts with lorem' $RunOut 'lorem'
 
-Start-Case 'plans list ignores a filename with a 200-char slug if the prefix format is right'
+Start-Case 'work-items list ignores a filename with a 200-char slug if the prefix format is right'
 # A 200-char slug + the sandbox prefix exceeds MAX_PATH=260 on Windows
 # unless LongPathsEnabled is set (registry key HKLM\System\
 # CurrentControlSet\Control\FileSystem\LongPathsEnabled = 1). On a runner
@@ -3555,7 +3555,7 @@ try {
 if ($wroteLong) {
   Push-Location $projLong
   try {
-    Invoke-XX plans list
+    Invoke-XX work-items list
     Assert-Eq 'exit 0' $RunRC 0
     # The long-name row should appear in the output as-is.
     Assert-Contains 'long-slug row present' $RunOut '0001-aaaaaaaaaa'
@@ -3598,9 +3598,9 @@ try {
 # Additional lint, list, skills-remove, and Windows-specific cases
 # ==========================================================================
 
-# ---------- plans lint: more edge cases ----------
+# ---------- work-items lint: more edge cases ----------
 
-Start-Case 'plans lint flags an empty systems array'
+Start-Case 'work-items lint flags an empty systems array'
 $projEM = New-FreshProject
 Initialize-ProjectScaffold $projEM
 Write-Registry (Join-Path $projEM $STAX_DIR) 'Auth Service'
@@ -3625,12 +3625,12 @@ g
 Set-Content -LiteralPath (Join-Path $staxDirEM '0001-foo.md') -Value $bodyEmptySys -Encoding ascii
 Push-Location $projEM
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'                $RunRC 1
   Assert-Contains 'empty systems finding' $RunOut '`systems:` array is empty'
 } finally { Pop-Location }
 
-Start-Case 'plans lint rejects block-form systems frontmatter'
+Start-Case 'work-items lint rejects block-form systems frontmatter'
 $projBF = New-FreshProject
 Initialize-ProjectScaffold $projBF
 Write-Registry (Join-Path $projBF $STAX_DIR) 'Auth Service'
@@ -3656,12 +3656,12 @@ g
 Set-Content -LiteralPath (Join-Path $staxDirBF '0001-foo.md') -Value $bodyBlock -Encoding ascii
 Push-Location $projBF
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'                  $RunRC 1
   Assert-Contains 'block-form rejected'     $RunOut 'must be inline array'
 } finally { Pop-Location }
 
-Start-Case 'plans lint flags a plan missing the ## Tasks section'
+Start-Case 'work-items lint flags a work item missing the ## Tasks section'
 $projNT = New-FreshProject
 Initialize-ProjectScaffold $projNT
 Write-Registry (Join-Path $projNT $STAX_DIR) 'Auth Service'
@@ -3683,12 +3683,12 @@ g
 Set-Content -LiteralPath (Join-Path $staxDirNT '0001-foo.md') -Value $bodyNoTasks -Encoding ascii
 Push-Location $projNT
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'              $RunRC 1
   Assert-Contains 'missing Tasks'       $RunOut 'missing required section "## Tasks"'
 } finally { Pop-Location }
 
-Start-Case 'plans lint flags a plan missing the ## Approach section'
+Start-Case 'work-items lint flags a work item missing the ## Approach section'
 $projNA = New-FreshProject
 Initialize-ProjectScaffold $projNA
 Write-Registry (Join-Path $projNA $STAX_DIR) 'Auth Service'
@@ -3710,12 +3710,12 @@ g
 Set-Content -LiteralPath (Join-Path $staxDirNA '0001-foo.md') -Value $bodyNoAppr -Encoding ascii
 Push-Location $projNA
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'              $RunRC 1
   Assert-Contains 'missing Approach'    $RunOut 'missing required section "## Approach"'
 } finally { Pop-Location }
 
-Start-Case 'plans lint passes bidirectional extends when both sides linked'
+Start-Case 'work-items lint passes bidirectional extends when both sides linked'
 $projBE = New-FreshProject
 Initialize-ProjectScaffold $projBE
 Write-Registry (Join-Path $projBE $STAX_DIR) 'Auth Service'
@@ -3760,12 +3760,12 @@ Set-Content -LiteralPath (Join-Path $staxDirBE '0001-foo.md') -Value $bodyExtend
 Set-Content -LiteralPath (Join-Path $staxDirBE '0002-bar.md') -Value $bodyExtended -Encoding ascii
 Push-Location $projBE
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 0'    $RunRC 0
   Assert-Contains 'summary'   $RunErr '2 ok'
 } finally { Pop-Location }
 
-Start-Case 'plans lint accumulates multiple findings on one file'
+Start-Case 'work-items lint accumulates multiple findings on one file'
 $projMF = New-FreshProject
 Initialize-ProjectScaffold $projMF
 Write-Registry (Join-Path $projMF $STAX_DIR) 'Auth Service'
@@ -3788,66 +3788,66 @@ g
 Set-Content -LiteralPath (Join-Path $staxDirMF '0001-foo.md') -Value $bodyMulti -Encoding ascii
 Push-Location $projMF
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'              $RunRC 1
   Assert-Contains 'status finding'      $RunOut '"bogus"'
   Assert-Contains 'created finding'     $RunOut '"yesterday"'
   Assert-Contains 'missing Tasks'       $RunOut 'missing required section "## Tasks"'
 } finally { Pop-Location }
 
-Start-Case 'plans lint reports per-file summary line on stderr'
+Start-Case 'work-items lint reports per-file summary line on stderr'
 $projSM = New-FreshProject
 Initialize-ProjectScaffold $projSM
 Write-Registry (Join-Path $projSM $STAX_DIR) 'Auth Service'
 Write-FullPlan (Join-Path $projSM $STAX_DIR) '0001-foo.md' 'valid' 'auth-service' 'Auth Service'
 Write-FullPlan (Join-Path $projSM $STAX_DIR) '0002-bar.md' 'valid' 'auth-service' 'Auth Service'
 $staxDirSM = Join-Path $projSM $STAX_DIR
-# Wreck one plan with a known-bad status to force "1 ok, 1 failed".
+# Wreck one work item with a known-bad status to force "1 ok, 1 failed".
 $badContent = (Get-Content -Raw -LiteralPath (Join-Path $staxDirSM '0002-bar.md')) -replace 'status: valid', 'status: bogus'
 Set-Content -LiteralPath (Join-Path $staxDirSM '0002-bar.md') -Value $badContent -Encoding ascii
 Push-Location $projSM
 try {
-  Invoke-XX plans lint
+  Invoke-XX work-items lint
   Assert-Eq       'exit 1'               $RunRC 1
   Assert-Contains '1 ok, 1 failed'       $RunErr '1 ok, 1 failed'
-  Assert-Contains 'first plan ok line'   $RunOut '0001-foo.md: ok'
+  Assert-Contains 'first work item ok line'   $RunOut '0001-foo.md: ok'
 } finally { Pop-Location }
 
-Start-Case 'plans lint rejects positional arguments'
+Start-Case 'work-items lint rejects positional arguments'
 Push-Location $projSM
 try {
-  Invoke-XX plans lint extra-arg
+  Invoke-XX work-items lint extra-arg
   Assert-Eq       'exit 2'        $RunRC 2
   Assert-Contains 'takes no args' $RunErr 'takes no arguments'
 } finally { Pop-Location }
 
-# ---------- plans list: more filtering edge cases ----------
+# ---------- work-items list: more filtering edge cases ----------
 
-Start-Case 'plans list --status nonexistent returns zero rows'
+Start-Case 'work-items list --status nonexistent returns zero rows'
 $projXS = New-FreshProject
 Initialize-ProjectScaffold $projXS
 Write-Plan (Join-Path $projXS $STAX_DIR) '0001-alpha.md' 'valid' 'auth'
 Push-Location $projXS
 try {
-  Invoke-XX plans list --status nope
+  Invoke-XX work-items list --status nope
   Assert-Eq 'exit 0'    $RunRC 0
   Assert-Eq 'no rows'   $RunOut ''
 } finally { Pop-Location }
 
-Start-Case 'plans list keeps comma-list of statuses without duplicates'
+Start-Case 'work-items list keeps comma-list of statuses without duplicates'
 $projDS = New-FreshProject
 Initialize-ProjectScaffold $projDS
 Write-Plan (Join-Path $projDS $STAX_DIR) '0001-alpha.md' 'valid' 'auth'
 Write-Plan (Join-Path $projDS $STAX_DIR) '0002-bravo.md' 'valid' 'auth'
 Push-Location $projDS
 try {
-  Invoke-XX plans list --status 'valid,valid'
+  Invoke-XX work-items list --status 'valid,valid'
   Assert-Eq 'exit 0' $RunRC 0
   $expected = @("0002-bravo`tvalid`tauth", "0001-alpha`tvalid`tauth") -join "`n"
   Assert-Eq 'dup statuses collapsed' $RunOut $expected
 } finally { Pop-Location }
 
-Start-Case 'plans list skips a plan with missing status:'
+Start-Case 'work-items list skips a work item with missing status:'
 $projMS = New-FreshProject
 Initialize-ProjectScaffold $projMS
 $staxDirMS = Join-Path $projMS $STAX_DIR
@@ -3861,13 +3861,13 @@ Set-Content -LiteralPath (Join-Path $staxDirMS '0001-broken.md') -Value $bodyNoS
 Write-Plan $staxDirMS '0002-ok.md' 'valid' 'auth'
 Push-Location $projMS
 try {
-  Invoke-XX plans list
+  Invoke-XX work-items list
   Assert-Eq       'exit 0'             $RunRC 0
-  Assert-Eq       'only ok plan'       $RunOut "0002-ok`tvalid`tauth"
+  Assert-Eq       'only ok work item'       $RunOut "0002-ok`tvalid`tauth"
   Assert-Contains 'warning on broken'  $RunErr '0001-broken.md'
 } finally { Pop-Location }
 
-Start-Case 'plans list skips a plan with missing systems:'
+Start-Case 'work-items list skips a work item with missing systems:'
 $projMSY = New-FreshProject
 Initialize-ProjectScaffold $projMSY
 $staxDirMSY = Join-Path $projMSY $STAX_DIR
@@ -3881,13 +3881,13 @@ Set-Content -LiteralPath (Join-Path $staxDirMSY '0001-broken.md') -Value $bodyNo
 Write-Plan $staxDirMSY '0002-ok.md' 'valid' 'auth'
 Push-Location $projMSY
 try {
-  Invoke-XX plans list
+  Invoke-XX work-items list
   Assert-Eq       'exit 0'                 $RunRC 0
-  Assert-Eq       'only ok plan'           $RunOut "0002-ok`tvalid`tauth"
+  Assert-Eq       'only ok work item'           $RunOut "0002-ok`tvalid`tauth"
   Assert-Contains 'warning on broken'      $RunErr '0001-broken.md'
 } finally { Pop-Location }
 
-Start-Case 'plans list emits status verbatim (does not normalize case)'
+Start-Case 'work-items list emits status verbatim (does not normalize case)'
 $projCS = New-FreshProject
 Initialize-ProjectScaffold $projCS
 $staxDirCS = Join-Path $projCS $STAX_DIR
@@ -3896,14 +3896,14 @@ $staxDirCS = Join-Path $projCS $STAX_DIR
 Write-Plan $staxDirCS '0001-alpha.md' 'valid' 'auth'
 Push-Location $projCS
 try {
-  Invoke-XX plans list
+  Invoke-XX work-items list
   Assert-Eq 'exit 0' $RunRC 0
   Assert-Contains 'lowercase status emitted'   $RunOut 'valid'
 } finally { Pop-Location }
 
-# ---------- plans next-prefix: edge cases ----------
+# ---------- work-items next-prefix: edge cases ----------
 
-Start-Case 'plans next-prefix ignores files whose prefix differs from configured width'
+Start-Case 'work-items next-prefix ignores files whose prefix differs from configured width'
 $projWX = New-FreshProject
 Initialize-ProjectScaffold $projWX
 $staxDirWX = Join-Path $projWX $STAX_DIR
@@ -3913,24 +3913,24 @@ Write-Plan $staxDirWX '0003-three.md'  'valid' 'auth'
 Write-Plan $staxDirWX '00099-extra.md' 'valid' 'auth'
 Push-Location $projWX
 try {
-  Invoke-XX plans next-prefix
+  Invoke-XX work-items next-prefix
   Assert-Eq 'exit 0' $RunRC 0
   Assert-Eq 'next after 0003 (not 00099)' $RunOut '0004'
 } finally { Pop-Location }
 
-Start-Case 'plans next-prefix ignores directories that match the prefix format'
+Start-Case 'work-items next-prefix ignores directories that match the prefix format'
 $projDX = New-FreshProject
 Initialize-ProjectScaffold $projDX
 $staxDirDX = Join-Path $projDX $STAX_DIR
 Write-Plan $staxDirDX '0001-foo.md' 'valid' 'auth'
 # A subdir with the prefix format but no `.md` extension. scanHighestPrefix's
 # regex is `^\d{N}-.+\.md$`, so this directory entry can't match and must be
-# silently ignored. Only 0001-foo.md remains as the recognized plan, so the
+# silently ignored. Only 0001-foo.md remains as the recognized work item, so the
 # next prefix is 0002.
 New-Item -ItemType Directory -Force -Path (Join-Path $staxDirDX '0050-bar') | Out-Null
 Push-Location $projDX
 try {
-  Invoke-XX plans next-prefix
+  Invoke-XX work-items next-prefix
   Assert-Eq 'exit 0' $RunRC 0
   Assert-Eq 'directory ignored, next after 0001-foo.md' $RunOut '0002'
 } finally { Pop-Location }
@@ -3943,7 +3943,7 @@ $projID = New-FreshProject
 Push-Location $projID
 try {
   Invoke-XX init --scope project --agents claude `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq 'init exit 0' $RunRC 0
   Invoke-XX skills remove --project
   Assert-Eq 'first remove exit 0' $RunRC 0
@@ -3958,7 +3958,7 @@ $projXP = New-FreshProject
 Push-Location $projXP
 try {
   Invoke-XX init --scope project --agents claude `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq 'init exit 0' $RunRC 0
   Invoke-XX skills remove --user
   Assert-Eq       'exit 0'                    $RunRC 0
@@ -3976,20 +3976,20 @@ $projRMHC = New-FreshProject
 Push-Location $projRMHC
 try {
   Invoke-XX init --scope user --agents codex `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq 'init exit 0' $RunRC 0
   $userHooks = Join-Path $env:USERPROFILE (Join-Path $CODEX_CONFIG_REL $CODEX_HOOKS_FILE)
   $beforeContent = Get-Content -Raw -LiteralPath $userHooks
-  Assert-Contains 'bundled hook present pre-remove' $beforeContent 'stax plans lint'
+  Assert-Contains 'bundled hook present pre-remove' $beforeContent 'stax work-items lint'
   Invoke-XX skills remove --user
   Assert-Eq 'remove exit 0' $RunRC 0
   $afterContent = Get-Content -Raw -LiteralPath $userHooks
-  Assert-NotContains 'bundled hook removed' $afterContent 'stax plans lint'
+  Assert-NotContains 'bundled hook removed' $afterContent 'stax work-items lint'
 } finally { Pop-Location }
 
 # ---------- Windows-specific: encoding and output stability ----------
 
-Start-Case 'plans list stdout has no UTF-8 BOM'
+Start-Case 'work-items list stdout has no UTF-8 BOM'
 $projUB = New-FreshProject
 Initialize-ProjectScaffold $projUB
 Write-Plan (Join-Path $projUB $STAX_DIR) '0001-alpha.md' 'valid' 'auth'
@@ -3997,7 +3997,7 @@ Push-Location $projUB
 try {
   $tmpStdout = [System.IO.Path]::GetTempFileName()
   try {
-    & $Script:BuildBin plans list > $tmpStdout
+    & $Script:BuildBin work-items list > $tmpStdout
     $bytes = [System.IO.File]::ReadAllBytes($tmpStdout)
     if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
       Write-Fail 'stdout has unexpected BOM'
@@ -4009,13 +4009,13 @@ try {
   }
 } finally { Pop-Location }
 
-Start-Case 'plans list uses LF line endings (not CRLF) on stdout'
+Start-Case 'work-items list uses LF line endings (not CRLF) on stdout'
 Push-Location $projUB
 try {
   Write-Plan (Join-Path $projUB $STAX_DIR) '0002-bravo.md' 'valid' 'auth'
   $tmpStdout2 = [System.IO.Path]::GetTempFileName()
   try {
-    & $Script:BuildBin plans list > $tmpStdout2
+    & $Script:BuildBin work-items list > $tmpStdout2
     $bytes2 = [System.IO.File]::ReadAllBytes($tmpStdout2)
     # Wrap in @(...) so .Count is always defined — pwsh leaves a single-
     # or zero-element pipeline result as a scalar / $null, on which .Count
@@ -4029,7 +4029,7 @@ try {
   }
 } finally { Pop-Location }
 
-Start-Case 'plans list stdout is exactly one trailing newline per row'
+Start-Case 'work-items list stdout is exactly one trailing newline per row'
 $projNL = New-FreshProject
 Initialize-ProjectScaffold $projNL
 $staxDirNL = Join-Path $projNL $STAX_DIR
@@ -4039,7 +4039,7 @@ Push-Location $projNL
 try {
   $tmpStdout3 = [System.IO.Path]::GetTempFileName()
   try {
-    & $Script:BuildBin plans list > $tmpStdout3
+    & $Script:BuildBin work-items list > $tmpStdout3
     $bytes3 = [System.IO.File]::ReadAllBytes($tmpStdout3)
     $lfCount = @($bytes3 | Where-Object { $_ -eq 0x0A }).Count
     Assert-Eq 'one LF per row (no extras)' $lfCount 2
@@ -4050,37 +4050,37 @@ try {
 
 # ---------- Windows-specific: invoking through cmd.exe vs pwsh parity ----------
 
-Start-Case 'plans next-prefix output is identical whether invoked via pwsh or cmd.exe'
+Start-Case 'work-items next-prefix output is identical whether invoked via pwsh or cmd.exe'
 $projXP = New-FreshProject
 Initialize-ProjectScaffold $projXP
 Write-Plan (Join-Path $projXP $STAX_DIR) '0007-foo.md' 'valid' 'auth'
 Push-Location $projXP
 try {
-  $pwshOut = (& $Script:BuildBin plans next-prefix).Trim()
-  $cmdOut  = (& cmd.exe /c "`"$Script:BuildBin`" plans next-prefix").Trim()
+  $pwshOut = (& $Script:BuildBin work-items next-prefix).Trim()
+  $cmdOut  = (& cmd.exe /c "`"$Script:BuildBin`" work-items next-prefix").Trim()
   Assert-Eq 'pwsh and cmd outputs match' $pwshOut $cmdOut
 } finally { Pop-Location }
 
 # ---------- Windows-specific: arg passing with quotes / spaces ----------
 
-Start-Case 'plans slugify handles quoted title with embedded spaces (pwsh)'
-Invoke-XX plans slugify 'Hello   World'
+Start-Case 'work-items slugify handles quoted title with embedded spaces (pwsh)'
+Invoke-XX work-items slugify 'Hello   World'
 Assert-Eq 'exit 0' $RunRC 0
 Assert-Eq 'multi-space slug' $RunOut 'hello-world'
 
-Start-Case 'plans slugify handles a title containing single quotes'
-Invoke-XX plans slugify "It's a Test"
+Start-Case 'work-items slugify handles a title containing single quotes'
+Invoke-XX work-items slugify "It's a Test"
 Assert-Eq 'exit 0' $RunRC 0
 Assert-Eq 'apostrophe collapsed to dash' $RunOut 'it-s-a-test'
 
-Start-Case 'plans slugify handles a title containing double quotes'
+Start-Case 'work-items slugify handles a title containing double quotes'
 # In pwsh, double quotes inside single-quoted strings are literal.
-Invoke-XX plans slugify 'Quote "this" please'
+Invoke-XX work-items slugify 'Quote "this" please'
 Assert-Eq 'exit 0' $RunRC 0
 Assert-Eq 'double-quotes collapsed' $RunOut 'quote-this-please'
 
-Start-Case 'plans slugify handles a title containing path separators'
-Invoke-XX plans slugify 'a\b/c'
+Start-Case 'work-items slugify handles a title containing path separators'
+Invoke-XX work-items slugify 'a\b/c'
 Assert-Eq 'exit 0' $RunRC 0
 Assert-Eq 'separators collapsed' $RunOut 'a-b-c'
 
@@ -4092,7 +4092,7 @@ $projNB = New-FreshProject
 Push-Location $projNB
 try {
   Invoke-XX init --scope project --agents claude `
-                    --prefix-width 4 --max-plan-lines 30 --review-per task
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
   Assert-Eq 'exit 0' $RunRC 0
   Assert-NotExists 'no stax at project root'     (Join-Path $projNB 'stax')
   Assert-NotExists 'no stax.exe at project root' (Join-Path $projNB 'stax.exe')
@@ -4101,7 +4101,7 @@ try {
 
 # ---------- Windows-specific: ignore file flagged as system ----------
 
-Start-Case 'plans list ignores .DS_Store-like cruft at the .stax/ root'
+Start-Case 'work-items list ignores .DS_Store-like cruft at the .stax/ root'
 $projDS = New-FreshProject
 Initialize-ProjectScaffold $projDS
 $staxDirDSL = Join-Path $projDS $STAX_DIR
@@ -4110,9 +4110,9 @@ Set-Content -LiteralPath (Join-Path $staxDirDSL 'Thumbs.db') -Value 'binary cruf
 Set-Content -LiteralPath (Join-Path $staxDirDSL 'desktop.ini') -Value '[.ShellClassInfo]' -Encoding ascii
 Push-Location $projDS
 try {
-  Invoke-XX plans list
+  Invoke-XX work-items list
   Assert-Eq       'exit 0'                $RunRC 0
-  Assert-Eq       'only matching plan'    $RunOut "0001-foo`tvalid`tauth"
+  Assert-Eq       'only matching work item'    $RunOut "0001-foo`tvalid`tauth"
   Assert-NotContains 'Thumbs.db not warned'  $RunErr 'Thumbs.db'
   Assert-NotContains 'desktop.ini not warned' $RunErr 'desktop.ini'
 } finally { Pop-Location }
@@ -4125,14 +4125,14 @@ $helpOut = $RunOut
 Invoke-XX -h
 Assert-Eq 'parity between --help and -h' $RunOut $helpOut
 
-# ---------- Windows-specific: plans next-prefix never panics on empty proj dir ----------
+# ---------- Windows-specific: work-items next-prefix never panics on empty proj dir ----------
 
-Start-Case 'plans next-prefix returns 0001 when .stax/ has only the scaffold files'
+Start-Case 'work-items next-prefix returns 0001 when .stax/ has only the scaffold files'
 $projOS = New-FreshProject
 Initialize-ProjectScaffold $projOS
 Push-Location $projOS
 try {
-  Invoke-XX plans next-prefix
+  Invoke-XX work-items next-prefix
   Assert-Eq 'exit 0'        $RunRC 0
   Assert-Eq 'first prefix'  $RunOut '0001'
 } finally { Pop-Location }

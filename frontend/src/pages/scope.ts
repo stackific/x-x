@@ -4,11 +4,11 @@ import { qs as getQs } from "../shared/qs";
 import { applyRelativeTime } from "../shared/relative-time";
 import { applyStatusClass, paintFlagIcon } from "../shared/status";
 
-// Mirrors the Go-side scopeDetail in server.go: a single plan's
+// Mirrors the Go-side scopeDetail in server.go: a single work item's
 // frontmatter fields plus the markdown body pre-rendered to HTML
 // server-side (goldmark with HTML escaping enabled, so innerHTML is
 // safe here). supersededBy carries the slug + title of every newer
-// plan that replaced this one, so the UI can render human-readable
+// work item that replaced this one, so the UI can render human-readable
 // chips instead of raw filename slugs.
 type ScopeRelation = { slug: string; title: string };
 

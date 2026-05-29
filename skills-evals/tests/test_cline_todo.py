@@ -14,7 +14,7 @@ Flow per the user's spec:
   1. Invoke the scope skill with the TODO task. The CI directive
      baked into the inlined prompt instructs the model to auto-approve
      every gate the SKILL TEMPLATE describes.
-  2. PlanJudge scores the plan file that landed under .stax/.
+  2. WorkItemJudge scores the work-item file that landed under .stax/.
   3. Invoke the stax skill. Same auto-approve directive.
   4. ArtifactJudge scores the files the executor produced.
 
@@ -28,7 +28,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from skills_evals.cline_driver import DEFAULT_MAX_TURNS, drive_skill
-from skills_evals.judges import ArtifactJudge, PlanJudge
+from skills_evals.judges import ArtifactJudge, WorkItemJudge
 
 TASK = "build me a single HTML and localStorage-based todo list app"
 
@@ -57,11 +57,11 @@ def test_cline_builds_todo_app(workspace: Path, tmp_path: Path) -> None:
     f"Inspect {transcripts / 'scope.jsonl'} to see what it was asking."
   )
 
-  plan_judgment = PlanJudge().evaluate(TASK, workspace)
-  print(f"\n[plan] score={plan_judgment.score:.2f} reason={plan_judgment.reason}")
-  assert plan_judgment.passed, (
-    f"PlanJudge failed: score={plan_judgment.score:.2f} "
-    f"reason={plan_judgment.reason}"
+  work_item_judgment = WorkItemJudge().evaluate(TASK, workspace)
+  print(f"\n[work-item] score={work_item_judgment.score:.2f} reason={work_item_judgment.reason}")
+  assert work_item_judgment.passed, (
+    f"WorkItemJudge failed: score={work_item_judgment.score:.2f} "
+    f"reason={work_item_judgment.reason}"
   )
 
   # --- /ship ---
@@ -80,9 +80,9 @@ def test_cline_builds_todo_app(workspace: Path, tmp_path: Path) -> None:
     f"yes_replies={exec_run.yes_replies} timed_out={exec_run.timed_out}"
   )
   # No turn-cap assertion for /ship: legitimate execution under
-  # --review-per plan can legitimately use more turns than the cap; the
+  # --review-per work-item can legitimately use more turns than the cap; the
   # supersede flip is asserted directly in test_cline_reminders... via
-  # plan-frontmatter inspection. Downstream exit_code/completed/judge
+  # work-item-frontmatter inspection. Downstream exit_code/completed/judge
   # assertions cover correctness without conflating "stuck at gate" with
   # "did real work that took turns".
 

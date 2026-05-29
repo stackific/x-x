@@ -21,7 +21,7 @@ stax init
 # Launch your AI coding agent and invoke the `/scope` skill
 /scope <specify-your-need>
 
-# Execute the next plan in line
+# Execute the next work item in line
 /ship
 ```
 
@@ -47,7 +47,7 @@ See [`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) for the contribution wo
 
 ## What does `stax` mean?
 
-Stacks of plans. The binary writes plans into `.stax/`, and the two skills move them along the line: `/scope` files a new plan, `/ship` works the stack.
+Stacks of work items. The binary writes work items into `.stax/`, and the two skills move them along the line: `/scope` files a new work item, `/ship` works the stack.
 
 ## License
 

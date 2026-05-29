@@ -272,7 +272,7 @@ details.surface-variant a[target="_blank"] {
 // carrying the `hidden` attribute is collapsed regardless of which
 // layout class it also wears — used by the /scope page's
 // `#scope-superseded-by-row`, which is `class="row … " hidden` and
-// must stay collapsed on plans that aren't actually superseded.
+// must stay collapsed on work items that aren't actually superseded.
 
 [hidden] {
   display: none !important;

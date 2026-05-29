@@ -55,13 +55,13 @@ func runInit(args []string) {
 	// Accepts "project" or "user"; any other value is rejected explicitly.
 	// Leave blank to fall back to the interactive flow.
 	scopeFlag := flags.String("scope", "", "project|user — skip the scope picker")
-	// --prefix-width / --max-plan-lines / --review-per are the
-	// non-interactive twins of the three plan-tooling prompts. Pass them
+	// --prefix-width / --max-work-item-lines / --review-per are the
+	// non-interactive twins of the three work-item-tooling prompts. Pass them
 	// (alongside --agents and --scope) to drive `stax init` end-to-end
 	// without touching the wizard or line prompts.
-	prefixWidthFlag := flags.Int("prefix-width", 0, "zero-padded width for plan prefixes (positive integer; default seeds the project default)")
-	maxPlanLinesFlag := flags.Int("max-plan-lines", 0, "line-count ceiling enforced by `stax plans lint` (positive integer; default seeds the project default)")
-	reviewPerFlag := flags.String("review-per", "", "task|plan — pause for review after every task or every plan")
+	prefixWidthFlag := flags.Int("prefix-width", 0, "zero-padded width for work-item prefixes (positive integer; default seeds the project default)")
+	maxWorkItemLinesFlag := flags.Int("max-work-item-lines", 0, "line-count ceiling enforced by `stax work-items lint` (positive integer; default seeds the project default)")
+	reviewPerFlag := flags.String("review-per", "", "task|work-item — pause for review after every task or every work item")
 	// --cwd is the git `-C <path>` analog: chdir to <path> before doing
 	// anything else, so os.Getwd() below, the project-already-init guard,
 	// the .stax/ scaffold seed, and (under --scope project) every per-agent
@@ -71,22 +71,22 @@ func runInit(args []string) {
 	cwdFlag := flags.String("cwd", "", "change to this directory before running (like git -C)")
 	flags.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage: stax init [--agents claude,codex] [--scope project|user]")
-		fmt.Fprintln(os.Stderr, "             [--prefix-width N] [--max-plan-lines N] [--review-per task|plan]")
+		fmt.Fprintln(os.Stderr, "             [--prefix-width N] [--max-work-item-lines N] [--review-per task|work-item]")
 		fmt.Fprintln(os.Stderr, "             [--cwd PATH]")
 		fmt.Fprintln(os.Stderr, "  Installs the bundled agent skill library for Claude Code and Codex CLI.")
 	}
 	_ = flags.Parse(args)
 
 	// Validate every flag AS PASSED — the zero-value "unset" encoding would
-	// otherwise let `--prefix-width=-1`, `--max-plan-lines=0`, `--agents=`,
+	// otherwise let `--prefix-width=-1`, `--max-work-item-lines=0`, `--agents=`,
 	// or `--review-per ''` slip through and silently fall back to defaults
 	// (or, worse, re-prompt the user in CI). flag.Visit walks only flags
 	// that were actually set on the command line — exactly the set we want
 	// to check.
-	validateInitFlagsOrExit(flags, prefixWidthFlag, maxPlanLinesFlag, &agentsFlag, reviewPerFlag)
+	validateInitFlagsOrExit(flags, prefixWidthFlag, maxWorkItemLinesFlag, &agentsFlag, reviewPerFlag)
 
 	// Honor --cwd before any cwd-dependent call — os.Getwd, checkProject,
-	// scopeRootFor(scopeProject, cwd), and writePlansScaffold all expect
+	// scopeRootFor(scopeProject, cwd), and writeWorkItemsScaffold all expect
 	// to see the caller's target directory, not the shell's.
 	applyCwdOrExit(*cwdFlag)
 
@@ -100,7 +100,7 @@ func runInit(args []string) {
 	// same check `requireProject` uses, so a directory that passes the
 	// project-scope marker check elsewhere triggers this refusal here. Re-running
 	// init on a fresh / partially-initialized directory still works,
-	// which is what writePlansScaffold's writeIfAbsent semantics rely on.
+	// which is what writeWorkItemsScaffold's writeIfAbsent semantics rely on.
 	// The check runs AFTER flag validation so a real usage error (bad flag,
 	// stray positional) still wins the diagnostic.
 	if checkProject() == nil {
@@ -110,11 +110,11 @@ func runInit(args []string) {
 	fmt.Printf("Setting up stax in %s\n\n", cwd)
 
 	cfg, err := resolveInitConfig(initFlags{
-		agents:       agentsFlag,
-		scope:        *scopeFlag,
-		prefixWidth:  *prefixWidthFlag,
-		maxPlanLines: *maxPlanLinesFlag,
-		reviewPer:    *reviewPerFlag,
+		agents:           agentsFlag,
+		scope:            *scopeFlag,
+		prefixWidth:      *prefixWidthFlag,
+		maxWorkItemLines: *maxWorkItemLinesFlag,
+		reviewPer:        *reviewPerFlag,
 	}, os.Stdin, stdinIsTTY(os.Stdin))
 	if err != nil {
 		exitErr(err)
@@ -174,24 +174,24 @@ func runInit(args []string) {
 	// `.stax/` scaffold lives in cwd regardless of scope. Scope only
 	// decides where SKILLS land (project tree vs $HOME); the project marker
 	// check keyed on `<cwd>/.stax/_config.lock` is what makes cwd usable
-	// with `/scope`, `/ship`, and the `stax plans *` CLI subcommands. A
+	// with `/scope`, `/ship`, and the `stax work-items *` CLI subcommands. A
 	// user-scope install that left cwd un-scaffolded produced skills with
-	// nowhere to anchor plans — every subsequent command tripped the
+	// nowhere to anchor work items — every subsequent command tripped the
 	// `not a stax project` check. Writing the scaffold under both scopes
 	// keeps cwd a real stax project either way.
 	//
 	// Failures here are non-fatal — they downgrade to a warning because
 	// the skill install (the primary purpose) already succeeded.
-	if err := writePlansScaffold(cwd, cfg); err != nil {
+	if err := writeWorkItemsScaffold(cwd, cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
 	}
 
 	fmt.Println("\nDone.")
-	// Plan files are first-class repo content (frontmatter + EARS tasks),
+	// Work-item files are first-class repo content (frontmatter + EARS tasks),
 	// not local state. Nudge the user to commit them so the team shares
-	// the same plan history. Phrased as a tip rather than auto-editing
+	// the same work-item history. Phrased as a tip rather than auto-editing
 	// .gitignore so we never touch git config behind the user's back.
-	fmt.Printf("\nTip: commit %s/ to git so your team shares plan history.\n", staxDir)
+	fmt.Printf("\nTip: commit %s/ to git so your team shares work-item history.\n", staxDir)
 
 	// Anonymous-usage ping. Fires at the end of the happy path so a
 	// fatal error earlier in runInit (which exits via exitErr) doesn't
@@ -220,8 +220,8 @@ func runInit(args []string) {
 // returns. Extracted into a one-liner so runInit's body stays under the
 // linter's cyclomatic-complexity ceiling — the actual validation logic
 // (and its testable error-returning form) lives in validateInitFlags.
-func validateInitFlagsOrExit(flags *flag.FlagSet, prefixWidth, maxPlanLines *int, agents *stringSliceFlag, reviewPer *string) {
-	if err := validateInitFlags(flags, prefixWidth, maxPlanLines, agents, reviewPer); err != nil {
+func validateInitFlagsOrExit(flags *flag.FlagSet, prefixWidth, maxWorkItemLines *int, agents *stringSliceFlag, reviewPer *string) {
+	if err := validateInitFlags(flags, prefixWidth, maxWorkItemLines, agents, reviewPer); err != nil {
 		exitErr(err)
 	}
 }
@@ -233,7 +233,7 @@ func validateInitFlagsOrExit(flags *flag.FlagSet, prefixWidth, maxPlanLines *int
 // re-prompts the user — fine for an unset flag, wrong for one the user
 // explicitly passed with an empty value. Returns the first violation as
 // an error so runInit (and unit tests) can drive the failure path.
-func validateInitFlags(flags *flag.FlagSet, prefixWidth, maxPlanLines *int, agents *stringSliceFlag, reviewPer *string) error {
+func validateInitFlags(flags *flag.FlagSet, prefixWidth, maxWorkItemLines *int, agents *stringSliceFlag, reviewPer *string) error {
 	var firstErr error
 	flags.Visit(func(fl *flag.Flag) {
 		if firstErr != nil {
@@ -244,9 +244,9 @@ func validateInitFlags(flags *flag.FlagSet, prefixWidth, maxPlanLines *int, agen
 			if *prefixWidth <= 0 {
 				firstErr = fmt.Errorf("--prefix-width must be positive, got %d", *prefixWidth)
 			}
-		case "max-plan-lines":
-			if *maxPlanLines <= 0 {
-				firstErr = fmt.Errorf("--max-plan-lines must be positive, got %d", *maxPlanLines)
+		case "max-work-item-lines":
+			if *maxWorkItemLines <= 0 {
+				firstErr = fmt.Errorf("--max-work-item-lines must be positive, got %d", *maxWorkItemLines)
 			}
 		case "agents":
 			if len(*agents) == 0 {
@@ -254,7 +254,7 @@ func validateInitFlags(flags *flag.FlagSet, prefixWidth, maxPlanLines *int, agen
 			}
 		case "review-per":
 			if *reviewPer == "" {
-				firstErr = fmt.Errorf("invalid --review-per: %q (expected %s or %s)", *reviewPer, reviewPerTask, reviewPerPlan)
+				firstErr = fmt.Errorf("invalid --review-per: %q (expected %s or %s)", *reviewPer, reviewPerTask, reviewPerWorkItem)
 			}
 		}
 	})
@@ -266,22 +266,22 @@ func validateInitFlags(flags *flag.FlagSet, prefixWidth, maxPlanLines *int, agen
 // resolveInitConfig can distinguish "user passed a flag" from "user left
 // it for the prompt to fill in".
 type initFlags struct {
-	agents       []string // raw --agents values (empty = ask)
-	scope        string   // raw --scope value ("" = ask)
-	prefixWidth  int      // 0 = ask
-	maxPlanLines int      // 0 = ask
-	reviewPer    string   // "" = ask
+	agents           []string // raw --agents values (empty = ask)
+	scope            string   // raw --scope value ("" = ask)
+	prefixWidth      int      // 0 = ask
+	maxWorkItemLines int      // 0 = ask
+	reviewPer        string   // "" = ask
 }
 
 // initConfig is the post-resolution, fully-typed set of choices the rest
 // of runInit needs. Every field is guaranteed valid by the time
 // resolveInitConfig returns nil.
 type initConfig struct {
-	agents       []agentTarget
-	scope        initScope
-	prefixWidth  int
-	maxPlanLines int
-	reviewPer    string
+	agents           []agentTarget
+	scope            initScope
+	prefixWidth      int
+	maxWorkItemLines int
+	reviewPer        string
 }
 
 // resolveInitConfig collects every value runInit needs to perform the
@@ -316,7 +316,7 @@ func (f initFlags) complete() bool {
 	return len(f.agents) > 0 &&
 		f.scope != "" &&
 		f.prefixWidth > 0 &&
-		f.maxPlanLines > 0 &&
+		f.maxWorkItemLines > 0 &&
 		f.reviewPer != ""
 }
 
@@ -339,15 +339,15 @@ func (f initFlags) toConfig() (initConfig, error) {
 	if f.prefixWidth <= 0 {
 		return initConfig{}, fmt.Errorf("--prefix-width must be positive, got %d", f.prefixWidth)
 	}
-	if f.maxPlanLines <= 0 {
-		return initConfig{}, fmt.Errorf("--max-plan-lines must be positive, got %d", f.maxPlanLines)
+	if f.maxWorkItemLines <= 0 {
+		return initConfig{}, fmt.Errorf("--max-work-item-lines must be positive, got %d", f.maxWorkItemLines)
 	}
 	return initConfig{
-		agents:       agents,
-		scope:        scope,
-		prefixWidth:  f.prefixWidth,
-		maxPlanLines: f.maxPlanLines,
-		reviewPer:    review,
+		agents:           agents,
+		scope:            scope,
+		prefixWidth:      f.prefixWidth,
+		maxWorkItemLines: f.maxWorkItemLines,
+		reviewPer:        review,
 	}, nil
 }
 
@@ -359,9 +359,9 @@ func (f initFlags) toConfig() (initConfig, error) {
 func runLinePrompts(f initFlags, in io.Reader) (initConfig, error) {
 	r := bufReader(in)
 	cfg := initConfig{
-		prefixWidth:  f.prefixWidth,
-		maxPlanLines: f.maxPlanLines,
-		reviewPer:    f.reviewPer,
+		prefixWidth:      f.prefixWidth,
+		maxWorkItemLines: f.maxWorkItemLines,
+		reviewPer:        f.reviewPer,
 	}
 	var err error
 
@@ -381,8 +381,8 @@ func runLinePrompts(f initFlags, in io.Reader) (initConfig, error) {
 		}
 	}
 
-	if cfg.maxPlanLines <= 0 {
-		cfg.maxPlanLines, err = promptMaxPlanLines(r)
+	if cfg.maxWorkItemLines <= 0 {
+		cfg.maxWorkItemLines, err = promptMaxWorkItemLines(r)
 		if err != nil {
 			return initConfig{}, err
 		}
@@ -421,9 +421,9 @@ func runHuhWizard(f initFlags) (initConfig, error) {
 	if f.prefixWidth > 0 {
 		prefixWidth = f.prefixWidth
 	}
-	maxPlanLines := defaultMaxPlanLines
-	if f.maxPlanLines > 0 {
-		maxPlanLines = f.maxPlanLines
+	maxWorkItemLines := defaultMaxWorkItemLines
+	if f.maxWorkItemLines > 0 {
+		maxWorkItemLines = f.maxWorkItemLines
 	}
 	reviewPer := defaultReviewPer
 	if f.reviewPer != "" {
@@ -433,7 +433,7 @@ func runHuhWizard(f initFlags) (initConfig, error) {
 	// huh's Input value bindings are strings; the integer fields use
 	// dedicated string vars and get parsed back after the form returns.
 	prefixWidthStr := strconv.Itoa(prefixWidth)
-	maxPlanLinesStr := strconv.Itoa(maxPlanLines)
+	maxWorkItemLinesStr := strconv.Itoa(maxWorkItemLines)
 
 	agentOpts := make([]huh.Option[string], len(agentTargets))
 	for i, t := range agentTargets {
@@ -465,25 +465,25 @@ func runHuhWizard(f initFlags) (initConfig, error) {
 		),
 		huh.NewGroup(
 			huh.NewInput().
-				Title("Prefix width for plan files").
-				Description("Zero-padded width for plan filenames (e.g. width 4 → 0001-foo.md). Higher values give more headroom before plan numbers run out.").
+				Title("Prefix width for work-item files").
+				Description("Zero-padded width for work-item filenames (e.g. width 4 → 0001-foo.md). Higher values give more headroom before work-item numbers run out.").
 				Value(&prefixWidthStr).
 				Validate(validatePositiveInt),
 		),
 		huh.NewGroup(
 			huh.NewInput().
-				Title("Maximum lines per plan").
-				Description("Keeps AI agents on a short leash: forces them to split sprawling work into smaller, reviewable plans.").
-				Value(&maxPlanLinesStr).
+				Title("Maximum lines per work item").
+				Description("Keeps AI agents on a short leash: forces them to split sprawling work into smaller, reviewable work items.").
+				Value(&maxWorkItemLinesStr).
 				Validate(validatePositiveInt),
 		),
 		huh.NewGroup(
 			huh.NewSelect[string]().
 				Title("Pause for review after every…").
-				Description("`task` — review each EARS criterion as the planner finishes it (tight loop, more interruptions).  `plan` — review at the end of each plan (looser loop, larger diffs).").
+				Description("`task` — review each EARS criterion as the planner finishes it (tight loop, more interruptions).  `work-item` — review at the end of each work item (looser loop, larger diffs).").
 				Options(
 					huh.NewOption(reviewPerTask+" — tight feedback loop", reviewPerTask),
-					huh.NewOption(reviewPerPlan+" — review only at plan boundaries", reviewPerPlan),
+					huh.NewOption(reviewPerWorkItem+" — review only at work-item boundaries", reviewPerWorkItem),
 				).
 				Value(&reviewPer),
 		),
@@ -497,25 +497,25 @@ func runHuhWizard(f initFlags) (initConfig, error) {
 	if err != nil || pw <= 0 {
 		return initConfig{}, fmt.Errorf("invalid prefix-width from wizard: %q", prefixWidthStr)
 	}
-	ml, err := strconv.Atoi(strings.TrimSpace(maxPlanLinesStr))
+	ml, err := strconv.Atoi(strings.TrimSpace(maxWorkItemLinesStr))
 	if err != nil || ml <= 0 {
-		return initConfig{}, fmt.Errorf("invalid max-plan-lines from wizard: %q", maxPlanLinesStr)
+		return initConfig{}, fmt.Errorf("invalid max-work-item-lines from wizard: %q", maxWorkItemLinesStr)
 	}
 	agents, err := resolveAgentsFromKeys(selectedAgentKeys)
 	if err != nil {
 		return initConfig{}, err
 	}
 	return initConfig{
-		agents:       agents,
-		scope:        scope,
-		prefixWidth:  pw,
-		maxPlanLines: ml,
-		reviewPer:    reviewPer,
+		agents:           agents,
+		scope:            scope,
+		prefixWidth:      pw,
+		maxWorkItemLines: ml,
+		reviewPer:        reviewPer,
 	}, nil
 }
 
 // validatePositiveInt is the huh.Input validator shared by the
-// prefix-width and max-plan-lines fields. Strings only — caller parses
+// prefix-width and max-work-item-lines fields. Strings only — caller parses
 // the int after form.Run returns.
 func validatePositiveInt(s string) error {
 	n, err := strconv.Atoi(strings.TrimSpace(s))
@@ -535,11 +535,11 @@ func stdinIsTTY(f *os.File) bool {
 	return isatty.IsTerminal(f.Fd())
 }
 
-// writePlansScaffold creates the project-local .stax/ directory and seeds
-// the two files that the plan tooling expects to find on disk:
+// writeWorkItemsScaffold creates the project-local .stax/ directory and seeds
+// the two files that the work-item tooling expects to find on disk:
 //
 //	_data_systems.yaml — empty placeholder; populated by the user as systems are added
-//	_config.lock  — plan-tooling pins (prefix_width, max_plan_lines, review_per)
+//	_config.lock  — work-item-tooling pins (prefix_width, max_work_item_lines, review_per)
 //
 // Both files are only written when ABSENT so existing content survives
 // re-runs. _config.lock specifically acts as a pin: re-running init
@@ -547,12 +547,12 @@ func stdinIsTTY(f *os.File) bool {
 // (Cargo.lock, package-lock.json, etc.) — the values stored come from
 // cfg, which carries either the user's wizard / flag choices or the
 // project defaults.
-func writePlansScaffold(cwd string, cfg initConfig) error {
+func writeWorkItemsScaffold(cwd string, cfg initConfig) error {
 	dir := filepath.Join(cwd, staxDir)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create %s: %w", dir, err)
 	}
-	// Empty placeholder — the plan tooling populates this as the project
+	// Empty placeholder — the work-item tooling populates this as the project
 	// grows. Writing nil content creates a zero-byte file.
 	if err := writeIfAbsent(filepath.Join(dir, staxSystemsFile), nil); err != nil {
 		return err
@@ -560,13 +560,13 @@ func writePlansScaffold(cwd string, cfg initConfig) error {
 	// Inline anonymous struct: the lock file is JSON-formatted, but the only
 	// place we materialize it is here, so a dedicated type would be overkill.
 	lock := struct {
-		PrefixWidth  int    `json:"prefix_width"`
-		MaxPlanLines int    `json:"max_plan_lines"`
-		ReviewPer    string `json:"review_per"`
+		PrefixWidth      int    `json:"prefix_width"`
+		MaxWorkItemLines int    `json:"max_work_item_lines"`
+		ReviewPer        string `json:"review_per"`
 	}{
-		PrefixWidth:  cfg.prefixWidth,
-		MaxPlanLines: cfg.maxPlanLines,
-		ReviewPer:    cfg.reviewPer,
+		PrefixWidth:      cfg.prefixWidth,
+		MaxWorkItemLines: cfg.maxWorkItemLines,
+		ReviewPer:        cfg.reviewPer,
 	}
 	body, err := json.MarshalIndent(lock, "", "  ")
 	if err != nil {
@@ -580,7 +580,7 @@ func writePlansScaffold(cwd string, cfg initConfig) error {
 
 // writeIfAbsent is the "create only if missing" primitive. Stat first;
 // if the file exists, return nil and leave it alone. If it doesn't,
-// write the given content with 0o600 perms. Used by writePlansScaffold.
+// write the given content with 0o600 perms. Used by writeWorkItemsScaffold.
 func writeIfAbsent(path string, content []byte) error {
 	if _, err := os.Stat(path); err == nil {
 		return nil
@@ -668,11 +668,11 @@ func parseScope(s string) (initScope, error) {
 // the value passes through is the allowlist check.
 func parseReviewPer(s string) (string, error) {
 	switch s {
-	case reviewPerTask, reviewPerPlan:
+	case reviewPerTask, reviewPerWorkItem:
 		return s, nil
 	default:
 		return "", fmt.Errorf("invalid --review-per: %q (expected %s or %s)",
-			s, reviewPerTask, reviewPerPlan)
+			s, reviewPerTask, reviewPerWorkItem)
 	}
 }
 
@@ -810,38 +810,38 @@ func allAgents() []agentTarget {
 }
 
 // promptPrefixWidth reads one line from `in` and parses it as the
-// zero-padded plan-prefix width. Empty input (blank line / EOF before
+// zero-padded work-item prefix width. Empty input (blank line / EOF before
 // any byte) accepts the project default so headless callers that pipe
 // the older two-prompt-only inputs continue to work after this prompt
 // joined the sequence.
 func promptPrefixWidth(in io.Reader) (int, error) {
-	fmt.Println("Prefix width for plan files")
-	fmt.Println("  Zero-padded width for plan filenames (e.g. width 4 → 0001-foo.md).")
-	fmt.Println("  Higher = more headroom before plan numbers run out.")
+	fmt.Println("Prefix width for work-item files")
+	fmt.Println("  Zero-padded width for work-item filenames (e.g. width 4 → 0001-foo.md).")
+	fmt.Println("  Higher = more headroom before work-item numbers run out.")
 	fmt.Printf("Choose [default %d]: ", defaultPrefixWidth)
 	return readPositiveIntLine(in, defaultPrefixWidth, "prefix-width")
 }
 
-// promptMaxPlanLines reads one line from `in` and parses it as the plan
+// promptMaxWorkItemLines reads one line from `in` and parses it as the work-item
 // line-count cap. Same default-on-empty semantics as promptPrefixWidth.
-// The cap is what `stax plans lint` enforces — tight values keep AI agents
-// from sprawling, looser values let well-scoped plans breathe.
-func promptMaxPlanLines(in io.Reader) (int, error) {
-	fmt.Println("Maximum lines per plan")
+// The cap is what `stax work-items lint` enforces — tight values keep AI agents
+// from sprawling, looser values let well-scoped work items breathe.
+func promptMaxWorkItemLines(in io.Reader) (int, error) {
+	fmt.Println("Maximum lines per work item")
 	fmt.Println("  Keeps AI agents on a short leash:")
-	fmt.Println("  forces them to split sprawling work into smaller, reviewable plans.")
-	fmt.Printf("Choose [default %d]: ", defaultMaxPlanLines)
-	return readPositiveIntLine(in, defaultMaxPlanLines, "max-plan-lines")
+	fmt.Println("  forces them to split sprawling work into smaller, reviewable work items.")
+	fmt.Printf("Choose [default %d]: ", defaultMaxWorkItemLines)
+	return readPositiveIntLine(in, defaultMaxWorkItemLines, "max-work-item-lines")
 }
 
 // promptReviewPer reads one line from `in` and parses it as the
-// review cadence: "1" → task, "2" → plan. Empty input accepts the
+// review cadence: "1" → task, "2" → work-item. Empty input accepts the
 // default (task), matching the empty-line-defaults convention used by
 // the sibling prompts.
 func promptReviewPer(in io.Reader) (string, error) {
 	fmt.Println("Pause for review after every…")
 	fmt.Printf("  1) %s — review each EARS criterion as the planner finishes it (default)\n", reviewPerTask)
-	fmt.Printf("  2) %s — review only at plan boundaries (looser loop, larger diffs)\n", reviewPerPlan)
+	fmt.Printf("  2) %s — review only at work-item boundaries (looser loop, larger diffs)\n", reviewPerWorkItem)
 	fmt.Print("Choose [1/2, default 1]: ")
 	line, err := bufReader(in).ReadString('\n')
 	if err != nil && line == "" {
@@ -851,14 +851,14 @@ func promptReviewPer(in io.Reader) (string, error) {
 	case "", "1":
 		return reviewPerTask, nil
 	case "2":
-		return reviewPerPlan, nil
+		return reviewPerWorkItem, nil
 	default:
 		return "", fmt.Errorf("invalid review-per choice: %q (expected 1 or 2)", strings.TrimSpace(line))
 	}
 }
 
 // readPositiveIntLine is the shared helper behind promptPrefixWidth and
-// promptMaxPlanLines: read one line, trim, accept default on empty, parse
+// promptMaxWorkItemLines: read one line, trim, accept default on empty, parse
 // as a positive int otherwise. `name` is included in the error message
 // so the user can tell which prompt failed.
 func readPositiveIntLine(in io.Reader, def int, name string) (int, error) {
@@ -1023,12 +1023,12 @@ func exitErr(err error) {
 
 // applyCwd switches the process working directory to path so every
 // subsequent cwd-dependent call (os.Getwd, checkProject, requireProject,
-// the relative staxDir each plan subcommand passes through, and the
+// the relative staxDir each work item subcommand passes through, and the
 // cwd-resolved installs in init / skills-remove) operates against the
 // caller-supplied directory instead of the shell's cwd. Empty path is a
 // no-op so the --cwd flag is genuinely optional. Returns a usage-style
 // error for missing or non-directory paths — callers route it through
-// exitErr (init / skills) or their own stderr+exit-2 pattern (plans).
+// exitErr (init / skills) or their own stderr+exit-2 pattern (work-items).
 // Pulled into a helper so every subcommand that accepts --cwd shares one
 // validation + chdir code path: git's `-C <path>` semantics, applied
 // once, never re-implemented per subcommand.
@@ -1075,13 +1075,13 @@ const projectAlreadyInitBanner = "error: stax project already initialized in thi
 // checkProject reports whether the current working directory is an
 // initialized stax project. The contract is a single on-disk marker:
 //
-//	staxDir/staxLockFile (the plan-tooling lock pin)
+//	staxDir/staxLockFile (the work-item-tooling lock pin)
 //
 // Missing → not an initialized project. Other files under staxDir
-// (the systems registry, plan files) are not required by the check.
+// (the systems registry, work-item files) are not required by the check.
 // Keying solely on the lock file is what makes the documented "delete
 // the lock file to re-init" flow work: the user can opt back into a
-// fresh init without losing plans or the systems registry. The function
+// fresh init without losing work items or the systems registry. The function
 // deliberately returns a generic `not a stax project` error rather than
 // naming the missing file so the diagnostic stays uniform with the
 // banner requireProject prints. Separated from requireProject so unit
@@ -1094,7 +1094,7 @@ func checkProject() error {
 }
 
 // requireProject is the CLI check that every project-level subcommand
-// (`plans *`, `skills remove --project`) calls before doing real work.
+// (`work-items *`, `skills remove --project`) calls before doing real work.
 // When checkProject fails it prints the shared banner and exits 2 — the
 // same code used for usage errors, since "wrong directory" is a usage
 // mistake from the user's perspective.

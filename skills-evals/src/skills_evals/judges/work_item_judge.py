@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 Stackific Inc.
-"""DeepEval judge that scores the plan file produced by /scope.
+"""DeepEval judge that scores the work-item file produced by /scope.
 
 Runs after /scope finishes and before /ship is invoked. Looks only at
-`<workspace>/.stax/*.md` (the plan files), not at any produced code.
+`<workspace>/.stax/*.md` (the work-item files), not at any produced code.
 Backed by DeepEval's GEval — the rubric is a list of evaluation_steps the
 judge LLM scores independently.
 """
@@ -26,19 +26,19 @@ The user asked a scope planner agent to:
 
 {task}
 
-The planner wrote the following plan file(s) under .stax/. Each file
+The planner wrote the following work-item file(s) under .stax/. Each file
 begins with `--- <relative-path> ---` then YAML frontmatter then markdown
 body.
 """
 
 EVALUATION_STEPS = [
   (
-    "Verify exactly one plan file is present (not zero, not two — the task "
-    "should produce a single self-contained plan). The plan file is the "
+    "Verify exactly one work-item file is present (not zero, not two — the task "
+    "should produce a single self-contained work item). The work-item file is the "
     "actual output below."
   ),
   (
-    "Verify the plan's YAML frontmatter is well-formed: `title:` is the "
+    "Verify the work item's YAML frontmatter is well-formed: `title:` is the "
     "first key; `status: valid`; `systems:` is an inline array of kebab-id "
     "strings; `created:` is the last key and is an ISO 8601 UTC timestamp "
     "(YYYY-MM-DDTHH:MM:SSZ)."
@@ -58,15 +58,15 @@ EVALUATION_STEPS = [
     "response verb."
   ),
   (
-    "Verify the plan addresses the task in the input. The Goal section and "
+    "Verify the work item addresses the task in the input. The Goal section and "
     "the Tasks section together should make the task in the input "
-    "achievable; if the plan describes something unrelated, fail."
+    "achievable; if the work item describes something unrelated, fail."
   ),
 ]
 
 
-class PlanJudge(Judge):
-  name = "plan"
+class WorkItemJudge(Judge):
+  name = "work-item"
 
   def __init__(
     self,
@@ -90,7 +90,7 @@ class PlanJudge(Judge):
     plan_text = collect_plan_files(workspace)
     input_text = INPUT_TEMPLATE.format(task=task)
     log(
-      "judge:plan",
+      "judge:work-item",
       f"evaluating: model={self.model.get_model_name()} "
       f"threshold={self.metric.threshold} "
       f"steps={len(EVALUATION_STEPS)} "
@@ -104,10 +104,10 @@ class PlanJudge(Judge):
     passed = bool(self.metric.is_successful())
     reason = self.metric.reason or ""
     log(
-      "judge:plan",
+      "judge:work-item",
       f"done in {elapsed:.1f}s: score={score:.3f} "
       f"threshold={self.metric.threshold} pass={passed}",
     )
     if reason:
-      log("judge:plan", f"reason: {reason}")
+      log("judge:work-item", f"reason: {reason}")
     return Judgment(name=self.name, passed=passed, score=score, reason=reason)

@@ -351,8 +351,8 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
       "--scope", scope,
       "--agents", init_value,
       "--prefix-width", "4",
-      "--max-plan-lines", "30",
-      "--review-per", "plan",
+      "--max-work-item-lines", "30",
+      "--review-per", "work-item",
     ],
   ):
     log("conftest", f"run: {' '.join(cmd)}")

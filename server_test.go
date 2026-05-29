@@ -51,7 +51,7 @@ func TestHandleAPIStats(t *testing.T) {
 }
 
 // TestHandleAPIStats_CountsSystemsAndScopes pins the populated path:
-// when cwd holds a registry + plan files, the response counts match
+// when cwd holds a registry + work-item files, the response counts match
 // the on-disk reality so the home page renders the right summary.
 func TestHandleAPIStats_CountsSystemsAndScopes(t *testing.T) {
 	dir := t.TempDir()
@@ -82,7 +82,7 @@ func TestHandleAPIStats_CountsSystemsAndScopes(t *testing.T) {
 
 // TestReadSystemsForAPI exercises the testable body of handleAPISystems
 // directly: returns id+name+scopes triples in ascending id order, with
-// the scopes count tallied from plan files in the same directory. The
+// the scopes count tallied from work-item files in the same directory. The
 // pure shape (path in, slice out, no globals) keeps the lookup logic
 // decoupled from the http.Handler so a regression in either layer
 // surfaces independently.
@@ -100,17 +100,17 @@ func TestReadSystemsForAPI(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(staxPath, staxSystemsFile), []byte(registry), 0o600); err != nil {
 		t.Fatalf("seed registry: %v", err)
 	}
-	// Seed three plans: two declaring `alpha`, one declaring `zeta`.
-	// Asserts the per-system tally is correct and that a plan can
+	// Seed three work items: two declaring `alpha`, one declaring `zeta`.
+	// Asserts the per-system tally is correct and that a work item can
 	// contribute to more than one system at once.
-	plans := map[string]string{
+	workItems := map[string]string{
 		"0001-alpha-only.md":     "---\ntitle: A\nstatus: valid\nsystems: [alpha]\ncreated: 2026-01-01T00:00:00Z\n---\n\n## Goal\nG.\n",
 		"0002-alpha-and-zeta.md": "---\ntitle: B\nstatus: valid\nsystems: [alpha, zeta]\ncreated: 2026-01-02T00:00:00Z\n---\n\n## Goal\nG.\n",
 		"0003-zeta-broken.md":    "no frontmatter — must be ignored\n",
 	}
-	for name, body := range plans {
+	for name, body := range workItems {
 		if err := os.WriteFile(filepath.Join(staxPath, name), []byte(body), 0o600); err != nil {
-			t.Fatalf("seed plan %s: %v", name, err)
+			t.Fatalf("seed work item %s: %v", name, err)
 		}
 	}
 
@@ -207,11 +207,11 @@ func TestHandleAPISystems_NoProjectReturnsEmpty(t *testing.T) {
 }
 
 // seedDetailFixture writes a .stax/ tree containing the registry and the
-// supplied plan files. The plan body is wrapped in title/status/systems/
+// supplied work-item files. The work-item body is wrapped in title/status/systems/
 // created frontmatter using the args, so tests can pin specific values
 // without hand-rolling the YAML. Returns the staxDir for assertions
 // that need it.
-func seedDetailFixture(t *testing.T, dir, registry string, plans map[string]string) string {
+func seedDetailFixture(t *testing.T, dir, registry string, workItems map[string]string) string {
 	t.Helper()
 	staxPath := filepath.Join(dir, staxDir)
 	if err := os.MkdirAll(staxPath, 0o700); err != nil {
@@ -220,7 +220,7 @@ func seedDetailFixture(t *testing.T, dir, registry string, plans map[string]stri
 	if err := os.WriteFile(filepath.Join(staxPath, staxSystemsFile), []byte(registry), 0o600); err != nil {
 		t.Fatalf("seed registry: %v", err)
 	}
-	for name, body := range plans {
+	for name, body := range workItems {
 		if err := os.WriteFile(filepath.Join(staxPath, name), []byte(body), 0o600); err != nil {
 			t.Fatalf("seed %s: %v", name, err)
 		}
@@ -229,16 +229,16 @@ func seedDetailFixture(t *testing.T, dir, registry string, plans map[string]stri
 }
 
 // TestReadSystemDetail_HappyPath exercises the pure body of the detail
-// branch: a known id returns its display name plus every plan whose
-// frontmatter `systems:` array contains the id, with each plan's
-// markdown body rendered to HTML. Plans that target a different system
+// branch: a known id returns its display name plus every work item whose
+// frontmatter `systems:` array contains the id, with each work item's
+// markdown body rendered to HTML. Work items that target a different system
 // are excluded.
 func TestReadSystemDetail_HappyPath(t *testing.T) {
 	dir := t.TempDir()
 	registry := "systems:\n" +
 		"  - id: auth\n    name: Auth Service\n" +
 		"  - id: billing\n    name: Billing\n"
-	plans := map[string]string{
+	workItems := map[string]string{
 		"0001-add-pkce.md": "---\n" +
 			"title: Add PKCE to mobile flow\n" +
 			"status: valid\n" +
@@ -261,7 +261,7 @@ func TestReadSystemDetail_HappyPath(t *testing.T) {
 			"---\n\n" +
 			"## Goal\nShrink the stolen-token window.\n",
 	}
-	staxPath := seedDetailFixture(t, dir, registry, plans)
+	staxPath := seedDetailFixture(t, dir, registry, workItems)
 
 	got, ok := readSystemDetail(staxPath, "auth")
 	if !ok {
@@ -270,22 +270,22 @@ func TestReadSystemDetail_HappyPath(t *testing.T) {
 	if got.ID != "auth" || got.Name != "Auth Service" {
 		t.Fatalf("id/name mismatch: %+v", got)
 	}
-	if len(got.Plans) != 2 {
-		t.Fatalf("plans len = %d, want 2 (%+v)", len(got.Plans), got.Plans)
+	if len(got.WorkItems) != 2 {
+		t.Fatalf("work items len = %d, want 2 (%+v)", len(got.WorkItems), got.WorkItems)
 	}
-	// Plans must come back in filename order DESCENDING (newest first
+	// Work items must come back in filename order DESCENDING (newest first
 	// because the zero-padded prefix is sequential).
-	if got.Plans[0].Slug != "0003-auth-rotate" || got.Plans[1].Slug != "0001-add-pkce" {
-		t.Fatalf("plan order wrong: %+v", got.Plans)
+	if got.WorkItems[0].Slug != "0003-auth-rotate" || got.WorkItems[1].Slug != "0001-add-pkce" {
+		t.Fatalf("work-item order wrong: %+v", got.WorkItems)
 	}
-	if got.Plans[0].Title != "Rotate session tokens daily" {
-		t.Fatalf("title = %q, want %q", got.Plans[0].Title, "Rotate session tokens daily")
+	if got.WorkItems[0].Title != "Rotate session tokens daily" {
+		t.Fatalf("title = %q, want %q", got.WorkItems[0].Title, "Rotate session tokens daily")
 	}
-	if got.Plans[0].Status != "valid" {
-		t.Fatalf("status = %q, want valid", got.Plans[0].Status)
+	if got.WorkItems[0].Status != "valid" {
+		t.Fatalf("status = %q, want valid", got.WorkItems[0].Status)
 	}
-	if got.Plans[0].Created != "2026-03-15T16:45:00Z" {
-		t.Fatalf("created = %q, want 2026-03-15T16:45:00Z", got.Plans[0].Created)
+	if got.WorkItems[0].Created != "2026-03-15T16:45:00Z" {
+		t.Fatalf("created = %q, want 2026-03-15T16:45:00Z", got.WorkItems[0].Created)
 	}
 }
 
@@ -303,11 +303,11 @@ func TestReadSystemDetail_UnknownID(t *testing.T) {
 	}
 }
 
-// TestReadSystemDetail_KnownButNoPlans pins the empty-plans branch.
-// The id exists in the registry but no plan file declares it — the
-// response must still return ok=true with Plans as an empty (not nil)
+// TestReadSystemDetail_KnownButNoWorkItems pins the empty-work-items branch.
+// The id exists in the registry but no work-item file declares it — the
+// response must still return ok=true with WorkItems as an empty (not nil)
 // slice so JSON encodes `[]` rather than `null`.
-func TestReadSystemDetail_KnownButNoPlans(t *testing.T) {
+func TestReadSystemDetail_KnownButNoWorkItems(t *testing.T) {
 	dir := t.TempDir()
 	staxPath := seedDetailFixture(t, dir,
 		"systems:\n  - id: auth\n    name: Auth Service\n",
@@ -324,17 +324,17 @@ func TestReadSystemDetail_KnownButNoPlans(t *testing.T) {
 	if !ok {
 		t.Fatalf("ok=false for known id")
 	}
-	if got.Plans == nil {
-		t.Fatalf("plans = nil, want empty slice for JSON marshaling")
+	if got.WorkItems == nil {
+		t.Fatalf("work items = nil, want empty slice for JSON marshaling")
 	}
-	if len(got.Plans) != 0 {
-		t.Fatalf("plans len = %d, want 0", len(got.Plans))
+	if len(got.WorkItems) != 0 {
+		t.Fatalf("work items len = %d, want 0", len(got.WorkItems))
 	}
 }
 
 // TestHandleAPISystems_DetailMode drives the full handler with ?id=
 // against a chdir'd temp directory holding a seeded registry and a
-// matching plan. Confirms the detail JSON shape and a markdown→HTML
+// matching work item. Confirms the detail JSON shape and a markdown→HTML
 // rendering for the body so a regression in either layer surfaces here.
 func TestHandleAPISystems_DetailMode(t *testing.T) {
 	dir := t.TempDir()
@@ -369,11 +369,11 @@ func TestHandleAPISystems_DetailMode(t *testing.T) {
 	if parsed.ID != "auth" || parsed.Name != "Auth Service" {
 		t.Fatalf("id/name mismatch: %+v", parsed)
 	}
-	if len(parsed.Plans) != 1 {
-		t.Fatalf("plans len = %d, want 1", len(parsed.Plans))
+	if len(parsed.WorkItems) != 1 {
+		t.Fatalf("work items len = %d, want 1", len(parsed.WorkItems))
 	}
-	if parsed.Plans[0].Title != "Add PKCE" {
-		t.Fatalf("plans[0].Title = %q, want %q", parsed.Plans[0].Title, "Add PKCE")
+	if parsed.WorkItems[0].Title != "Add PKCE" {
+		t.Fatalf("workItems[0].Title = %q, want %q", parsed.WorkItems[0].Title, "Add PKCE")
 	}
 }
 
@@ -410,8 +410,8 @@ func TestHandleAPISystems_DetailUnknownID(t *testing.T) {
 // `/scope?id=` page uses to tint the title flag icon `primary-text`,
 // matching the per-row icon convention on `/scopes`. A `- [ ]` marker
 // anywhere in the markdown body flips the flag; a body without it
-// reports false. Mirrors how readPlanForAPI populates the same field
-// on planDetail rows (server.go:428).
+// reports false. Mirrors how readWorkItemForAPI populates the same field
+// on workItemDetail rows (server.go:428).
 func TestReadScopeDetail_HasOpenTasks(t *testing.T) {
 	dir := t.TempDir()
 	staxPath := seedDetailFixture(t, dir,
@@ -459,7 +459,7 @@ func TestReadScopeDetail_HasOpenTasks(t *testing.T) {
 // first — even when the filename slug's numeric prefix disagrees with
 // the date. The fixture intentionally inverts prefix vs. created: the
 // higher-prefixed file is older. A sort-by-slug regression would put
-// the older plan first; this test catches that.
+// the older work item first; this test catches that.
 func TestReadScopesForAPI_SortedByCreatedDesc(t *testing.T) {
 	dir := t.TempDir()
 	staxPath := seedDetailFixture(t, dir, "systems:\n",
@@ -489,7 +489,7 @@ func TestReadScopesForAPI_SortedByCreatedDesc(t *testing.T) {
 }
 
 // TestReadScopesForAPI_TieBreakBySlugDesc pins the deterministic
-// tie-break: when two plans share an identical `created:` timestamp
+// tie-break: when two work items share an identical `created:` timestamp
 // (rare but possible — same wall-clock second), the higher-prefix
 // slug wins. Matches the old filename-sort behavior so monotonic
 // datasets still render identically after the sort key change.
@@ -538,12 +538,12 @@ func TestReadSystemDetail_SortedByCreatedDesc(t *testing.T) {
 	if !ok {
 		t.Fatalf("readSystemDetail returned false for known id")
 	}
-	if len(got.Plans) != 2 {
-		t.Fatalf("plans len = %d, want 2", len(got.Plans))
+	if len(got.WorkItems) != 2 {
+		t.Fatalf("work items len = %d, want 2", len(got.WorkItems))
 	}
-	if got.Plans[0].Slug != "0001-newer-low-prefix" {
-		t.Fatalf("plans[0].Slug = %q, want %q (sort must honor `created:` desc, not filename desc)",
-			got.Plans[0].Slug, "0001-newer-low-prefix")
+	if got.WorkItems[0].Slug != "0001-newer-low-prefix" {
+		t.Fatalf("workItems[0].Slug = %q, want %q (sort must honor `created:` desc, not filename desc)",
+			got.WorkItems[0].Slug, "0001-newer-low-prefix")
 	}
 }
 
@@ -604,7 +604,7 @@ func TestNewServerMux_CleanURLs(t *testing.T) {
 
 // TestMarkdownRenderer_PinsHeadingsToH6 pins the forceH6Headings AST
 // transformer: every markdown heading level (`#` … `######`) MUST
-// render as <h6>. Plans declare `## Goal`, `## Approach`, `## Tasks`
+// render as <h6>. Work items declare `## Goal`, `## Approach`, `## Tasks`
 // in the body, and the page chrome (chip, breadcrumb, page title)
 // already supplies the visual hierarchy — without this pin, an
 // accidental drop of the transformer would re-flood the detail page
@@ -892,7 +892,7 @@ func TestHandleAPISearch_EmptyQuery(t *testing.T) {
 // case-insensitive title / system-id / body matches surface the right
 // scope, system id and name matches surface the right system, and
 // queries that don't match anywhere return an empty (not nil)
-// response. Body match happens last, so the test seeds a plan where
+// response. Body match happens last, so the test seeds a work item where
 // the only place the needle appears is the markdown body.
 func TestRunSearch(t *testing.T) {
 	dir := t.TempDir()
@@ -900,7 +900,7 @@ func TestRunSearch(t *testing.T) {
 		"systems:\n  - id: auth-service\n    name: Auth Service\n  - id: billing\n    name: Billing\n",
 		map[string]string{
 			"0001-add-pkce.md":       "---\ntitle: Add PKCE to mobile flow\nstatus: valid\nsystems: [auth-service]\ncreated: 2026-01-10T12:00:00Z\n---\n\n## Goal\nGate mobile sign-in on PKCE.\n",
-			"0002-proration.md":      "---\ntitle: Apply proration on upgrade\nstatus: valid\nsystems: [billing]\ncreated: 2026-02-01T09:30:00Z\n---\n\n## Goal\nCredit unused days on plan changes.\n",
+			"0002-proration.md":      "---\ntitle: Apply proration on upgrade\nstatus: valid\nsystems: [billing]\ncreated: 2026-02-01T09:30:00Z\n---\n\n## Goal\nCredit unused days on work-item changes.\n",
 			"0003-stripe-webhook.md": "---\ntitle: Retry failed webhooks\nstatus: valid\nsystems: [billing]\ncreated: 2026-03-01T09:00:00Z\n---\n\n## Goal\nA short body that mentions exponential-backoff so a body-only query hits.\n",
 		},
 	)

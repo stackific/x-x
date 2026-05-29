@@ -18,7 +18,7 @@ name: skills eval / github copilot cli
 #           "Reply yes" gate, the next turn invokes
 #           `copilot --continue -C <workspace> -p yes ...` to resume the
 #           same session.
-#        c. Score the plan and produced artifacts with the same DeepEval
+#        c. Score the work item and produced artifacts with the same DeepEval
 #           `GEval` metrics used by the Claude eval.
 #   4. Upload the pytest tmp directory (transcripts + workspace) on
 #      failure so the run can be inspected offline.

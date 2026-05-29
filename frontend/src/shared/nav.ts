@@ -5,7 +5,7 @@
 //   - A page can advertise a *logical* nav target that differs from
 //     its URL — `/scope?id=<slug>` sets `data-active="scopes"` so the
 //     sidebar "Scopes" entry stays highlighted while the user reads
-//     a single plan. Doing this purely from `location.pathname` would
+//     a single work item. Doing this purely from `location.pathname` would
 //     either highlight nothing on detail pages or require the
 //     dispatcher to special-case each route.
 //   - Layout is owned by HTML; only HTML sets `data-active` (via the

@@ -1,5 +1,5 @@
 {
   "prefix_width": 4,
-  "max_plan_lines": 30,
+  "max_work_item_lines": 30,
   "review_per": "task"
 }

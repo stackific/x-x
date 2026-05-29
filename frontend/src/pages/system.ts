@@ -1,9 +1,9 @@
 // /system?id=<id> — single-system detail page.
 //
 // Renders the named system's display name as the page header, then a
-// row per plan whose frontmatter `systems:` array contains the id.
-// Each row links to /scope?id=<plan-slug>; the flag icon gets a
-// `primary-text` tint when the plan has at least one open `- [ ]`
+// row per work item whose frontmatter `systems:` array contains the id.
+// Each row links to /scope?id=<work-item-slug>; the flag icon gets a
+// `primary-text` tint when the work item has at least one open `- [ ]`
 // task so a skim of the page surfaces in-flight work without
 // requiring the reader to open every scope.
 //
@@ -13,7 +13,7 @@
 //   Missing ?id=    →  short-circuit with "No system id supplied" hint
 //                      (no API call, prevents a noisy 404 in dev logs)
 //
-// Plan order on the wire is filename-sort descending (newest first) —
+// Work-item order on the wire is filename-sort descending (newest first) —
 // this page renders in receive order, no client-side sort.
 
 import { api } from "../shared/api";
@@ -23,11 +23,11 @@ import { applyRelativeTime } from "../shared/relative-time";
 import { applyStatusClass, paintFlagIcon } from "../shared/status";
 
 // Mirrors the Go-side planDetail in server.go. `hasOpenTasks` is the
-// server's pre-computed verdict on the plan body — true when at least
+// server's pre-computed verdict on the work-item body — true when at least
 // one `- [ ]` task is unchecked. The body itself is not on the wire
 // here (that belongs to /api/scope?id=<slug>); the page only shows
 // row-level metadata.
-type Plan = {
+type WorkItem = {
   slug: string;
   title: string;
   status: string;
@@ -38,7 +38,7 @@ type Plan = {
 type SystemDetail = {
   id: string;
   name: string;
-  plans: Plan[];
+  workItems: WorkItem[];
 };
 
 // renderError stamps the shared `tpl-error` template into a host
@@ -54,7 +54,7 @@ function renderError(host: HTMLElement, msg: string): void {
 export async function system(): Promise<void> {
   const id = getQs("id");
   const nameEl = $<HTMLHeadingElement>("#system-name");
-  const plansEl = $<HTMLDivElement>("#system-plans");
+  const workItemsEl = $<HTMLDivElement>("#system-work-items");
 
   // No id at all — render the missing-id hint and skip the round-trip.
   // Visiting /system without ?id= is usually a wrong-direction deep
@@ -62,7 +62,7 @@ export async function system(): Promise<void> {
   // them at /systems where they can pick one.
   if (!id) {
     nameEl.textContent = "Missing id";
-    renderError(plansEl, "No system id supplied. Open a system from the All systems list.");
+    renderError(workItemsEl, "No system id supplied. Open a system from the All systems list.");
     return;
   }
 
@@ -71,11 +71,11 @@ export async function system(): Promise<void> {
     nameEl.textContent = data.name;
     document.title = `${data.name} · Stax`;
 
-    if (!data.plans.length) {
-      // Known system with no plans — surface the dedicated empty-state
-      // template so the reader sees "no plans yet" instead of a blank
+    if (!data.workItems.length) {
+      // Known system with no work items — surface the dedicated empty-state
+      // template so the reader sees "no work items yet" instead of a blank
       // panel.
-      plansEl.replaceChildren(tpl("tpl-empty"));
+      workItemsEl.replaceChildren(tpl("tpl-empty"));
       return;
     }
 
@@ -83,12 +83,12 @@ export async function system(): Promise<void> {
     // single replaceChildren — minimizes layout work compared to
     // appending one node at a time.
     const frag = document.createDocumentFragment();
-    for (const p of data.plans) {
-      const node = tpl("tpl-plan");
+    for (const p of data.workItems) {
+      const node = tpl("tpl-work-item");
       const a = node.querySelector<HTMLAnchorElement>("a");
       if (a) a.href = `/scope?id=${encodeURIComponent(p.slug)}`;
       // Tint the flag icon via paintFlagIcon — error-text for
-      // deprecated plans (do-not-use), else primary-text when there's
+      // deprecated work items (do-not-use), else primary-text when there's
       // at least one open task. Same convention used on /scopes and
       // the home page's Latest-scopes section so the cue carries
       // across every list view.
@@ -101,13 +101,13 @@ export async function system(): Promise<void> {
       applyRelativeTime($('[data-slot="created"]', node), p.created);
       frag.appendChild(node);
     }
-    plansEl.replaceChildren(frag);
+    workItemsEl.replaceChildren(frag);
   } catch (err) {
     // 404 (unknown id) and network failures land here together. The
     // title becomes "System not found" because a 404 is by far the
     // common case — a wrong slug in the URL.
     nameEl.textContent = "System not found";
     const msg = err instanceof Error ? err.message : String(err);
-    renderError(plansEl, `Request failed: ${msg}`);
+    renderError(workItemsEl, `Request failed: ${msg}`);
   }
 }
