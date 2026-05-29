@@ -50,8 +50,7 @@ cell is visible at a glance.
 1. `stax init --agents <key> --scope <scope>` exits 0 and prints the
    expected install path.
 2. The `SKILL.md` files actually land at the agent's documented
-   discovery directory (see
-   [agent-skill-and-hook-paths.md](../internal/agent-skill-and-hook-paths.md)).
+   discovery directory (path per the quick-reference table below).
 3. The agent's `/scope` and `/ship` commands resolve to those skills
    in a real session — i.e. typing `/scope ...` invokes the planner,
    typing `/ship` invokes the executor, without manual prompting.
@@ -74,19 +73,18 @@ cell is visible at a glance.
 | GitHub Copilot | ⏳ | ⏳ | ⏳ | ⏳ | |
 | OpenCode | ⏳ | ⏳ | ⏳ | ⏳ | |
 | Pi | ⏳ | ⏳ | ⏳ | ⏳ | |
-| Oh My Pi | ➖ | ➖ | ➖ | ➖ | _not shipped (loader uses caller-passed paths)_ |
-| Cline | ➖ | ➖ | ➖ | ➖ | _not shipped (executable scripts; new installer branch needed)_ |
-| Continue | ➖ | ➖ | ➖ | ➖ | _not shipped (no discrete event-file format)_ |
-| Cursor | ➖ | ➖ | ➖ | ➖ | _not shipped (no documented hook surface)_ |
-| Kilo Code | ➖ | ➖ | ➖ | ➖ | _not shipped (no documented event-file format)_ |
-| Zed | ➖ | ➖ | ➖ | ➖ | _not shipped (no discrete lifecycle hook surface)_ |
+| Oh My Pi | ➖ | ➖ | ➖ | ➖ | |
+| Cline | ➖ | ➖ | ➖ | ➖ | |
+| Continue | ➖ | ➖ | ➖ | ➖ | |
+| Cursor | ➖ | ➖ | ➖ | ➖ | |
+| Kilo Code | ➖ | ➖ | ➖ | ➖ | |
+| Zed | ➖ | ➖ | ➖ | ➖ | |
 
 **Hooks checklist per cell** (what counts as ✅):
 
 1. `stax init --agents <key> --scope <scope>` lands the bundle at
-   the agent's documented hook location (see
-   [agent-skill-and-hook-paths.md](../internal/agent-skill-and-hook-paths.md) →
-   "Hooks" table).
+   the agent's documented hook location (path per the quick-reference
+   table below).
 2. JSON-merge agents (Claude, Codex, Copilot): re-running `init`
    over a user-edited config preserves the user's top-level keys +
    user-authored hook records, and merges our records additively.
