@@ -12,7 +12,7 @@ name: skills eval / claude code (user scope)
 #           (skills-evals/src/skills_evals/claude_driver.py) because
 #           `claude -p` is otherwise one-shot and the skills prompt for
 #           confirmation mid-run.
-#        c. Score the plan and the produced artifacts with two DeepEval
+#        c. Score the work item and the produced artifacts with two DeepEval
 #           `GEval` metrics backed by DeepSeek.
 #   4. Upload the pytest tmp directory (transcripts + workspace) on
 #      failure so the run can be inspected offline.

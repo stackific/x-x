@@ -3,7 +3,7 @@ import { $, tpl } from "../shared/dom";
 import { applyRelativeTime } from "../shared/relative-time";
 import { applyStatusClass, paintFlagIcon } from "../shared/status";
 
-// Mirrors the Go-side scopeListItem in server.go: one row per plan in
+// Mirrors the Go-side scopeListItem in server.go: one row per work item in
 // the project's .stax/ tree. systems carries the kebab-case ids the
 // frontmatter declares — each is rendered as a chip-link into
 // /system?id=<id> so a reader can jump straight to the system view.

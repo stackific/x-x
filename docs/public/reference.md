@@ -15,13 +15,13 @@ Every subcommand below also accepts `--cwd <path>` (git `-C` semantics): when se
 | `stax`                         | Start the local Stax web UI and open it in the OS-default browser. Blocks until Ctrl-C. Requires the current directory to be an initialized stax project (see the [Project-scope marker check](#project-scope-marker-check)) — refuses to bind the listener and prints the init banner otherwise. |
 | `stax --no-browser`            | Same as bare `stax` but skip the browser handoff. The local UI keeps running; useful in CI or any scripted invocation that should not pop a window. Same project marker requirement as bare `stax`. |
 | `stax post-install`            | Installer hook subcommand. Triggers the first-run write of `~/.stax/agents/` and exits silently. `INSTALL.sh` / `INSTALL.ps1` use this; end users normally do not. Takes no arguments. |
-| `stax init [--agents ...] [--scope ...] [--prefix-width N] [--max-plan-lines N] [--review-per task\|plan] [--cwd PATH]` | Install bundled agent skills + seed the project's `.stax/` scaffold. |
+| `stax init [--agents ...] [--scope ...] [--prefix-width N] [--max-work-item-lines N] [--review-per task\|work-item] [--cwd PATH]` | Install bundled agent skills + seed the project's `.stax/` scaffold. |
 | `stax skills remove --user`                  | Uninstall bundled stax skills from your user scope (`$HOME`). `--cwd` is rejected here — the wipe is always rooted at `$HOME`. |
 | `stax skills remove --project [--cwd PATH]`  | Uninstall bundled stax skills from the current directory.             |
-| `stax plans next-prefix [--cwd PATH]`        | Print the next unused zero-padded plan prefix for `./.stax`.       |
-| `stax plans list [--cwd PATH]`               | List plans in `./.stax` with slug, status, and declared systems.   |
-| `stax plans lint [--cwd PATH]`               | Validate every plan file in `./.stax` against the project schema.  |
-| `stax plans slugify [--cwd PATH] "<title>"`  | Print the kebab-case slug for a plan title.                          |
+| `stax work-items next-prefix [--cwd PATH]`        | Print the next unused zero-padded work-item prefix for `./.stax`.       |
+| `stax work-items list [--cwd PATH]`               | List work items in `./.stax` with slug, status, and declared systems.   |
+| `stax work-items lint [--cwd PATH]`               | Validate every work-item file in `./.stax` against the project schema.  |
+| `stax work-items slugify [--cwd PATH] "<title>"`  | Print the kebab-case slug for a work-item title.                          |
 | `stax --version`               | Print the version notice and exit. This is what `INSTALL.sh` / `INSTALL.ps1` parse to seed `~/.stax/.config.json`. |
 
 ### `stax init`
@@ -34,11 +34,37 @@ When stdin is a terminal, prompts use arrow-key select / multiselect with Shift+
 
 1. **Which agents?** Multi-select over every registered agent. List is sorted alphabetically by display name. Blank line accepts the default (all agents).
 2. **Which scope?** Project (`<cwd>/...`) or user (`$HOME/...`). `.stax/` is always seeded in cwd regardless of scope — that's the project marker.
-3. **Prefix width for plan files** — zero-padded width for plan filenames (width `4` → `0001-foo.md`). Default: `4`.
-4. **Maximum lines per plan** — cap enforced by `stax plans lint`. Keeps AI agents on a short leash. Default: `30`.
-5. **Pause for review after every…** — `task` (tight loop, more interruptions) or `plan` (looser loop, larger diffs). Default: `task`.
+3. **Prefix width for work-item files** — zero-padded width for work-item filenames (width `4` → `0001-foo.md`). Default: `4`.
+4. **Maximum lines per work item** — cap enforced by `stax work-items lint`. Keeps AI agents on a short leash. Default: `30`.
+5. **Pause for review after every…** — `task` (tight loop, more interruptions) or `work-item` (looser loop, larger diffs). Default: `task`.
 
 Values 3–5 land in `.stax/_config.lock` and become the lock-file pins. Re-running `stax init` later does NOT refresh them (Cargo.lock / package-lock.json semantics). Never manually edit `.stax/_config.lock`.
+
+#### `.stax/_config.lock`
+
+The lock file is written once by `stax init` (under both `--scope project` and `--scope user`) and never refreshed on subsequent `init` runs — Cargo.lock / `package-lock.json` semantics. Its presence is also the on-disk marker that flips a directory into a stax project (see the [Project-scope marker check](#project-scope-marker-check)): without it, every work-item subcommand and the web UI refuse to run.
+
+Schema (JSON):
+
+| Key | Type | Default | Effect |
+| --- | --- | --- | --- |
+| `prefix_width` | positive integer | `4` | Zero-padded width for new work-item filenames. `stax work-items next-prefix` formats its output to this width (`0001` vs `00001`); `stax work-items list` and `stax work-items lint` use it to recognize `<prefix>-<slug>.md`. |
+| `max_work_item_lines` | positive integer | `30` | Line-count ceiling enforced by `stax work-items lint` per work-item file (frontmatter + body, inclusive). Tight values keep AI agents from sprawling into oversized work items; loosen only for projects whose work items genuinely don't fit. |
+| `review_per` | `task` \| `work-item` | `task` | Per-task or per-work-item approval cadence consumed by the `/ship` skill at runtime — controls whether the executor pauses for review after each EARS criterion (`task`, tight loop) or only at each work item's boundary (`work-item`, looser loop, larger diffs). |
+
+Example after a default `stax init`:
+
+```json
+{
+  "prefix_width": 4,
+  "max_work_item_lines": 30,
+  "review_per": "task"
+}
+```
+
+To re-pin any of these values, delete `.stax/_config.lock` (then run `stax skills remove --project` if you also want a clean re-install) and re-run `stax init`. Changing the file in place is unsupported — the work-item tooling reads it on every invocation, so silently mutating the file mid-project would break filename matching (`prefix_width`), the lint ceiling (`max_work_item_lines`), or the executor's review cadence (`review_per`) for the rest of the work-item history.
+
+A stale `max_plan_lines` key from a pre-rename install is silently ignored — the loader falls back to the default. To preserve the prior cap, rename the key to `max_work_item_lines` before the next CLI invocation.
 
 #### Flags (non-interactive twins)
 
@@ -49,8 +75,8 @@ Every prompt has a flag — pass any subset to skip the matching prompt, or pass
 | `--agents` | Comma-separated keys (repeatable) | See "Agents" below for the full key list. |
 | `--scope` | `project` \| `user` | |
 | `--prefix-width` | positive integer | |
-| `--max-plan-lines` | positive integer | |
-| `--review-per` | `task` \| `plan` | |
+| `--max-work-item-lines` | positive integer | |
+| `--review-per` | `task` \| `work-item` | |
 
 #### Agents
 
@@ -123,7 +149,7 @@ Same logic as `--user`, but rooted at the current working directory instead of `
 
 ### Project-scope marker check
 
-Bare `stax` (web UI), `stax --no-browser`, every `stax plans` subcommand, and `stax skills remove --project` all require the current directory to be an initialized stax project — the on-disk marker is `./.stax/_config.lock`. If it's missing, the command prints a one-line diagnostic on stderr and exits `2`:
+Bare `stax` (web UI), `stax --no-browser`, every `stax work-items` subcommand, and `stax skills remove --project` all require the current directory to be an initialized stax project — the on-disk marker is `./.stax/_config.lock`. If it's missing, the command prints a one-line diagnostic on stderr and exits `2`:
 
 ```
 error: not a stax project — run `stax init` to initialize the current directory first.
@@ -131,58 +157,58 @@ error: not a stax project — run `stax init` to initialize the current director
 
 For subcommands, the check runs *after* per-subcommand flag/positional validation, so a usage error (unknown flag, stray positional) still wins the diagnostic and gives the user the most actionable feedback first. For bare `stax` it runs after `--cwd` has been honored and after `ensureBundledAgents()` has materialized the user-scope embed, but before any listener is bound or browser launched.
 
-### `stax plans next-prefix`
+### `stax work-items next-prefix`
 
-Prints the next available zero-padded numeric prefix for a new plan file in `./.stax`, e.g. `00004`. Takes no arguments — the directory is not user-configurable.
+Prints the next available zero-padded numeric prefix for a new work-item file in `./.stax`, e.g. `00004`. Takes no arguments — the directory is not user-configurable.
 
 ```bash
-stax plans next-prefix
+stax work-items next-prefix
 ```
 
 The prefix width is read from `.stax/_config.lock` (`prefix_width`), which `stax init` seeds to `4`. Missing lock file → falls back to the same default.
 
-### `stax plans list`
+### `stax work-items list`
 
-Lists every plan in `./.stax` whose filename matches `<prefix>-<slug>.md`, one tab-separated row per plan:
+Lists every work item in `./.stax` whose filename matches `<prefix>-<slug>.md`, one tab-separated row per work item:
 
 ```
 <slug>\t<status>\t<id1>,<id2>,...
 ```
 
-The third column lists the kebab-case `id:` of every system the plan declares in its frontmatter `systems:` array (the `id:` keys from `.stax/_data_systems.yaml`).
+The third column lists the kebab-case `id:` of every system the work item declares in its frontmatter `systems:` array (the `id:` keys from `.stax/_data_systems.yaml`).
 
 Flags (all repeatable / comma-aware where applicable):
 
-- `--status NAME[,NAME...]` — keep only plans whose `status:` matches.
-- `--system ID` — keep only plans whose `systems:` array contains `ID` (OR semantics across multiple `--system` flags). `ID` is the kebab `id:` from `.stax/_data_systems.yaml`, not the display name. The flag does not validate the requested id against the registry — an unknown id simply matches zero plans.
+- `--status NAME[,NAME...]` — keep only work items whose `status:` matches.
+- `--system ID` — keep only work items whose `systems:` array contains `ID` (OR semantics across multiple `--system` flags). `ID` is the kebab `id:` from `.stax/_data_systems.yaml`, not the display name. The flag does not validate the requested id against the registry — an unknown id simply matches zero work items.
 - `--order asc|desc` — sort by zero-padded prefix. Default `desc` (latest first). Use `--order=asc` when sequential / oldest-first iteration matters (e.g. `/ship` ground-truth lookup).
-- `--overflow-keywords TERM[,...]` — case-insensitive literal substring(s). **Engages only when** the post-`--status`/`--system` row count exceeds `planListOverflowThreshold` (default 20, in `constants.go`). At or below the threshold the flag is a no-op — the caller pays nothing for declaring an unused narrow.
+- `--overflow-keywords TERM[,...]` — case-insensitive literal substring(s). **Engages only when** the post-`--status`/`--system` row count exceeds `workItemsListOverflowThreshold` (default 20, in `constants.go`). At or below the threshold the flag is a no-op — the caller pays nothing for declaring an unused narrow.
 
 Overflow-narrow behavior, when it engages:
 
-- ≥1 plan's body contains ≥1 keyword (case-insensitive) → return only matched rows (in the current sort order).
-- 0 matches → return the top `planListOverflowThreshold` rows in the current sort order as a fallback summary (never an empty result the caller has to special-case).
+- ≥1 work item's body contains ≥1 keyword (case-insensitive) → return only matched rows (in the current sort order).
+- 0 matches → return the top `workItemsListOverflowThreshold` rows in the current sort order as a fallback summary (never an empty result the caller has to special-case).
 - Frontmatter (title, status, systems, …) is *not* searched — body only.
 - Keywords are literal substrings; regex metacharacters carry no special meaning (`.` is a dot, `*` is a star).
 
 ```bash
-stax plans list
-stax plans list --status valid
-stax plans list --status valid,superseded --system auth-service
-stax plans list --order=asc                                  # /ship sequential execution
-stax plans list --status valid --system payment-service --overflow-keywords webhook,retry  # narrow on overflow
+stax work-items list
+stax work-items list --status valid
+stax work-items list --status valid,superseded --system auth-service
+stax work-items list --order=asc                                  # /ship sequential execution
+stax work-items list --status valid --system payment-service --overflow-keywords webhook,retry  # narrow on overflow
 ```
 
-Files matching the filename pattern but missing frontmatter, `status:`, or `systems:` produce a warning on stderr and are skipped (they don't fail the command — for that, use `stax plans lint`).
+Files matching the filename pattern but missing frontmatter, `status:`, or `systems:` produce a warning on stderr and are skipped (they don't fail the command — for that, use `stax work-items lint`).
 
-### `stax plans lint`
+### `stax work-items lint`
 
-Validates every `*.md` plan file in `./.stax` against the contract.
+Validates every `*.md` work-item file in `./.stax` against the contract.
 
 **Filename + length checks:**
 
 - Filename matches the pattern `<prefix>-<slug>.md`.
-- File length ≤ `max_plan_lines` from `_config.lock` (default 30).
+- File length ≤ `max_work_item_lines` from `_config.lock` (default 30).
 - Filename slug equals `slugify(title)`.
 
 **Frontmatter checks:**
@@ -191,8 +217,8 @@ Validates every `*.md` plan file in `./.stax` against the contract.
 - Mandatory `title:` (first key) and `created:` (last key, ISO 8601 UTC timestamp `YYYY-MM-DDTHH:MM:SSZ`).
 - `status:` is one of the allowed values.
 - Every id in `systems:` is a known `id:` in `.stax/_data_systems.yaml`.
-- Every slug in `supersedes:` / `superseded_by:` / `extends:` / `extended_by:` resolves to a sibling plan and is not the plan itself.
-- `supersedes` ↔ `superseded_by` and `extends` ↔ `extended_by` back-links are symmetric across plans.
+- Every slug in `supersedes:` / `superseded_by:` / `extends:` / `extended_by:` resolves to a sibling work item and is not the work item itself.
+- `supersedes` ↔ `superseded_by` and `extends` ↔ `extended_by` back-links are symmetric across work items.
 
 **Body checks:**
 
@@ -200,17 +226,17 @@ Validates every `*.md` plan file in `./.stax` against the contract.
 - The set of EARS subject names (each resolved to its registry id) equals the declared `systems:` id set exactly.
 
 ```bash
-stax plans lint
+stax work-items lint
 ```
 
 Findings go to stdout (one per line, prefixed with the file path); the `<ok>/<failed>` summary goes to stderr. Exit 0 if every file passes, exit 1 if any failed. The project-scope marker check above still applies, so a missing `./.stax/` exits `2` rather than passing silently.
 
-### `stax plans slugify "<title>"`
+### `stax work-items slugify "<title>"`
 
-Prints the kebab-case slug for a plan title — lowercase the input, replace every run of non-`[a-z0-9]` characters with a single `-`, and trim leading/trailing dashes. The author and `stax plans lint` use the same algorithm, so call this command when picking the filename for a new plan rather than slugifying by eye.
+Prints the kebab-case slug for a work-item title — lowercase the input, replace every run of non-`[a-z0-9]` characters with a single `-`, and trim leading/trailing dashes. The author and `stax work-items lint` use the same algorithm, so call this command when picking the filename for a new work item rather than slugifying by eye.
 
 ```bash
-stax plans slugify "Add payment retry policy"   # → add-payment-retry-policy
+stax work-items slugify "Add payment retry policy"   # → add-payment-retry-policy
 ```
 
 Takes exactly one positional argument; quote titles that contain spaces or shell metacharacters. Exits `2` when the argument is missing, when multiple arguments are passed, or when the title contains no characters that survive slugification. No project-scope marker check — slugify is a pure transform and runs from anywhere.
@@ -224,17 +250,17 @@ stax post-install                 # installer hook: seed ~/.stax/agents/ silentl
 stax --version                    # prints e.g. v0.1.0 (installer-parseable notice)
 
 stax init                              # huh wizard (TTY) or line prompts (piped); five questions
-stax init --agents claude --scope user # skip pickers; the three plan-tooling prompts still ask
+stax init --agents claude --scope user # skip pickers; the three work-item-tooling prompts still ask
 stax init --agents claude,codex --scope project \
-         --prefix-width 6 --max-plan-lines 50 --review-per plan  # fully non-interactive
+         --prefix-width 6 --max-work-item-lines 50 --review-per work-item  # fully non-interactive
 
 stax skills remove --user               # uninstall what `stax init` (user scope) wrote
 stax skills remove --project            # uninstall what `stax init` (project scope) wrote here
 
-stax plans next-prefix                  # prints e.g. 00004
-stax plans list --status valid          # tab-separated rows of every valid plan
-stax plans lint                         # lints every .stax/*.md against the schema
-stax plans slugify "My new plan"        # prints e.g. my-new-plan
+stax work-items next-prefix                  # prints e.g. 00004
+stax work-items list --status valid          # tab-separated rows of every valid work item
+stax work-items lint                         # lints every .stax/*.md against the schema
+stax work-items slugify "My new work item"        # prints e.g. my-new-work-item
 ```
 
 ## Exit codes

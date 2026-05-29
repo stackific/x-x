@@ -97,7 +97,7 @@ DEFAULT_MODEL = "deepseek/deepseek-v4-pro"
 # `/skill:<name>`). Last-instruction-wins in attention.
 #
 # Same problem class as opencode: the planner SKILL.md has propose-and-
-# wait gates and the executor SKILL.md has plan-boundary review gates,
+# wait gates and the executor SKILL.md has work-item-boundary review gates,
 # neither of which surfaces as `Reply yes`. Without this directive the
 # auto-yes regex misses and pi goes idle.
 #

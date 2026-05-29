@@ -2,7 +2,7 @@ import { api } from "../shared/api";
 import { $, tpl } from "../shared/dom";
 
 // Mirrors the Go-side systemEntry in server.go. `scopes` is the live
-// per-system plan count surfaced by /api/systems so the list view can
+// per-system work-item count surfaced by /api/systems so the list view can
 // render "N scope(s)" without an extra round-trip.
 type System = {
   id: string;

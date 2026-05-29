@@ -2,7 +2,7 @@
 //
 // Layout: a Systems count card (link to /systems) and a Scopes count
 // card (link to /scopes), then a row-per-scope list of the most
-// recent N plans, descending. Both cards show `0` if the project is
+// recent N work items, descending. Both cards show `0` if the project is
 // freshly initialized; the latest-scopes section shows the dedicated
 // empty-state template.
 //

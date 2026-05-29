@@ -1,5 +1,5 @@
 // applyStatusClass tints a status element with the BeerCSS color
-// token that matches the plan's lifecycle stage so the /scopes,
+// token that matches the work item's lifecycle stage so the /scopes,
 // /system, /scope, and home pages all surface valid / superseded /
 // deprecated at a glance. The helper adapts to the element's current
 // classes so callers can use either a chip (background tint via the
@@ -26,11 +26,11 @@ export function applyStatusClass(el: HTMLElement, status: string): void {
 // scope-list view (/scopes, /, /system?id=) and the /scope?id= title.
 // Three cues stack on the same icon, so the helper encodes the
 // precedence in one place — lifecycle decoration outranks the
-// in-flight signal because a non-current plan's open tasks are stale
+// in-flight signal because a non-current work item's open tasks are stale
 // by definition:
 //
 //   - deprecated     → error-text     (do-not-use)
-//   - superseded     → tertiary-text  (history, replaced by a newer plan)
+//   - superseded     → tertiary-text  (history, replaced by a newer work item)
 //   - has open task  → primary-text   (in-flight work)
 //   - else           → no override    (default look)
 //

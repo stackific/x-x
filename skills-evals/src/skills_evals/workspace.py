@@ -69,17 +69,17 @@ def collect_plan_files(workspace: Path) -> str:
   """Concatenated text of every <prefix>-<slug>.md under .stax/.
 
   Underscore-prefixed registry files (_data_systems.yaml, _config.lock)
-  are skipped — they're scaffold, not plans.
+  are skipped — they're scaffold, not work items.
   """
-  plans_dir = workspace / ".stax"
-  if not plans_dir.is_dir():
+  work_items_dir = workspace / ".stax"
+  if not work_items_dir.is_dir():
     return "(no .stax/ directory)"
   chunks = []
-  for p in sorted(plans_dir.glob("*.md")):
+  for p in sorted(work_items_dir.glob("*.md")):
     if p.name.startswith("_"):
       continue
     chunks.append(_dump_file(p, workspace))
-  return "\n".join(chunks) if chunks else "(no plan files)"
+  return "\n".join(chunks) if chunks else "(no work-item files)"
 
 
 def collect_produced_files(workspace: Path) -> str:
@@ -116,7 +116,7 @@ def collect_tree(workspace: Path) -> str:
   """One line per file/dir; excluded top-level dirs are collapsed.
 
   `.stax/` is the one scaffold dir whose contents stay visible — the
-  judge needs to see plan filenames in the tree. Everything else in
+  judge needs to see work-item filenames in the tree. Everything else in
   SCAFFOLD_DIRS or NOISE_DIRS is shown as a single collapsed line at
   its top level; nested matches (e.g. `pkg/node_modules/foo`) are
   dropped silently to keep the tree readable.
@@ -159,7 +159,7 @@ def _dump_file(p: Path, workspace: Path) -> str:
 
 @dataclass
 class ParsedPlan:
-  """A plan file with its YAML frontmatter parsed.
+  """A work-item file with its YAML frontmatter parsed.
 
   Tests assert on relationship fields (`status`, `supersedes`,
   `superseded_by`, `extends`, `extended_by`) directly — deterministic
@@ -176,15 +176,15 @@ def load_all_plans(workspace: Path) -> list[ParsedPlan]:
   """Parse every <prefix>-<slug>.md under .stax/, sorted by filename.
 
   Underscore-prefixed registry files (_data_systems.yaml, _config.lock)
-  are skipped — they're scaffold, not plans. A file that doesn't open
+  are skipped — they're scaffold, not work items. A file that doesn't open
   with a `---` frontmatter block is skipped; the caller can assert
-  `len(plans) == N` to catch a malformed result.
+  `len(work_items) == N` to catch a malformed result.
   """
-  plans_dir = workspace / ".stax"
-  if not plans_dir.is_dir():
+  work_items_dir = workspace / ".stax"
+  if not work_items_dir.is_dir():
     return []
   out: list[ParsedPlan] = []
-  for p in sorted(plans_dir.glob("*.md")):
+  for p in sorted(work_items_dir.glob("*.md")):
     if p.name.startswith("_"):
       continue
     parsed = _parse_plan(p)
