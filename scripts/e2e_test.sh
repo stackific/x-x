@@ -55,23 +55,19 @@ readonly OWNED_SKILLS="${SKILL_SCOPE_DIR} ${SKILL_SHIP_DIR}"
 # constants.go. The registry is sorted alphabetically by display name
 # (case-insensitive) and looked up by `key` in the Go drift check
 # (TestE2EShellConstantsMatchGo), so these readonly entries are matched
-# by NAME, not by index. Codex, Copilot, Pi, omp, and Zed all resolve
+# by NAME, not by index. Codex, Copilot, Pi, and Zed all resolve
 # skills from `.agents/skills` at workspace scope (cross-agent open
 # spec, install is idempotent so the rows co-exist on disk without
-# conflict). Cline does NOT use the cross-agent path — per
-# docs.cline.bot/customization/overview it reads from `.cline/skills/`
-# (project) and `~/.cline/skills/` (user) only. OpenCode and Claude
-# stay on their own paths because their lookup logic doesn't include
-# `.agents/skills` — OpenCode reads `.opencode/{command,commands}/` only,
-# Claude reads `.claude/skills/` only. Cursor diverges across scopes
-# (workspace `.agents/skills`, global `~/.cursor/skills`) and is
-# represented in Go via agentTarget.userSkillsRel.
+# conflict). OpenCode and Claude stay on their own paths because
+# their lookup logic doesn't include `.agents/skills` — OpenCode
+# reads `.opencode/{command,commands}/` only, Claude reads
+# `.claude/skills/` only. Cursor diverges across scopes (workspace
+# `.agents/skills`, global `~/.cursor/skills`) and is represented in
+# Go via agentTarget.userSkillsRel.
 readonly CLAUDE_SKILLS_REL=".claude/skills"
 readonly CLAUDE_CONFIG_REL=".claude"
-readonly CLINE_SKILLS_REL=".cline/skills"
 readonly CODEX_SKILLS_REL=".agents/skills"
 readonly CODEX_CONFIG_REL=".codex"
-readonly CONTINUE_SKILLS_REL=".continue/skills"
 readonly CURSOR_SKILLS_REL=".agents/skills"
 readonly CURSOR_USER_SKILLS_REL=".cursor/skills"
 readonly COPILOT_SKILLS_REL=".agents/skills"
@@ -100,7 +96,6 @@ readonly ANTIGRAVITY_USER_SKILLS_REL_CLI=".gemini/antigravity-cli/skills"
 readonly ANTIGRAVITY_USER_SKILLS_REL_SHARED=".gemini/config/skills"
 readonly ANTIGRAVITY_CONFIG_REL=".gemini"
 readonly KILO_SKILLS_REL=".kilocode/skills"
-readonly OMP_SKILLS_REL=".agents/skills"
 readonly OPENCODE_SKILLS_REL=".opencode/commands"
 # OpenCode's hook surface is a TypeScript plugin file, NOT a JSON
 # config — it gets installed via the .ts whole-file-ownership branch
@@ -117,10 +112,10 @@ readonly PI_SKILLS_REL=".agents/skills"
 readonly PI_CONFIG_REL=".pi/extensions"
 readonly PI_USER_CONFIG_REL=".pi/agent/extensions"
 readonly ZED_SKILLS_REL=".agents/skills"
-# Continue / Cursor / Kilo / omp / Zed each ship no per-agent config
-# (configSrc / configRel are empty), so no *_CONFIG_REL mirrors are
-# needed for them. Copilot / OpenCode / Pi have *_CONFIG_REL +
-# *_USER_CONFIG_REL pairs declared further up.
+# Cursor / Kilo / Zed each ship no per-agent config (configSrc /
+# configRel are empty), so no *_CONFIG_REL mirrors are needed for
+# them. Copilot / OpenCode / Pi have *_CONFIG_REL + *_USER_CONFIG_REL
+# pairs declared further up.
 # Parent of CODEX_SKILLS_REL — used by isolation cases that seed sibling
 # files alongside the Codex skills dir. Derived (not a Go constant) to
 # avoid drift if the skillsRel ever moves.
@@ -128,13 +123,9 @@ readonly CODEX_SKILLS_PARENT="${CODEX_SKILLS_REL%/*}"
 # Parent of OPENCODE_SKILLS_REL — used by reset_user_home to wipe the
 # whole .opencode/ tree between cases. Derived for the same drift reason.
 readonly OPENCODE_SKILLS_PARENT="${OPENCODE_SKILLS_REL%/*}"
-# Parent of CLINE_SKILLS_REL — wiped between cases. Cline owns its own
-# `.cline/` dir at both project and user scope.
-readonly CLINE_SKILLS_PARENT="${CLINE_SKILLS_REL%/*}"
 # Parents for the rest of the per-agent roots. Each is wiped between
 # cases via reset_user_home so a previous case's install never bleeds
 # into the next.
-readonly CONTINUE_SKILLS_PARENT="${CONTINUE_SKILLS_REL%/*}"
 readonly CURSOR_USER_SKILLS_PARENT="${CURSOR_USER_SKILLS_REL%/*}"
 readonly KILO_SKILLS_PARENT="${KILO_SKILLS_REL%/*}"
 # Parents of the per-agent hook destinations at user scope. Each is
@@ -368,8 +359,6 @@ reset_user_home() {
          "$HOME/${CODEX_CONFIG_REL}" \
          "$HOME/${CODEX_SKILLS_PARENT}" \
          "$HOME/${OPENCODE_SKILLS_PARENT}" \
-         "$HOME/${CLINE_SKILLS_PARENT}" \
-         "$HOME/${CONTINUE_SKILLS_PARENT}" \
          "$HOME/${CURSOR_USER_SKILLS_PARENT}" \
          "$HOME/${KILO_SKILLS_PARENT}" \
          "$HOME/${COPILOT_USER_CONFIG_PARENT}" \
@@ -894,11 +883,24 @@ reset_user_home
 PROJ_INT2="$(fresh_project)"
 cd "$PROJ_INT2"
 # Picker indices follow agentTargets order (alphabetical by display
-# name): 1 = Claude Code, 2 = Cline, 3 = Codex CLI, … Pick 1+3 so the
-# install lands BOTH a `.claude/skills/` tree (CLAUDE_SKILLS_REL) AND a
-# `.agents/skills/` tree (CODEX_SKILLS_REL), proving the multi-select
-# loop preserves order and the two agents' distinct destinations.
-run_capture "1,3
+# name, enforced by TestAgentTargets_AlphabeticalByDisplayName in
+# init_test.go):
+#   1 = Anthropic Claude Code (.claude/skills)
+#   2 = Cursor                (.agents/skills @ workspace)
+#   3 = GitHub Copilot        (.agents/skills)
+#   4 = Google Antigravity    (.agents/skills @ workspace)
+#   5 = Kilo Code             (.kilocode/skills)
+#   6 = OpenAI Codex          (.agents/skills)
+#   7 = OpenCode              (.opencode/commands)
+#   8 = Pi                    (.agents/skills)
+#   9 = Zed                   (.agents/skills)
+# Pick 1+6 so the install lands BOTH a `.claude/skills/` tree
+# (CLAUDE_SKILLS_REL) AND a `.agents/skills/` tree
+# (CODEX_SKILLS_REL), proving the multi-select loop preserves order
+# and the two agents' distinct destinations. If a future row insertion
+# bumps Codex past index 6, the sort-enforcing unit test will fail
+# first; update the index here in lockstep.
+run_capture "1,6
 1
 
 
@@ -1059,95 +1061,6 @@ assert_is_dir "pi user-scope skills landed" \
 assert_absent "no install under project cwd" \
   "$PROJ_PI_USER/${PI_SKILLS_REL}"
 
-case_start "stax init --agents=cline installs Cline at project scope"
-reset_user_home
-PROJ_CL="$(fresh_project)"
-cd "$PROJ_CL"
-run_capture "" init --agents=cline --scope=project
-assert_eq "exit 0" "$RUN_RC" "0"
-# Cline reads project skills from `.cline/skills` (per docs.cline.bot/
-# customization/overview). Sibling agent directories must remain absent.
-assert_is_dir "cline project skills installed" "$PROJ_CL/${CLINE_SKILLS_REL}/${SKILL_SHIP_DIR}"
-assert_absent "claude NOT installed" "$PROJ_CL/${CLAUDE_SKILLS_REL}"
-assert_absent "codex NOT installed" "$PROJ_CL/${CODEX_SKILLS_REL}"
-
-case_start "stax init --agents=cline --scope=user lands at ~/.cline/skills"
-PROJ_CL_USER="$(fresh_project)"
-cd "$PROJ_CL_USER"
-reset_user_home
-run_capture "" init --agents=cline --scope=user
-assert_eq "exit 0" "$RUN_RC" "0"
-# Cline's user-scope path mirrors its project-scope path under $HOME.
-# Skills land under SANDBOX_HOME; project cwd stays clean.
-assert_is_dir "cline user-scope skills landed" \
-  "${SANDBOX_HOME}/${CLINE_SKILLS_REL}/${SKILL_SHIP_DIR}"
-assert_absent "no install under project cwd" \
-  "$PROJ_CL_USER/${CLINE_SKILLS_REL}"
-
-case_start "stax init --agents=omp installs at the shared .agents/skills/ path"
-reset_user_home
-PROJ_OMP="$(fresh_project)"
-cd "$PROJ_OMP"
-run_capture "" init --agents=omp --scope=project
-assert_eq "exit 0" "$RUN_RC" "0"
-# omp reuses the cross-agent `.agents/skills/` path (Codex and Copilot
-# do the same — see their cases above). omp's documented `agents`
-# skill provider (priority 70 in docs/skills.md) walks the path at
-# every cwd ancestor up to repoRoot. The paths the other agents claim
-# exclusively (Claude `.claude/skills`, OpenCode `.opencode/commands`)
-# must NOT be touched — that's how we know `--agents=omp` didn't
-# accidentally install the whole registry.
-assert_is_dir "omp project skills installed" \
-  "$PROJ_OMP/${OMP_SKILLS_REL}/${SKILL_SHIP_DIR}"
-assert_absent "claude path NOT installed"   "$PROJ_OMP/${CLAUDE_SKILLS_REL}"
-assert_absent "opencode path NOT installed" "$PROJ_OMP/${OPENCODE_SKILLS_REL}"
-# Per-agent config files of OTHER agents (Codex hooks.json, Claude
-# settings.json) must also stay absent — confirms the install was
-# really scoped to the single requested row, not all of them.
-assert_absent "codex config NOT installed"  "$PROJ_OMP/${CODEX_CONFIG_REL}"
-assert_absent "claude config NOT installed" "$PROJ_OMP/${CLAUDE_CONFIG_REL}"
-
-case_start "stax init --agents=omp --scope=user lands at ~/.agents/skills"
-PROJ_OMP_USER="$(fresh_project)"
-cd "$PROJ_OMP_USER"
-reset_user_home
-run_capture "" init --agents=omp --scope=user
-assert_eq "exit 0" "$RUN_RC" "0"
-# `agents` provider scans `$HOME/.agents/skills/` at user scope — same
-# path Codex and Copilot use at user scope. Skills land under
-# SANDBOX_HOME, project cwd is left alone.
-assert_is_dir "omp user-scope skills landed" \
-  "${SANDBOX_HOME}/${OMP_SKILLS_REL}/${SKILL_SHIP_DIR}"
-assert_absent "no install under project cwd" \
-  "$PROJ_OMP_USER/${OMP_SKILLS_REL}"
-
-case_start "stax init --agents=continue installs at .continue/skills"
-reset_user_home
-PROJ_CONT="$(fresh_project)"
-cd "$PROJ_CONT"
-run_capture "" init --agents=continue --scope=project
-assert_eq "exit 0" "$RUN_RC" "0"
-# Continue scans `.continue/skills/` at project scope (per
-# continue.dev customization docs). The cross-agent `.agents/skills`
-# is NOT a Continue lookup, so installing there would land files
-# Continue never reads.
-assert_is_dir "continue project skills installed" \
-  "$PROJ_CONT/${CONTINUE_SKILLS_REL}/${SKILL_SHIP_DIR}"
-assert_absent "claude path NOT installed"   "$PROJ_CONT/${CLAUDE_SKILLS_REL}"
-assert_absent "codex path NOT installed"    "$PROJ_CONT/${CODEX_SKILLS_REL}"
-assert_absent "cline path NOT installed"    "$PROJ_CONT/${CLINE_SKILLS_REL}"
-
-case_start "stax init --agents=continue --scope=user lands at ~/.continue/skills"
-PROJ_CONT_USER="$(fresh_project)"
-cd "$PROJ_CONT_USER"
-reset_user_home
-run_capture "" init --agents=continue --scope=user
-assert_eq "exit 0" "$RUN_RC" "0"
-assert_is_dir "continue user-scope skills landed" \
-  "${SANDBOX_HOME}/${CONTINUE_SKILLS_REL}/${SKILL_SHIP_DIR}"
-assert_absent "no install under project cwd" \
-  "$PROJ_CONT_USER/${CONTINUE_SKILLS_REL}"
-
 case_start "stax init --agents=cursor installs at the shared .agents/skills/ path"
 reset_user_home
 PROJ_CUR="$(fresh_project)"
@@ -1160,7 +1073,6 @@ assert_eq "exit 0" "$RUN_RC" "0"
 assert_is_dir "cursor project skills installed" \
   "$PROJ_CUR/${CURSOR_SKILLS_REL}/${SKILL_SHIP_DIR}"
 assert_absent "claude path NOT installed" "$PROJ_CUR/${CLAUDE_SKILLS_REL}"
-assert_absent "cline path NOT installed"  "$PROJ_CUR/${CLINE_SKILLS_REL}"
 
 case_start "stax init --agents=cursor --scope=user lands at ~/.cursor/skills"
 PROJ_CUR_USER="$(fresh_project)"
@@ -1215,7 +1127,6 @@ assert_eq "exit 0" "$RUN_RC" "0"
 assert_is_dir "zed project skills installed" \
   "$PROJ_ZED/${ZED_SKILLS_REL}/${SKILL_SHIP_DIR}"
 assert_absent "claude path NOT installed" "$PROJ_ZED/${CLAUDE_SKILLS_REL}"
-assert_absent "cline path NOT installed"  "$PROJ_ZED/${CLINE_SKILLS_REL}"
 
 case_start "stax init --agents=zed --scope=user lands at ~/.agents/skills"
 PROJ_ZED_USER="$(fresh_project)"
@@ -1227,6 +1138,231 @@ assert_is_dir "zed user-scope skills landed" \
   "${SANDBOX_HOME}/${ZED_SKILLS_REL}/${SKILL_SHIP_DIR}"
 assert_absent "no install under project cwd" \
   "$PROJ_ZED_USER/${ZED_SKILLS_REL}"
+
+# ---------- per-agent --scope=user skills install for hook-shipping agents ----------
+#
+# claude / codex / opencode lacked an explicit `--scope=user` install
+# case at single-agent granularity in bash. The combined cases (e.g.
+# `init --scope=user --agents=claude,codex` further down) covered them
+# transitively but a regression that broke ONE row's user-scope
+# resolver while leaving the other working would have slipped through.
+
+case_start "stax init --agents=claude --scope=user lands at ~/.claude/skills"
+reset_user_home
+PROJ_CL_USER="$(fresh_project)"
+cd "$PROJ_CL_USER"
+run_capture "" init --agents=claude --scope=user
+assert_eq "exit 0" "$RUN_RC" "0"
+assert_is_dir "claude user-scope skills landed" \
+  "${SANDBOX_HOME}/${CLAUDE_SKILLS_REL}/${SKILL_SHIP_DIR}"
+assert_is_file "claude user-scope settings.json present" \
+  "${SANDBOX_HOME}/${CLAUDE_SETTINGS_PATH}"
+assert_absent "no install under project cwd" \
+  "$PROJ_CL_USER/${CLAUDE_SKILLS_REL}"
+
+case_start "stax init --agents=codex --scope=user lands at ~/.agents/skills + ~/.codex/hooks.json"
+reset_user_home
+PROJ_CX_USER="$(fresh_project)"
+cd "$PROJ_CX_USER"
+run_capture "" init --agents=codex --scope=user
+assert_eq "exit 0" "$RUN_RC" "0"
+assert_is_dir "codex user-scope skills landed" \
+  "${SANDBOX_HOME}/${CODEX_SKILLS_REL}/${SKILL_SHIP_DIR}"
+assert_is_file "codex user-scope hooks.json present" \
+  "${SANDBOX_HOME}/${CODEX_HOOKS_PATH}"
+assert_absent "no install under project cwd" \
+  "$PROJ_CX_USER/${CODEX_SKILLS_REL}"
+
+case_start "stax init --agents=opencode --scope=user lands at ~/.opencode/commands + ~/.config/opencode/plugins"
+reset_user_home
+PROJ_OC_USER="$(fresh_project)"
+cd "$PROJ_OC_USER"
+run_capture "" init --agents=opencode --scope=user
+assert_eq "exit 0" "$RUN_RC" "0"
+assert_is_dir "opencode user-scope skills landed" \
+  "${SANDBOX_HOME}/${OPENCODE_SKILLS_REL}/${SKILL_SHIP_DIR}"
+assert_is_file "opencode user-scope plugin stax.ts present" \
+  "${SANDBOX_HOME}/${OPENCODE_USER_CONFIG_REL}/stax.ts"
+assert_absent "no install under project cwd" \
+  "$PROJ_OC_USER/${OPENCODE_SKILLS_REL}"
+
+# ---------- Google Antigravity bash twins (PS1 parity) ----------
+#
+# Behavior-neutral mirrors of the antigravity cases at the bottom of
+# scripts/e2e_test.ps1 (search for "Google Antigravity: dual user-scope
+# skills + JSON hooks"). Same install / un-merge contract: project
+# scope lands skills at .agents/skills/ and hooks at
+# .gemini/settings.json; user scope writes skills to BOTH
+# ~/.gemini/antigravity-cli/skills/ and ~/.gemini/config/skills/ plus
+# hooks at ~/.gemini/settings.json. The fact that one install drops
+# skills into two user-scope discovery roots is the
+# multi-destination `userSkillsRels []string` behavior unique to the
+# antigravity row.
+
+case_start "Antigravity: init --scope=project lands skills + settings.json"
+reset_user_home
+PROJ_AG="$(fresh_project)"
+cd "$PROJ_AG"
+run_capture "" init --scope=project --agents=antigravity
+assert_eq "exit 0" "$RUN_RC" "0"
+assert_is_dir  "project antigravity skill ${SKILL_SHIP_DIR}" \
+  "$PROJ_AG/${ANTIGRAVITY_SKILLS_REL}/${SKILL_SHIP_DIR}"
+assert_is_dir  "project antigravity skill ${SKILL_SCOPE_DIR}" \
+  "$PROJ_AG/${ANTIGRAVITY_SKILLS_REL}/${SKILL_SCOPE_DIR}"
+assert_is_file "project antigravity settings.json present" \
+  "$PROJ_AG/${ANTIGRAVITY_CONFIG_REL}/settings.json"
+AG_BODY="$(cat "$PROJ_AG/${ANTIGRAVITY_CONFIG_REL}/settings.json")"
+assert_contains "hooks key present"   "$AG_BODY" '"hooks"'
+assert_contains "PostToolUse present" "$AG_BODY" '"PostToolUse"'
+assert_contains "lint command present" "$AG_BODY" 'stax work-items lint'
+# User-scope paths must NOT have been touched by a project-scope install.
+assert_absent "user-scope CLI-local skills empty after project install" \
+  "${SANDBOX_HOME}/${ANTIGRAVITY_USER_SKILLS_REL_CLI}/${SKILL_SCOPE_DIR}"
+assert_absent "user-scope shared skills empty after project install" \
+  "${SANDBOX_HOME}/${ANTIGRAVITY_USER_SKILLS_REL_SHARED}/${SKILL_SCOPE_DIR}"
+assert_absent "user-scope settings.json empty after project install" \
+  "${SANDBOX_HOME}/${ANTIGRAVITY_CONFIG_REL}/settings.json"
+
+case_start "Antigravity: init --scope=user lands skills at BOTH user roots + settings.json"
+reset_user_home
+PROJ_AG_USER="$(fresh_project)"
+cd "$PROJ_AG_USER"
+run_capture "" init --scope=user --agents=antigravity
+assert_eq "exit 0" "$RUN_RC" "0"
+# Multi-destination `userSkillsRels` lands skills into BOTH the
+# CLI-local root (.gemini/antigravity-cli/skills) AND the shared
+# root (.gemini/config/skills) in one install.
+assert_is_dir "antigravity user CLI-local skill ship" \
+  "${SANDBOX_HOME}/${ANTIGRAVITY_USER_SKILLS_REL_CLI}/${SKILL_SHIP_DIR}"
+assert_is_dir "antigravity user shared skill ship" \
+  "${SANDBOX_HOME}/${ANTIGRAVITY_USER_SKILLS_REL_SHARED}/${SKILL_SHIP_DIR}"
+assert_is_dir "antigravity user CLI-local skill scope" \
+  "${SANDBOX_HOME}/${ANTIGRAVITY_USER_SKILLS_REL_CLI}/${SKILL_SCOPE_DIR}"
+assert_is_dir "antigravity user shared skill scope" \
+  "${SANDBOX_HOME}/${ANTIGRAVITY_USER_SKILLS_REL_SHARED}/${SKILL_SCOPE_DIR}"
+assert_is_file "antigravity user settings.json present" \
+  "${SANDBOX_HOME}/${ANTIGRAVITY_CONFIG_REL}/settings.json"
+# Project cwd must stay clean — user scope writes nothing under cwd
+# except the .stax/_config.lock + _data_systems.yaml scaffold.
+assert_absent "no antigravity project skill install under cwd" \
+  "$PROJ_AG_USER/${ANTIGRAVITY_SKILLS_REL}"
+assert_absent "no antigravity project settings.json under cwd" \
+  "$PROJ_AG_USER/${ANTIGRAVITY_CONFIG_REL}/settings.json"
+
+case_start "Antigravity: init re-run merges into edited settings.json"
+reset_user_home
+PROJ_AG_M="$(fresh_project)"
+cd "$PROJ_AG_M"
+run_capture "" init --scope=project --agents=antigravity
+assert_eq "first init exit 0" "$RUN_RC" "0"
+cat > "$PROJ_AG_M/${ANTIGRAVITY_CONFIG_REL}/settings.json" <<'EOF'
+{
+  "userOnlyKey": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {"type": "command", "command": "USER-ANTIGRAVITY-HOOK"}
+        ]
+      }
+    ]
+  }
+}
+EOF
+rm "$PROJ_AG_M/${STAX_LOCK_PATH}"
+run_capture "" init --scope=project --agents=antigravity
+AG_M_BODY="$(cat "$PROJ_AG_M/${ANTIGRAVITY_CONFIG_REL}/settings.json")"
+assert_contains "user scalar survives merge" "$AG_M_BODY" 'userOnlyKey'
+assert_contains "user hook survives merge"   "$AG_M_BODY" 'USER-ANTIGRAVITY-HOOK'
+assert_contains "bundled hook landed"        "$AG_M_BODY" 'stax work-items lint'
+
+case_start "Antigravity: skill remove --project un-merges bundled records"
+reset_user_home
+PROJ_AG_R="$(fresh_project)"
+cd "$PROJ_AG_R"
+run_capture "" init --scope=project --agents=antigravity
+# Bundled records here MUST stay byte-equal to agents/antigravity/settings.json
+# — TestE2EHookFixtureMirrorsBundle pins this from the Go side against the
+# heredoc below. Drift in one mirror is caught at unit-test speed.
+cat > "$PROJ_AG_R/${ANTIGRAVITY_CONFIG_REL}/settings.json" <<'EOF'
+{
+  "userOnlyKey": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {"type": "command", "command": "stax work-items lint"}
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {"type": "command", "command": "USER-ANTIGRAVITY-HOOK"}
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {"type": "command", "command": "stax work-items lint"}
+        ]
+      }
+    ]
+  }
+}
+EOF
+run_capture "" skills remove --project
+assert_eq "exit 0" "$RUN_RC" "0"
+AG_R_BODY="$(cat "$PROJ_AG_R/${ANTIGRAVITY_CONFIG_REL}/settings.json")"
+assert_not_contains "bundled command gone"           "$AG_R_BODY" 'stax work-items lint'
+assert_contains     "user antigravity hook survives" "$AG_R_BODY" 'USER-ANTIGRAVITY-HOOK'
+assert_contains     "user scalar survives un-merge"  "$AG_R_BODY" 'userOnlyKey'
+
+case_start "Antigravity: skills remove --user un-merges bundled hooks from user settings.json"
+reset_user_home
+PROJ_AG_RU="$(fresh_project)"
+cd "$PROJ_AG_RU"
+run_capture "" init --scope=user --agents=antigravity
+# Augment the user-scope settings.json so the un-merge has to drop
+# ours while leaving the user record + top-level scalar.
+cat > "$HOME/${ANTIGRAVITY_CONFIG_REL}/settings.json" <<'EOF'
+{
+  "userOnlyKey": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {"type": "command", "command": "stax work-items lint"}
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {"type": "command", "command": "USER-ANTIGRAVITY-USER-HOOK"}
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {"type": "command", "command": "stax work-items lint"}
+        ]
+      }
+    ]
+  }
+}
+EOF
+run_capture "" skills remove --user
+assert_eq "exit 0" "$RUN_RC" "0"
+AG_RU_BODY="$(cat "$HOME/${ANTIGRAVITY_CONFIG_REL}/settings.json")"
+assert_not_contains "user-scope bundled cmd gone"       "$AG_RU_BODY" 'stax work-items lint'
+assert_contains     "user-scope user antigravity hook"  "$AG_RU_BODY" 'USER-ANTIGRAVITY-USER-HOOK'
+assert_contains     "user-scope scalar survives"        "$AG_RU_BODY" 'userOnlyKey'
 
 case_start "stax init --agents=invalid rejects unknown agent"
 reset_user_home
@@ -2491,6 +2627,161 @@ run_capture "" init --scope user
 assert_eq "exit 0" "$RUN_RC" "0"
 assert_is_file    "user-scope sibling survives re-run" "$HOME/${CLAUDE_SKILLS_REL}/my-custom/SKILL.md"
 assert_is_symlink "user-scope bundled still symlinked" "$HOME/${CLAUDE_SKILLS_REL}/${SKILL_SHIP_DIR}"
+
+# ---------- skills remove --user un-merges hooks from every shipped config ----------
+#
+# The corresponding project-scope un-merge cases above pin un-merge for
+# claude+codex (line ~1619), copilot (~1764), opencode (~1840/1851), and
+# pi (~1918/1929). The user-scope counterpart wasn't exercised on either
+# runner — `skills remove --user` walks every agentTargets row with a
+# configSrc and consults `configRelFor(scopeUser)` for the destination,
+# which is the only branch where Copilot's userConfigRel override
+# (`.copilot/hooks/`) actually drives a different path than configRel
+# (`.github/hooks/`). The cases below close that gap for all five
+# hook-shipping agents. Each one:
+#   1. Installs --scope user so the bundled config lands at the
+#      user-scope path (different file per agent).
+#   2. Mutates the user file to add a user-authored sibling record /
+#      user-tweaked variant — both must survive the un-merge.
+#   3. Runs `skills remove --user` and asserts the bundled record is
+#      gone, the user record survives, and any top-level scalar is
+#      preserved.
+
+case_start "skills remove --user un-merges bundled hooks from user ${CLAUDE_SETTINGS_FILE}"
+reset_user_home
+PROJ_RM_USER_CL="$(fresh_project)"
+cd "$PROJ_RM_USER_CL"
+run_capture "" init --scope user
+# Append a user-authored Bash record alongside our bundled
+# Write|Edit|MultiEdit record so we can assert it survives.
+cat > "$HOME/${CLAUDE_SETTINGS_PATH}" <<'EOF'
+{
+  "fastMode": true,
+  "hooks": {
+    "PostToolUse": [
+      {"matcher": "Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": "stax work-items lint"}]},
+      {"matcher": "Bash", "hooks": [{"type": "command", "command": "USER-CLAUDE-USER-HOOK"}]}
+    ],
+    "Stop": [
+      {"matcher": "", "hooks": [{"type": "command", "command": "stax work-items lint"}]}
+    ]
+  }
+}
+EOF
+run_capture "" skills remove --user
+assert_eq           "exit 0"                                "$RUN_RC" "0"
+USER_CL_BODY="$(cat "$HOME/${CLAUDE_SETTINGS_PATH}")"
+assert_contains     "user-scope fastMode kept"              "$USER_CL_BODY" '"fastMode": true'
+assert_contains     "user-scope Bash record survives"       "$USER_CL_BODY" 'USER-CLAUDE-USER-HOOK'
+assert_not_contains "user-scope bundled command gone"       "$USER_CL_BODY" 'stax work-items lint'
+
+case_start "skills remove --user un-merges bundled hooks from user ${CODEX_HOOKS_FILE}"
+reset_user_home
+PROJ_RM_USER_CX="$(fresh_project)"
+cd "$PROJ_RM_USER_CX"
+run_capture "" init --scope user
+cat > "$HOME/${CODEX_HOOKS_PATH}" <<'EOF'
+{
+  "hooks": {
+    "PostToolUse": [
+      {"matcher": "apply_patch", "hooks": [{"type": "command", "command": "stax work-items lint"}]}
+    ],
+    "Stop": [
+      {"hooks": [{"type": "command", "command": "stax work-items lint 1>&2"}]},
+      {"hooks": [{"type": "command", "command": "USER-CODEX-USER-HOOK"}]}
+    ]
+  }
+}
+EOF
+run_capture "" skills remove --user
+assert_eq           "exit 0"                                "$RUN_RC" "0"
+USER_CX_BODY="$(cat "$HOME/${CODEX_HOOKS_PATH}")"
+assert_contains     "user-scope codex user hook survives"   "$USER_CX_BODY" 'USER-CODEX-USER-HOOK'
+assert_not_contains "user-scope apply_patch matcher gone"   "$USER_CX_BODY" 'apply_patch'
+assert_not_contains "user-scope Stop bundled command gone"  "$USER_CX_BODY" 'stax work-items lint 1>&2'
+
+case_start "skills remove --user un-merges bundled hooks from user Copilot stax.json"
+reset_user_home
+PROJ_RM_USER_CP="$(fresh_project)"
+cd "$PROJ_RM_USER_CP"
+# Copilot is the canonical scope-asymmetric case — `userConfigRel`
+# diverts the user-scope install to .copilot/hooks/ rather than the
+# project's .github/hooks/. This case proves un-merge follows the
+# same resolver (so install and remove can't drift across scopes).
+run_capture "" init --scope user --agents copilot \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+assert_eq "exit 0" "$RUN_RC" "0"
+assert_is_file "user copilot stax.json present" "$HOME/${COPILOT_USER_CONFIG_REL}/stax.json"
+cat > "$HOME/${COPILOT_USER_CONFIG_REL}/stax.json" <<'EOF'
+{
+  "version": 1,
+  "hooks": {
+    "postToolUse": [
+      {"type": "command", "bash": "stax work-items lint"},
+      {"type": "command", "bash": "USER-COPILOT-USER-HOOK"}
+    ],
+    "agentStop": [
+      {"type": "command", "bash": "stax work-items lint"}
+    ]
+  }
+}
+EOF
+run_capture "" skills remove --user
+assert_eq           "exit 0"                                "$RUN_RC" "0"
+USER_CP_BODY="$(cat "$HOME/${COPILOT_USER_CONFIG_REL}/stax.json")"
+assert_contains     "user-scope copilot user hook survives" "$USER_CP_BODY" 'USER-COPILOT-USER-HOOK'
+assert_not_contains "user-scope copilot bundled cmd gone"   "$USER_CP_BODY" 'stax work-items lint'
+assert_contains     "user-scope version scalar survives"    "$USER_CP_BODY" '"version"'
+
+case_start "skills remove --user deletes byte-equal user OpenCode stax.ts"
+reset_user_home
+PROJ_RM_USER_OC="$(fresh_project)"
+cd "$PROJ_RM_USER_OC"
+run_capture "" init --scope user --agents opencode \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+assert_eq      "exit 0" "$RUN_RC" "0"
+assert_is_file "user opencode stax.ts present" "$HOME/${OPENCODE_USER_CONFIG_REL}/stax.ts"
+run_capture "" skills remove --user
+assert_eq      "exit 0" "$RUN_RC" "0"
+assert_absent  "user opencode stax.ts removed (byte-equal)" "$HOME/${OPENCODE_USER_CONFIG_REL}/stax.ts"
+
+case_start "skills remove --user preserves user-edited OpenCode stax.ts"
+reset_user_home
+PROJ_RM_USER_OCE="$(fresh_project)"
+cd "$PROJ_RM_USER_OCE"
+run_capture "" init --scope user --agents opencode \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+printf '// my user-scope customization\n' >> "$HOME/${OPENCODE_USER_CONFIG_REL}/stax.ts"
+USER_OCE_EDITED="$(cat "$HOME/${OPENCODE_USER_CONFIG_REL}/stax.ts")"
+run_capture "" skills remove --user
+assert_eq "exit 0" "$RUN_RC" "0"
+USER_OCE_BODY="$(cat "$HOME/${OPENCODE_USER_CONFIG_REL}/stax.ts")"
+assert_eq "user-edited user-scope stax.ts survives remove" "$USER_OCE_EDITED" "$USER_OCE_BODY"
+
+case_start "skills remove --user deletes byte-equal user Pi stax.ts"
+reset_user_home
+PROJ_RM_USER_PI="$(fresh_project)"
+cd "$PROJ_RM_USER_PI"
+run_capture "" init --scope user --agents pi \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+assert_eq      "exit 0" "$RUN_RC" "0"
+assert_is_file "user pi stax.ts present" "$HOME/${PI_USER_CONFIG_REL}/stax.ts"
+run_capture "" skills remove --user
+assert_eq      "exit 0" "$RUN_RC" "0"
+assert_absent  "user pi stax.ts removed (byte-equal)" "$HOME/${PI_USER_CONFIG_REL}/stax.ts"
+
+case_start "skills remove --user preserves user-edited Pi stax.ts"
+reset_user_home
+PROJ_RM_USER_PIE="$(fresh_project)"
+cd "$PROJ_RM_USER_PIE"
+run_capture "" init --scope user --agents pi \
+    --prefix-width 4 --max-work-item-lines 30 --review-per task
+printf '// pi user-scope customization\n' >> "$HOME/${PI_USER_CONFIG_REL}/stax.ts"
+USER_PIE_EDITED="$(cat "$HOME/${PI_USER_CONFIG_REL}/stax.ts")"
+run_capture "" skills remove --user
+assert_eq "exit 0" "$RUN_RC" "0"
+USER_PIE_BODY="$(cat "$HOME/${PI_USER_CONFIG_REL}/stax.ts")"
+assert_eq "user-edited user-scope Pi stax.ts survives remove" "$USER_PIE_EDITED" "$USER_PIE_BODY"
 
 # ---------- skill remove on empty state ----------
 

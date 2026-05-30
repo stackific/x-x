@@ -67,23 +67,18 @@ Set-Variable -Option Constant -Name OWNED_SKILLS -Value @($SKILL_SCOPE_DIR, $SKI
 # constants.go. The Go registry is sorted alphabetically by display name
 # (case-insensitive) and looked up by `key` in the Go drift check, so
 # these constants are matched by NAME, not by index. Codex, Copilot, Pi,
-# omp, and Zed all resolve skills from `.agents\skills` at workspace
-# scope (cross-agent open spec, install is idempotent so the rows
-# co-exist on disk without conflict). Cline does NOT use the cross-
-# agent path — per docs.cline.bot/customization/overview it reads from
-# `.cline\skills` (project) and `~\.cline\skills` (user) only. Claude
-# and OpenCode stay on their own paths because their lookup logic
-# doesn't include `.agents\skills`. OpenCode, Copilot, Pi, and omp
-# ship no per-agent config today (configRel is ""), so there are no
-# *_CONFIG_REL mirrors for them. Cursor diverges across scopes
-# (workspace `.agents\skills`, global `~\.cursor\skills`) — represented
-# in Go via agentTarget.userSkillsRel.
+# and Zed all resolve skills from `.agents\skills` at workspace scope
+# (cross-agent open spec, install is idempotent so the rows co-exist
+# on disk without conflict). Claude and OpenCode stay on their own
+# paths because their lookup logic doesn't include `.agents\skills`.
+# OpenCode, Copilot, and Pi ship no per-agent config today (configRel
+# is ""), so there are no *_CONFIG_REL mirrors for them. Cursor
+# diverges across scopes (workspace `.agents\skills`, global
+# `~\.cursor\skills`) — represented in Go via agentTarget.userSkillsRel.
 Set-Variable -Option Constant -Name CLAUDE_SKILLS_REL           -Value '.claude\skills'
 Set-Variable -Option Constant -Name CLAUDE_CONFIG_REL           -Value '.claude'
-Set-Variable -Option Constant -Name CLINE_SKILLS_REL            -Value '.cline\skills'
 Set-Variable -Option Constant -Name CODEX_SKILLS_REL            -Value '.agents\skills'
 Set-Variable -Option Constant -Name CODEX_CONFIG_REL            -Value '.codex'
-Set-Variable -Option Constant -Name CONTINUE_SKILLS_REL         -Value '.continue\skills'
 Set-Variable -Option Constant -Name CURSOR_SKILLS_REL           -Value '.agents\skills'
 Set-Variable -Option Constant -Name CURSOR_USER_SKILLS_REL      -Value '.cursor\skills'
 Set-Variable -Option Constant -Name COPILOT_SKILLS_REL          -Value '.agents\skills'
@@ -101,7 +96,6 @@ Set-Variable -Option Constant -Name ANTIGRAVITY_USER_SKILLS_REL_CLI    -Value '.
 Set-Variable -Option Constant -Name ANTIGRAVITY_USER_SKILLS_REL_SHARED -Value '.gemini\config\skills'
 Set-Variable -Option Constant -Name ANTIGRAVITY_CONFIG_REL             -Value '.gemini'
 Set-Variable -Option Constant -Name KILO_SKILLS_REL             -Value '.kilocode\skills'
-Set-Variable -Option Constant -Name OMP_SKILLS_REL              -Value '.agents\skills'
 Set-Variable -Option Constant -Name OPENCODE_SKILLS_REL         -Value '.opencode\commands'
 # OpenCode plugin: TypeScript whole-file ownership. Both scopes diverge
 # on directory (`.opencode\plugins\` vs `.config\opencode\plugins\`).
@@ -2694,112 +2688,6 @@ try {
     (Join-Path $projPi2 (Join-Path $PI_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
-Start-Case 'init --agents=cline project-scope install'
-Reset-UserHome
-$projCL1 = New-FreshProject
-Push-Location $projCL1
-try {
-  Invoke-XX init --scope project --agents=cline `
-                    --prefix-width 4 --max-work-item-lines 30 --review-per task
-  Assert-Eq    'exit 0' $RunRC 0
-  # Cline reads project skills from `.cline\skills` per docs.cline.bot/
-  # customization/overview. Sibling agent dirs stay absent.
-  Assert-IsDir 'cline project skills present' `
-    (Join-Path $projCL1 (Join-Path $CLINE_SKILLS_REL $SKILL_SHIP_DIR))
-  Assert-NotExists 'claude skills NOT present' `
-    (Join-Path $projCL1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
-  Assert-NotExists 'codex skills NOT present' `
-    (Join-Path $projCL1 (Join-Path $CODEX_SKILLS_REL $SKILL_SHIP_DIR))
-} finally { Pop-Location }
-
-Start-Case 'init --agents=cline --scope=user lands at ~/.cline/skills'
-Reset-UserHome
-$projCL2 = New-FreshProject
-Push-Location $projCL2
-try {
-  Invoke-XX init --scope user --agents=cline `
-                    --prefix-width 4 --max-work-item-lines 30 --review-per task
-  Assert-Eq    'exit 0' $RunRC 0
-  # User scope: cline's `.cline\skills` resolves relative to $HOME.
-  # Skills land under USERPROFILE, project cwd stays untouched.
-  Assert-IsDir 'cline user-scope skills landed' `
-    (Join-Path $env:USERPROFILE (Join-Path $CLINE_SKILLS_REL $SKILL_SHIP_DIR))
-  Assert-NotExists 'no install under project cwd' `
-    (Join-Path $projCL2 (Join-Path $CLINE_SKILLS_REL $SKILL_SHIP_DIR))
-} finally { Pop-Location }
-
-Start-Case 'init --agents=omp project-scope install'
-Reset-UserHome
-$projOmp1 = New-FreshProject
-Push-Location $projOmp1
-try {
-  Invoke-XX init --scope project --agents=omp `
-                    --prefix-width 4 --max-work-item-lines 30 --review-per task
-  Assert-Eq    'exit 0' $RunRC 0
-  # Project scope: omp reuses the cross-agent `.agents\skills` path
-  # (Codex and Copilot do the same). omp's documented `agents` skill
-  # provider (priority 70 in docs/skills.md) walks the path at every
-  # cwd ancestor up to repoRoot.
-  Assert-IsDir 'omp project skills present' `
-    (Join-Path $projOmp1 (Join-Path $OMP_SKILLS_REL $SKILL_SHIP_DIR))
-  # The paths the OTHER agents claim exclusively must stay absent.
-  Assert-NotExists 'claude path NOT present' `
-    (Join-Path $projOmp1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
-  Assert-NotExists 'opencode path NOT present' `
-    (Join-Path $projOmp1 (Join-Path $OPENCODE_SKILLS_REL $SKILL_SHIP_DIR))
-  # Per-agent config files of other agents must also stay absent.
-  Assert-NotExists 'codex config NOT present' `
-    (Join-Path $projOmp1 $CODEX_CONFIG_REL)
-  Assert-NotExists 'claude config NOT present' `
-    (Join-Path $projOmp1 $CLAUDE_CONFIG_REL)
-} finally { Pop-Location }
-
-Start-Case 'init --agents=omp --scope=user lands at ~/.agents/skills'
-Reset-UserHome
-$projOmp2 = New-FreshProject
-Push-Location $projOmp2
-try {
-  Invoke-XX init --scope user --agents=omp `
-                    --prefix-width 4 --max-work-item-lines 30 --review-per task
-  Assert-Eq    'exit 0' $RunRC 0
-  # User scope: omp's `agents` provider scans `$HOME\.agents\skills` —
-  # same path Codex and Copilot use at user scope.
-  Assert-IsDir 'omp user-scope skills landed' `
-    (Join-Path $env:USERPROFILE (Join-Path $OMP_SKILLS_REL $SKILL_SHIP_DIR))
-  Assert-NotExists 'no install under project cwd' `
-    (Join-Path $projOmp2 (Join-Path $OMP_SKILLS_REL $SKILL_SHIP_DIR))
-} finally { Pop-Location }
-
-Start-Case 'init --agents=continue project-scope install (.continue\skills)'
-Reset-UserHome
-$projCont1 = New-FreshProject
-Push-Location $projCont1
-try {
-  Invoke-XX init --scope project --agents=continue `
-                    --prefix-width 4 --max-work-item-lines 30 --review-per task
-  Assert-Eq    'exit 0' $RunRC 0
-  Assert-IsDir 'continue project skills present' `
-    (Join-Path $projCont1 (Join-Path $CONTINUE_SKILLS_REL $SKILL_SHIP_DIR))
-  Assert-NotExists 'claude path NOT present' `
-    (Join-Path $projCont1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
-  Assert-NotExists 'codex path NOT present' `
-    (Join-Path $projCont1 (Join-Path $CODEX_SKILLS_REL $SKILL_SHIP_DIR))
-} finally { Pop-Location }
-
-Start-Case 'init --agents=continue --scope=user lands at ~\.continue\skills'
-Reset-UserHome
-$projCont2 = New-FreshProject
-Push-Location $projCont2
-try {
-  Invoke-XX init --scope user --agents=continue `
-                    --prefix-width 4 --max-work-item-lines 30 --review-per task
-  Assert-Eq    'exit 0' $RunRC 0
-  Assert-IsDir 'continue user-scope skills landed' `
-    (Join-Path $env:USERPROFILE (Join-Path $CONTINUE_SKILLS_REL $SKILL_SHIP_DIR))
-  Assert-NotExists 'no install under project cwd' `
-    (Join-Path $projCont2 (Join-Path $CONTINUE_SKILLS_REL $SKILL_SHIP_DIR))
-} finally { Pop-Location }
-
 Start-Case 'init --agents=cursor project-scope install (shared .agents\skills)'
 Reset-UserHome
 $projCur1 = New-FreshProject
@@ -2812,8 +2700,6 @@ try {
     (Join-Path $projCur1 (Join-Path $CURSOR_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'claude path NOT present' `
     (Join-Path $projCur1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
-  Assert-NotExists 'cline path NOT present' `
-    (Join-Path $projCur1 (Join-Path $CLINE_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init --agents=cursor --scope=user lands at ~\.cursor\skills'
@@ -2877,8 +2763,6 @@ try {
     (Join-Path $projZed1 (Join-Path $ZED_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'claude path NOT present' `
     (Join-Path $projZed1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
-  Assert-NotExists 'cline path NOT present' `
-    (Join-Path $projZed1 (Join-Path $CLINE_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init --agents=zed --scope=user lands at ~\.agents\skills'
@@ -3810,6 +3694,60 @@ try {
   Assert-IsDir 'user-authored sibling preserved (shared root)' $sharedSibling
 } finally { Pop-Location }
 
+Start-Case 'Antigravity: skills remove --user un-merges bundled hooks from user settings.json'
+Reset-UserHome
+$projAGruh = New-FreshProject
+Push-Location $projAGruh
+try {
+  Invoke-XX init --scope user --agents antigravity `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  Assert-Eq 'init exit 0' $RunRC 0
+  # Sibling-case at line ~3743 above asserts the SKILL directories under
+  # both user-scope roots get cleared. This case adds the missing
+  # half: the user-scope settings.json gets un-merged the same way the
+  # project-scope case (line ~3692) does. Without it, a regression
+  # that broke `configRelFor(scopeUser)` for the antigravity row would
+  # only surface when a Windows user noticed `~\.gemini\settings.json`
+  # still carrying our hook records after `stax skills remove --user`.
+  $userSettings = Join-Path $env:USERPROFILE (Join-Path $ANTIGRAVITY_CONFIG_REL 'settings.json')
+  $augmented = @"
+{
+  "userOnlyKey": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {"type": "command", "command": "stax work-items lint"}
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {"type": "command", "command": "USER-ANTIGRAVITY-USER-HOOK"}
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {"type": "command", "command": "stax work-items lint"}
+        ]
+      }
+    ]
+  }
+}
+"@
+  Set-Content -LiteralPath $userSettings -Value $augmented -Encoding ascii
+  Invoke-XX skills remove --user
+  Assert-Eq 'remove exit 0' $RunRC 0
+  $after = Get-Content -Raw -LiteralPath $userSettings
+  Assert-NotContains 'user-scope bundled cmd gone'      $after 'stax work-items lint'
+  Assert-Contains    'user-scope user antigravity hook' $after 'USER-ANTIGRAVITY-USER-HOOK'
+  Assert-Contains    'user-scope scalar survives'       $after 'userOnlyKey'
+} finally { Pop-Location }
+
 # ---------- Antigravity: surgical merge / un-merge contract (PS1 twins) ----------
 #
 # Behavior-neutral mirrors of the bash cases that pin the JSON-merge
@@ -4716,6 +4654,149 @@ try {
   Assert-Eq 'remove exit 0' $RunRC 0
   $afterContent = Get-Content -Raw -LiteralPath $userHooks
   Assert-NotContains 'bundled hook removed' $afterContent 'stax work-items lint'
+} finally { Pop-Location }
+
+# ---------- skills remove --user covers every hook-shipping agent (bash parity) ----------
+#
+# The bash twin to this block lives under "skills remove --user
+# un-merges hooks from every shipped config" in scripts/e2e_test.sh.
+# The codex case above (line ~4296) already covers one of the five
+# hook-shipping agents; this block adds the four it missed: claude
+# (settings.json under ~/.claude), copilot (stax.json under
+# ~/.copilot/hooks/ via userConfigRel — the scope-asymmetric path),
+# opencode (stax.ts under ~/.config/opencode/plugins/), and pi
+# (stax.ts under ~/.pi/agent/extensions/). Each one: install --scope
+# user, mutate to add a user-authored record / variant, run `skills
+# remove --user`, assert ours-gone / user-stays.
+
+Start-Case 'skills remove --user un-merges bundled hooks from user settings.json (claude)'
+Reset-UserHome
+$projRUCl = New-FreshProject
+Push-Location $projRUCl
+try {
+  Invoke-XX init --scope user --agents claude `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  Assert-Eq 'init exit 0' $RunRC 0
+  $userClaudeSettings = Join-Path $env:USERPROFILE $Script:CLAUDE_SETTINGS_PATH
+  $augmented = @'
+{
+  "fastMode": true,
+  "hooks": {
+    "PostToolUse": [
+      {"matcher": "Write|Edit|MultiEdit", "hooks": [{"type": "command", "command": "stax work-items lint"}]},
+      {"matcher": "Bash", "hooks": [{"type": "command", "command": "USER-CLAUDE-USER-HOOK"}]}
+    ],
+    "Stop": [
+      {"matcher": "", "hooks": [{"type": "command", "command": "stax work-items lint"}]}
+    ]
+  }
+}
+'@
+  Set-Content -LiteralPath $userClaudeSettings -Value $augmented -Encoding ascii
+  Invoke-XX skills remove --user
+  Assert-Eq 'remove exit 0' $RunRC 0
+  $after = Get-Content -Raw -LiteralPath $userClaudeSettings
+  Assert-Contains    'user-scope fastMode kept'            $after '"fastMode": true'
+  Assert-Contains    'user-scope Bash record survives'     $after 'USER-CLAUDE-USER-HOOK'
+  Assert-NotContains 'user-scope bundled command gone'     $after 'stax work-items lint'
+} finally { Pop-Location }
+
+Start-Case 'skills remove --user un-merges bundled hooks from user Copilot stax.json'
+Reset-UserHome
+$projRUCp = New-FreshProject
+Push-Location $projRUCp
+try {
+  Invoke-XX init --scope user --agents copilot `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  Assert-Eq 'init exit 0' $RunRC 0
+  # Copilot's userConfigRel diverts the user-scope install to
+  # `.copilot\hooks\` (NOT `.github\hooks\`). This is the only path
+  # that exercises the scope-asymmetric resolver end-to-end on Windows.
+  $userCpPath = Join-Path $env:USERPROFILE (Join-Path $COPILOT_USER_CONFIG_REL 'stax.json')
+  Assert-IsFile 'user copilot stax.json present' $userCpPath
+  $augmented = @'
+{
+  "version": 1,
+  "hooks": {
+    "postToolUse": [
+      {"type": "command", "bash": "stax work-items lint"},
+      {"type": "command", "bash": "USER-COPILOT-USER-HOOK"}
+    ],
+    "agentStop": [
+      {"type": "command", "bash": "stax work-items lint"}
+    ]
+  }
+}
+'@
+  Set-Content -LiteralPath $userCpPath -Value $augmented -Encoding ascii
+  Invoke-XX skills remove --user
+  Assert-Eq 'remove exit 0' $RunRC 0
+  $after = Get-Content -Raw -LiteralPath $userCpPath
+  Assert-Contains    'user-scope copilot user hook survives' $after 'USER-COPILOT-USER-HOOK'
+  Assert-NotContains 'user-scope copilot bundled cmd gone'   $after 'stax work-items lint'
+  Assert-Contains    'user-scope copilot version preserved'  $after '"version"'
+} finally { Pop-Location }
+
+Start-Case 'skills remove --user deletes byte-equal user OpenCode stax.ts'
+Reset-UserHome
+$projRUOc = New-FreshProject
+Push-Location $projRUOc
+try {
+  Invoke-XX init --scope user --agents opencode `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  Assert-Eq 'init exit 0' $RunRC 0
+  $userOcPath = Join-Path $env:USERPROFILE (Join-Path $OPENCODE_USER_CONFIG_REL 'stax.ts')
+  Assert-IsFile 'user opencode stax.ts present' $userOcPath
+  Invoke-XX skills remove --user
+  Assert-Eq        'remove exit 0' $RunRC 0
+  Assert-NotExists 'user opencode stax.ts removed (byte-equal)' $userOcPath
+} finally { Pop-Location }
+
+Start-Case 'skills remove --user preserves user-edited OpenCode stax.ts'
+Reset-UserHome
+$projRUOcE = New-FreshProject
+Push-Location $projRUOcE
+try {
+  Invoke-XX init --scope user --agents opencode `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  $userOcPathE = Join-Path $env:USERPROFILE (Join-Path $OPENCODE_USER_CONFIG_REL 'stax.ts')
+  Add-Content -LiteralPath $userOcPathE -Value '// my user-scope customization'
+  $userEdited = Get-Content -Raw -LiteralPath $userOcPathE
+  Invoke-XX skills remove --user
+  Assert-Eq 'remove exit 0' $RunRC 0
+  $after = Get-Content -Raw -LiteralPath $userOcPathE
+  Assert-Eq 'user-edited user-scope OpenCode stax.ts survives' $userEdited $after
+} finally { Pop-Location }
+
+Start-Case 'skills remove --user deletes byte-equal user Pi stax.ts'
+Reset-UserHome
+$projRUPi = New-FreshProject
+Push-Location $projRUPi
+try {
+  Invoke-XX init --scope user --agents pi `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  Assert-Eq 'init exit 0' $RunRC 0
+  $userPiPath = Join-Path $env:USERPROFILE (Join-Path $PI_USER_CONFIG_REL 'stax.ts')
+  Assert-IsFile 'user pi stax.ts present' $userPiPath
+  Invoke-XX skills remove --user
+  Assert-Eq        'remove exit 0' $RunRC 0
+  Assert-NotExists 'user pi stax.ts removed (byte-equal)' $userPiPath
+} finally { Pop-Location }
+
+Start-Case 'skills remove --user preserves user-edited Pi stax.ts'
+Reset-UserHome
+$projRUPiE = New-FreshProject
+Push-Location $projRUPiE
+try {
+  Invoke-XX init --scope user --agents pi `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  $userPiPathE = Join-Path $env:USERPROFILE (Join-Path $PI_USER_CONFIG_REL 'stax.ts')
+  Add-Content -LiteralPath $userPiPathE -Value '// pi user-scope customization'
+  $userEdited = Get-Content -Raw -LiteralPath $userPiPathE
+  Invoke-XX skills remove --user
+  Assert-Eq 'remove exit 0' $RunRC 0
+  $after = Get-Content -Raw -LiteralPath $userPiPathE
+  Assert-Eq 'user-edited user-scope Pi stax.ts survives' $userEdited $after
 } finally { Pop-Location }
 
 # ---------- Windows-specific: encoding and output stability ----------

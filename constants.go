@@ -180,40 +180,9 @@ func agentByKey(key string) *agentTarget {
 // unique across the registry.
 var agentTargets = []agentTarget{
 	{"claude", "Anthropic Claude Code", ".claude/skills", nil, "claude", ".claude", ""},
-	// Cline (cline.bot) reads skills from `.cline/skills/` at project scope
-	// and `~/.cline/skills/` at user scope, per the official 2026 config
-	// docs at docs.cline.bot/customization/overview. The cross-agent
-	// `.agents/skills` path codex and copilot share is NOT a documented
-	// cline lookup, so installing there would land files cline never
-	// discovers. The bundled skill tree shape (`<name>/SKILL.md`) matches
-	// cline's documented skill format — a Skill is a directory with a
-	// SKILL.md inside — so no embed restructure is needed; the install
-	// loop walks `agents/skills/<name>/` and lands each subtree under
-	// `<root>/.cline/skills/<name>/` unchanged.
-	// Skills-only for now — no settings.json / hooks file bundled for
-	// cline; configSrc and configRel stay empty.
-	{"cline", "Cline", ".cline/skills", nil, "", "", ""},
-	// Codex CLI scans .agents/skills/ at every level (cwd → repo root → $HOME),
-	// per the cross-agent SKILL.md open standard. The legacy ~/.codex/skills
-	// is also recognized at user scope but not at project scope, so .agents
-	// is the one path that works in both modes. Per-agent config (hooks.json,
-	// config.toml, etc.) still lives under .codex/ — see Codex docs:
-	// https://developers.openai.com/codex/hooks for the lookup order.
-	{"codex", "OpenAI Codex", ".agents/skills", nil, "codex", ".codex", ""},
-	// Continue (continue.dev) reads skills from `.continue/skills/` at
-	// project scope and `~/.continue/skills/` at user scope, per the
-	// continue.dev customization docs (the IDE extension scans both
-	// roots on session start). Symmetric across workItems — no
-	// userSkillsRels override needed. Continue does NOT honor the
-	// cross-agent `.agents/skills` path, so installing there would
-	// land files Continue never discovers; the install must use
-	// `.continue/skills` exclusively. Skills-only — Continue's
-	// settings live at `~/.continue/config.yaml` and are user-owned
-	// end-to-end, outside the stax install scope.
-	{"continue", "Continue", ".continue/skills", nil, "", "", ""},
 	// Cursor reads skills from `.agents/skills/` at workspace scope
 	// (the cross-agent open spec path, shared with Codex/Copilot/Pi/
-	// omp/Zed) and from `~/.cursor/skills/` at global scope — Cursor
+	// Zed) and from `~/.cursor/skills/` at global scope — Cursor
 	// does NOT honor the cross-agent `~/.agents/skills` fallback at
 	// user scope, so the row needs a `userSkillsRels` override. The
 	// install
@@ -249,7 +218,7 @@ var agentTargets = []agentTarget{
 	// single install:
 	//
 	//   project scope → `.agents/skills/<name>/SKILL.md` (cross-agent open
-	//     spec, identical to Codex/Copilot/Pi/omp/Zed at workspace scope).
+	//     spec, identical to Codex/Copilot/Pi/Zed at workspace scope).
 	//     Antigravity workspaces honor this path per the docs codelab.
 	//   user scope →
 	//     `~/.gemini/antigravity-cli/skills/<name>/` — global skills for the
@@ -280,39 +249,13 @@ var agentTargets = []agentTarget{
 	// in `~/.kilocode/` end-to-end and are user-owned outside the stax
 	// install scope.
 	{"kilo", "Kilo Code", ".kilocode/skills", nil, "", "", ""},
-	// omp (oh-my-pi, omp.sh / can1357/oh-my-pi) is a TS coding agent
-	// that registers a documented `agents` skill provider at priority
-	// 70 — see oh-my-pi/docs/skills.md "priority 70 group (in
-	// registration order): claude-plugins, agents, codex" and the
-	// matching source at packages/coding-agent/src/discovery/agents.ts.
-	// That provider walks `.agent/` and `.agents/` (both names) at:
-	//   project scope → walk up from cwd to repoRoot, scanning
-	//                   `<dir>/.agents/skills/` at each ancestor
-	//   user scope    → `$HOME/.agents/skills/`
-	//
-	// We pin to `.agents/skills` at both workItems — the cross-agent open
-	// spec path, identical to Codex's project-scope path and Copilot
-	// CLI's officially-documented add-skills location at both workItems.
-	// Reasons:
-	//   1. Symmetric across workItems — no userSkillsRels override needed,
-	//      `omp -h` does not introduce a user-scope/project-scope
-	//      asymmetry for this provider (unlike the native priority-100
-	//      `.omp` provider where user-scope lives under `.omp/agent/`).
-	//   2. Cross-platform — node:path joins resolve to `.agents\skills`
-	//      on Windows automatically (omp's binary is officially
-	//      "macOS, Linux, Windows, no WSL bridge" per README).
-	//   3. Stays out of omp's private session-storage tree
-	//      (`~/.omp/agent/`, owned end-to-end by omp's own runtime —
-	//      writing into it is a layering violation).
-	//   4. Idempotent with Codex/Copilot/Pi: `--agents codex,copilot,pi,omp`
-	//      collapses to one shared `.agents/skills/` install plus
-	//      Codex's own `.codex/hooks.json`.
-	//
-	// Skills-only — omp's user settings live at `~/.omp/config.yml`
-	// (interactive Settings → Memory tab) and its model registry at
-	// `~/.omp/agent/models.yml`. Both are user-owned end-to-end and
-	// outside the stax install scope.
-	{"omp", "Oh My Pi", ".agents/skills", nil, "", "", ""},
+	// Codex CLI scans .agents/skills/ at every level (cwd → repo root → $HOME),
+	// per the cross-agent SKILL.md open standard. The legacy ~/.codex/skills
+	// is also recognized at user scope but not at project scope, so .agents
+	// is the one path that works in both modes. Per-agent config (hooks.json,
+	// config.toml, etc.) still lives under .codex/ — see Codex docs:
+	// https://developers.openai.com/codex/hooks for the lookup order.
+	{"codex", "OpenAI Codex", ".agents/skills", nil, "codex", ".codex", ""},
 	// OpenCode resolves slash commands from `.opencode/{command,commands}/**/*.md`
 	// at project scope and `~/.config/opencode/commands/` at user scope.
 	// The lookup keys off the file's frontmatter `name:` (the path-derived
@@ -346,8 +289,8 @@ var agentTargets = []agentTarget{
 	// explicitly honors the cross-agent open spec at BOTH workItems per
 	// zed.dev's "agent panel skills" docs, making it the symmetric
 	// case (no userSkillsRels override). Install collapses with
-	// Codex/Copilot/Pi/omp/Cursor-workspace at project scope, and
-	// with Codex/Copilot/Pi/omp at user scope —
+	// Codex/Copilot/Pi/Cursor-workspace at project scope, and
+	// with Codex/Copilot/Pi at user scope —
 	// a single `--agents codex,zed` install writes one shared
 	// `.agents/skills/` directory at each scope. Skills-only; Zed's
 	// settings live at `~/.config/zed/settings.json` (Linux/macOS

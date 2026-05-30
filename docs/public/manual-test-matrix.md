@@ -33,18 +33,15 @@ cell is visible at a glance.
 
 | Agent | macOS / Linux — project | macOS / Linux — user | Windows — project | Windows — user | Last verified |
 |---|:-:|:-:|:-:|:-:|:-:|
-| Anthropic Claude Code | ⏳ | ⏳ | ⏳ | ⏳ | |
-| OpenAI Codex | ⏳ | ⏳ | ⏳ | ⏳ | |
-| GitHub Copilot | ⏳ | ⏳ | ⏳ | ⏳ | |
-| Google Antigravity | ⏳ | ⏳ | ⏳ | ⏳ | |
-| OpenCode | ⏳ | ⏳ | ⏳ | ⏳ | |
-| Pi | ⏳ | ⏳ | ⏳ | ⏳ | |
-| Oh My Pi | ⏳ | ⏳ | ⏳ | ⏳ | |
-| Cline | ⏳ | ⏳ | ⏳ | ⏳ | |
-| Continue | ⏳ | ⏳ | ⏳ | ⏳ | |
-| Cursor | ⏳ | ⏳ | ⏳ | ⏳ | |
-| Kilo Code | ⏳ | ⏳ | ⏳ | ⏳ | |
-| Zed | ⏳ | ⏳ | ⏳ | ⏳ | |
+| Anthropic Claude Code | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
+| Cursor | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
+| GitHub Copilot | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
+| Google Antigravity | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
+| Kilo Code | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
+| OpenAI Codex | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
+| OpenCode | ✅ | ✅ | ⚠️ | ⚠️ | May 29, 2026 |
+| Pi | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
+| Zed | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
 
 **Skills checklist per cell** (what counts as ✅):
 
@@ -74,18 +71,15 @@ cell is visible at a glance.
 
 | Agent | macOS / Linux — project | macOS / Linux — user | Windows — project | Windows — user | Last verified |
 |---|:-:|:-:|:-:|:-:|:-:|
-| Anthropic Claude Code | ⏳ | ⏳ | ⏳ | ⏳ | |
-| OpenAI Codex | ⏳ | ⏳ | ⏳ | ⏳ | |
-| GitHub Copilot | ⏳ | ⏳ | ⏳ | ⏳ | |
-| Google Antigravity | ⏳ | ⏳ | ⏳ | ⏳ | |
-| OpenCode | ⏳ | ⏳ | ⏳ | ⏳ | |
-| Pi | ⏳ | ⏳ | ⏳ | ⏳ | |
-| Oh My Pi | ➖ | ➖ | ➖ | ➖ | |
-| Cline | ➖ | ➖ | ➖ | ➖ | |
-| Continue | ➖ | ➖ | ➖ | ➖ | |
-| Cursor | ➖ | ➖ | ➖ | ➖ | |
-| Kilo Code | ➖ | ➖ | ➖ | ➖ | |
-| Zed | ➖ | ➖ | ➖ | ➖ | |
+| Anthropic Claude Code | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
+| Cursor | ➖ | ➖ | ➖ | ➖ | May 29, 2026 |
+| GitHub Copilot | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
+| Google Antigravity | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
+| Kilo Code | ➖ | ➖ | ➖ | ➖ | May 29, 2026 |
+| OpenAI Codex | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
+| OpenCode | ✅ | ✅ | ⚠️ | ⚠️ | May 29, 2026 |
+| Pi | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
+| Zed | ➖ | ➖ | ➖ | ➖ | May 29, 2026 |
 
 **Hooks checklist per cell** (what counts as ✅):
 
@@ -120,16 +114,13 @@ cell is visible at a glance.
 | Agent | Skills (project) | Skills (user) | Hooks (project) | Hooks (user) |
 |---|---|---|---|---|
 | Anthropic Claude Code | `.claude/skills/` | `~/.claude/skills/` | `.claude/settings.json` | `~/.claude/settings.json` |
-| OpenAI Codex | `.agents/skills/` | `~/.agents/skills/` | `.codex/hooks.json` | `~/.codex/hooks.json` |
+| Cursor | `.agents/skills/` | `~/.cursor/skills/` | _n/a_ | _n/a_ |
 | GitHub Copilot | `.agents/skills/` | `~/.agents/skills/` | `.github/hooks/stax.json` | `~/.copilot/hooks/stax.json` |
 | Google Antigravity | `.agents/skills/` | `~/.gemini/antigravity-cli/skills/` AND `~/.gemini/config/skills/` | `.gemini/settings.json` | `~/.gemini/settings.json` |
+| Kilo Code | `.kilocode/skills/` | `~/.kilocode/skills/` | _n/a_ | _n/a_ |
+| OpenAI Codex | `.agents/skills/` | `~/.agents/skills/` | `.codex/hooks.json` | `~/.codex/hooks.json` |
 | OpenCode | `.opencode/commands/` | `~/.opencode/commands/` | `.opencode/plugins/stax.ts` | `~/.config/opencode/plugins/stax.ts` |
 | Pi | `.agents/skills/` | `~/.agents/skills/` | `.pi/extensions/stax.ts` | `~/.pi/agent/extensions/stax.ts` |
-| Oh My Pi | `.agents/skills/` | `~/.agents/skills/` | _n/a_ | _n/a_ |
-| Cline | `.cline/skills/` | `~/.cline/skills/` | _n/a_ | _n/a_ |
-| Continue | `.continue/skills/` | `~/.continue/skills/` | _n/a_ | _n/a_ |
-| Cursor | `.agents/skills/` | `~/.cursor/skills/` | _n/a_ | _n/a_ |
-| Kilo Code | `.kilocode/skills/` | `~/.kilocode/skills/` | _n/a_ | _n/a_ |
 | Zed | `.agents/skills/` | `~/.agents/skills/` | _n/a_ | _n/a_ |
 
 Google Antigravity is the only row that ships skills into two user-scope

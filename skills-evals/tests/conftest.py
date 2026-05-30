@@ -48,14 +48,6 @@ CLAUDE_ENV_DEFAULTS = {
 # stays uniform across backends.
 OPENCODE_ENV_DEFAULTS: dict[str, str] = {}
 
-# omp (oh-my-pi) ships a built-in `deepseek` provider catalog (see
-# provider-models/descriptors.ts `catalogDescriptor("deepseek", ...)`),
-# so DEEPSEEK_API_KEY routes directly to api.deepseek.com — same pattern
-# as OpenCode. Model selection is passed via `--model deepseek/<id>` from
-# omp_driver.py at spawn time. Recorded as an empty dict so the per-agent
-# env-setup loop stays uniform across backends.
-OMP_ENV_DEFAULTS: dict[str, str] = {}
-
 # GitHub Copilot CLI BYOK routing. Provider type MUST be `anthropic` (not
 # `openai`) — DeepSeek requires reasoning_content echo-back on subsequent
 # requests, which Copilot CLI's OpenAI integration does not support and
@@ -83,70 +75,50 @@ COPILOT_ENV_DEFAULTS = {
 # in `_load_dotenv_and_route` uniform across backends.
 PI_ENV_DEFAULTS: dict[str, str] = {}
 
-# Cline reads routing from its on-disk auth state (populated via `cline
-# auth --provider deepseek --apikey <key> --modelid deepseek-v4-pro` in
-# the workspace fixture below — per-test sandboxed $HOME means the auth
-# state has to be re-seeded on every workspace setup, since cline writes
-# it under $HOME/.cline/data/settings/). No per-process env vars are
-# required at the driver layer; the empty dict keeps the per-agent
-# env-setup loop uniform.
-CLINE_ENV_DEFAULTS: dict[str, str] = {}
-
 # Which agent backend the workspace fixture installs and probes for.
 # Default `claude` keeps the existing Claude tests running unchanged.
 # Workflows targeting other backends (e.g. skills-eval-opencode.yml,
-# skills-eval-copilot.yml, skills-eval-pi.yml, skills-eval-cline.yml,
-# manual-omp-judge.yml) set STAX_AGENT_KEY=<key> to flip both the binary
-# the fixture skips on if missing and the per-agent env defaults that
-# get pointed at DeepSeek.
-VALID_AGENT_KEYS = ("claude", "opencode", "copilot", "pi", "cline", "omp")
+# skills-eval-copilot.yml, skills-eval-pi.yml) set STAX_AGENT_KEY=<key>
+# to flip both the binary the fixture skips on if missing and the
+# per-agent env defaults that get pointed at DeepSeek.
+VALID_AGENT_KEYS = ("claude", "opencode", "copilot", "pi")
 AGENT_BINARY_FOR_KEY = {
   "claude": "claude",
   "opencode": "opencode",
   "copilot": "copilot",
   "pi": "pi",
-  "cline": "cline",
-  "omp": "omp",
 }
 AGENT_ENV_DEFAULTS_FOR_KEY = {
   "claude": CLAUDE_ENV_DEFAULTS,
   "opencode": OPENCODE_ENV_DEFAULTS,
   "copilot": COPILOT_ENV_DEFAULTS,
   "pi": PI_ENV_DEFAULTS,
-  "cline": CLINE_ENV_DEFAULTS,
-  "omp": OMP_ENV_DEFAULTS,
 }
 # Value passed to `stax init --agents <value>` for each backend. The
 # binary's agentTargets registry (constants.go) recognizes "claude",
-# "codex", "opencode", "pi", "cline", "omp", and "copilot" — each as a
-# first-class entry with its own skillsRel. Copilot's row uses
-# `.agents/skills` at both scopes (the cross-agent open spec path
-# Codex / Pi / omp also share); copilot CLI's discovery list reads
-# `.claude/skills/` at project scope and `~/.agents/skills/` at user
-# scope, so installing at `.agents/skills` works at both — project
-# scope via copilot's secondary discovery path, user scope as the
-# primary location.
+# "codex", "opencode", "pi", and "copilot" — each as a first-class
+# entry with its own skillsRel. Copilot's row uses `.agents/skills` at
+# both scopes (the cross-agent open spec path Codex / Pi also share);
+# copilot CLI's discovery list reads `.claude/skills/` at project scope
+# and `~/.agents/skills/` at user scope, so installing at
+# `.agents/skills` works at both — project scope via copilot's
+# secondary discovery path, user scope as the primary location.
 AGENT_INIT_VALUE_FOR_KEY = {
   "claude": "claude",
   "opencode": "opencode",
   "copilot": "copilot",
   "pi": "pi",
-  "cline": "cline",
-  "omp": "omp",
 }
 # Per-agent skills install root used by the user-scope post-install
 # log. Mirrors `agentTargets[N].skillsRelFor(scopeUser)` from
 # constants.go for each backend — Claude reads `.claude/skills/`,
-# OpenCode reads `.opencode/commands/`, Copilot CLI / Codex / Pi /
-# omp all read `.agents/skills/` at user scope, Cline reads
-# `.cline/skills/`.
+# OpenCode reads `.opencode/commands/`, Copilot CLI / Codex / Pi all
+# read `.agents/skills/` at user scope.
 AGENT_USER_SKILLS_REL_FOR_KEY = {
   "claude": Path(".claude") / "skills",
   "opencode": Path(".opencode") / "commands",
   "copilot": Path(".agents") / "skills",
   "pi": Path(".agents") / "skills",
-  "cline": Path(".cline") / "skills",
-  "omp": Path(".agents") / "skills",
 }
 
 # Which `stax init --scope` value to use when bootstrapping each test's
@@ -213,9 +185,7 @@ def _load_dotenv_and_route_agent() -> None:
   provider directly from `DEEPSEEK_API_KEY`; Copilot uses the BYOK
   `COPILOT_PROVIDER_*` block plus a mirror of DEEPSEEK_API_KEY into
   `COPILOT_PROVIDER_API_KEY`; Pi reads `DEEPSEEK_API_KEY` directly via
-  the deepseek provider entry in its model registry; Cline's routing
-  lives in its on-disk auth state and is seeded per-test in the
-  workspace fixture (sandboxed $HOME makes session-level seeding moot).
+  the deepseek provider entry in its model registry.
   """
   log("conftest", f"python={sys.version.split()[0]} platform={sys.platform}")
 
@@ -363,21 +333,6 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         f"workspace setup failed: {' '.join(cmd)} exited {result.returncode}",
         pytrace=False,
       )
-
-  if agent_key == "cline":
-    # Cline's headless mode reads provider routing from on-disk auth
-    # state (~/.cline/data/settings/, under the per-test sandboxed $HOME
-    # set above). Seeded here rather than in the session fixture
-    # because the sandbox gets a fresh $HOME per test — a session-scope
-    # seed would land in the wrong directory and the per-test sandboxes
-    # would start blank. The same helper is called inline from the
-    # smoke test, which bypasses this fixture.
-    from skills_evals.cline_driver import seed_cline_auth
-    log("conftest", "seeding cline auth for workspace fixture")
-    try:
-      seed_cline_auth()
-    except RuntimeError as e:
-      pytest.fail(f"cline auth seed failed: {e}", pytrace=False)
 
   log("conftest", f"workspace ready: {sorted(p.name for p in ws.iterdir())}")
   if scope == "user":
