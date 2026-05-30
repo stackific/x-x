@@ -39,7 +39,7 @@ cell is visible at a glance.
 | Google Antigravity | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
 | Kilo Code | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
 | OpenAI Codex | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
-| OpenCode | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
+| OpenCode | ✅ | ✅ | ⚠️ | ⚠️ | May 29, 2026 |
 | Pi | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
 | Zed | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
 
@@ -71,15 +71,15 @@ cell is visible at a glance.
 
 | Agent | macOS / Linux — project | macOS / Linux — user | Windows — project | Windows — user | Last verified |
 |---|:-:|:-:|:-:|:-:|:-:|
-| Anthropic Claude Code | ⏳ | ⏳ | ⏳ | ⏳ | |
-| Cursor | ➖ | ➖ | ➖ | ➖ | |
-| GitHub Copilot | ⏳ | ⏳ | ⏳ | ⏳ | |
-| Google Antigravity | ⏳ | ⏳ | ⏳ | ⏳ | |
-| Kilo Code | ➖ | ➖ | ➖ | ➖ | |
-| OpenAI Codex | ⏳ | ⏳ | ⏳ | ⏳ | |
-| OpenCode | ⏳ | ⏳ | ⏳ | ⏳ | |
-| Pi | ⏳ | ⏳ | ⏳ | ⏳ | |
-| Zed | ➖ | ➖ | ➖ | ➖ | |
+| Anthropic Claude Code | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
+| Cursor | ➖ | ➖ | ➖ | ➖ | May 29, 2026 |
+| GitHub Copilot | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
+| Google Antigravity | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
+| Kilo Code | ➖ | ➖ | ➖ | ➖ | May 29, 2026 |
+| OpenAI Codex | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
+| OpenCode | ✅ | ✅ | ⚠️ | ⚠️ | May 29, 2026 |
+| Pi | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
+| Zed | ➖ | ➖ | ➖ | ➖ | May 29, 2026 |
 
 **Hooks checklist per cell** (what counts as ✅):
 
