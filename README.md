@@ -3,10 +3,9 @@
 [![E2E test](https://github.com/stackific/stax/actions/workflows/test.yml/badge.svg)](https://github.com/stackific/stax/actions/workflows/test.yml)
 [![E2E test / windows](https://github.com/stackific/stax/actions/workflows/test-windows.yml/badge.svg)](https://github.com/stackific/stax/actions/workflows/test-windows.yml)
 [![CodeQL](https://github.com/stackific/stax/actions/workflows/codeql.yml/badge.svg)](https://github.com/stackific/stax/actions/workflows/codeql.yml)
-[![Go Reference](https://pkg.go.dev/badge/github.com/stackific/stax.svg)](https://pkg.go.dev/github.com/stackific/stax)
 [![Go Report Card](https://goreportcard.com/badge/github.com/stackific/stax)](https://goreportcard.com/report/github.com/stackific/stax)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
-[![Latest Release](https://img.shields.io/github/v/release/stackific/stax)](https://github.com/stackific/stax/releases/latest)
+[![Latest Release](https://img.shields.io/github/v/tag/stackific/stax?sort=semver&label=release)](https://github.com/stackific/stax/releases/latest)
 [![DCO](https://img.shields.io/badge/DCO-required-blue)](https://developercertificate.org/)
 [![Conventional Commits](https://img.shields.io/badge/Conventional_Commits-1.0.0-yellow.svg)](https://www.conventionalcommits.org/)
 
@@ -33,6 +32,9 @@ stax init
 
 # Execute the next work item in line
 /ship
+
+# Launch the UI for the project explorer
+stax
 ```
 
 ## Documentation
