@@ -180,37 +180,6 @@ func agentByKey(key string) *agentTarget {
 // unique across the registry.
 var agentTargets = []agentTarget{
 	{"claude", "Anthropic Claude Code", ".claude/skills", nil, "claude", ".claude", ""},
-	// Cline (cline.bot) reads skills from `.cline/skills/` at project scope
-	// and `~/.cline/skills/` at user scope, per the official 2026 config
-	// docs at docs.cline.bot/customization/overview. The cross-agent
-	// `.agents/skills` path codex and copilot share is NOT a documented
-	// cline lookup, so installing there would land files cline never
-	// discovers. The bundled skill tree shape (`<name>/SKILL.md`) matches
-	// cline's documented skill format — a Skill is a directory with a
-	// SKILL.md inside — so no embed restructure is needed; the install
-	// loop walks `agents/skills/<name>/` and lands each subtree under
-	// `<root>/.cline/skills/<name>/` unchanged.
-	// Skills-only for now — no settings.json / hooks file bundled for
-	// cline; configSrc and configRel stay empty.
-	{"cline", "Cline", ".cline/skills", nil, "", "", ""},
-	// Codex CLI scans .agents/skills/ at every level (cwd → repo root → $HOME),
-	// per the cross-agent SKILL.md open standard. The legacy ~/.codex/skills
-	// is also recognized at user scope but not at project scope, so .agents
-	// is the one path that works in both modes. Per-agent config (hooks.json,
-	// config.toml, etc.) still lives under .codex/ — see Codex docs:
-	// https://developers.openai.com/codex/hooks for the lookup order.
-	{"codex", "OpenAI Codex", ".agents/skills", nil, "codex", ".codex", ""},
-	// Continue (continue.dev) reads skills from `.continue/skills/` at
-	// project scope and `~/.continue/skills/` at user scope, per the
-	// continue.dev customization docs (the IDE extension scans both
-	// roots on session start). Symmetric across workItems — no
-	// userSkillsRels override needed. Continue does NOT honor the
-	// cross-agent `.agents/skills` path, so installing there would
-	// land files Continue never discovers; the install must use
-	// `.continue/skills` exclusively. Skills-only — Continue's
-	// settings live at `~/.continue/config.yaml` and are user-owned
-	// end-to-end, outside the stax install scope.
-	{"continue", "Continue", ".continue/skills", nil, "", "", ""},
 	// Cursor reads skills from `.agents/skills/` at workspace scope
 	// (the cross-agent open spec path, shared with Codex/Copilot/Pi/
 	// Zed) and from `~/.cursor/skills/` at global scope — Cursor
@@ -280,6 +249,13 @@ var agentTargets = []agentTarget{
 	// in `~/.kilocode/` end-to-end and are user-owned outside the stax
 	// install scope.
 	{"kilo", "Kilo Code", ".kilocode/skills", nil, "", "", ""},
+	// Codex CLI scans .agents/skills/ at every level (cwd → repo root → $HOME),
+	// per the cross-agent SKILL.md open standard. The legacy ~/.codex/skills
+	// is also recognized at user scope but not at project scope, so .agents
+	// is the one path that works in both modes. Per-agent config (hooks.json,
+	// config.toml, etc.) still lives under .codex/ — see Codex docs:
+	// https://developers.openai.com/codex/hooks for the lookup order.
+	{"codex", "OpenAI Codex", ".agents/skills", nil, "codex", ".codex", ""},
 	// OpenCode resolves slash commands from `.opencode/{command,commands}/**/*.md`
 	// at project scope and `~/.config/opencode/commands/` at user scope.
 	// The lookup keys off the file's frontmatter `name:` (the path-derived

@@ -55,23 +55,19 @@ readonly OWNED_SKILLS="${SKILL_SCOPE_DIR} ${SKILL_SHIP_DIR}"
 # constants.go. The registry is sorted alphabetically by display name
 # (case-insensitive) and looked up by `key` in the Go drift check
 # (TestE2EShellConstantsMatchGo), so these readonly entries are matched
-# by NAME, not by index. Codex, Copilot, Pi, omp, and Zed all resolve
+# by NAME, not by index. Codex, Copilot, Pi, and Zed all resolve
 # skills from `.agents/skills` at workspace scope (cross-agent open
 # spec, install is idempotent so the rows co-exist on disk without
-# conflict). Cline does NOT use the cross-agent path — per
-# docs.cline.bot/customization/overview it reads from `.cline/skills/`
-# (project) and `~/.cline/skills/` (user) only. OpenCode and Claude
-# stay on their own paths because their lookup logic doesn't include
-# `.agents/skills` — OpenCode reads `.opencode/{command,commands}/` only,
-# Claude reads `.claude/skills/` only. Cursor diverges across scopes
-# (workspace `.agents/skills`, global `~/.cursor/skills`) and is
-# represented in Go via agentTarget.userSkillsRel.
+# conflict). OpenCode and Claude stay on their own paths because
+# their lookup logic doesn't include `.agents/skills` — OpenCode
+# reads `.opencode/{command,commands}/` only, Claude reads
+# `.claude/skills/` only. Cursor diverges across scopes (workspace
+# `.agents/skills`, global `~/.cursor/skills`) and is represented in
+# Go via agentTarget.userSkillsRel.
 readonly CLAUDE_SKILLS_REL=".claude/skills"
 readonly CLAUDE_CONFIG_REL=".claude"
-readonly CLINE_SKILLS_REL=".cline/skills"
 readonly CODEX_SKILLS_REL=".agents/skills"
 readonly CODEX_CONFIG_REL=".codex"
-readonly CONTINUE_SKILLS_REL=".continue/skills"
 readonly CURSOR_SKILLS_REL=".agents/skills"
 readonly CURSOR_USER_SKILLS_REL=".cursor/skills"
 readonly COPILOT_SKILLS_REL=".agents/skills"
@@ -116,10 +112,10 @@ readonly PI_SKILLS_REL=".agents/skills"
 readonly PI_CONFIG_REL=".pi/extensions"
 readonly PI_USER_CONFIG_REL=".pi/agent/extensions"
 readonly ZED_SKILLS_REL=".agents/skills"
-# Continue / Cursor / Kilo / omp / Zed each ship no per-agent config
-# (configSrc / configRel are empty), so no *_CONFIG_REL mirrors are
-# needed for them. Copilot / OpenCode / Pi have *_CONFIG_REL +
-# *_USER_CONFIG_REL pairs declared further up.
+# Cursor / Kilo / Zed each ship no per-agent config (configSrc /
+# configRel are empty), so no *_CONFIG_REL mirrors are needed for
+# them. Copilot / OpenCode / Pi have *_CONFIG_REL + *_USER_CONFIG_REL
+# pairs declared further up.
 # Parent of CODEX_SKILLS_REL — used by isolation cases that seed sibling
 # files alongside the Codex skills dir. Derived (not a Go constant) to
 # avoid drift if the skillsRel ever moves.
@@ -127,13 +123,9 @@ readonly CODEX_SKILLS_PARENT="${CODEX_SKILLS_REL%/*}"
 # Parent of OPENCODE_SKILLS_REL — used by reset_user_home to wipe the
 # whole .opencode/ tree between cases. Derived for the same drift reason.
 readonly OPENCODE_SKILLS_PARENT="${OPENCODE_SKILLS_REL%/*}"
-# Parent of CLINE_SKILLS_REL — wiped between cases. Cline owns its own
-# `.cline/` dir at both project and user scope.
-readonly CLINE_SKILLS_PARENT="${CLINE_SKILLS_REL%/*}"
 # Parents for the rest of the per-agent roots. Each is wiped between
 # cases via reset_user_home so a previous case's install never bleeds
 # into the next.
-readonly CONTINUE_SKILLS_PARENT="${CONTINUE_SKILLS_REL%/*}"
 readonly CURSOR_USER_SKILLS_PARENT="${CURSOR_USER_SKILLS_REL%/*}"
 readonly KILO_SKILLS_PARENT="${KILO_SKILLS_REL%/*}"
 # Parents of the per-agent hook destinations at user scope. Each is
@@ -367,8 +359,6 @@ reset_user_home() {
          "$HOME/${CODEX_CONFIG_REL}" \
          "$HOME/${CODEX_SKILLS_PARENT}" \
          "$HOME/${OPENCODE_SKILLS_PARENT}" \
-         "$HOME/${CLINE_SKILLS_PARENT}" \
-         "$HOME/${CONTINUE_SKILLS_PARENT}" \
          "$HOME/${CURSOR_USER_SKILLS_PARENT}" \
          "$HOME/${KILO_SKILLS_PARENT}" \
          "$HOME/${COPILOT_USER_CONFIG_PARENT}" \
@@ -893,11 +883,24 @@ reset_user_home
 PROJ_INT2="$(fresh_project)"
 cd "$PROJ_INT2"
 # Picker indices follow agentTargets order (alphabetical by display
-# name): 1 = Claude Code, 2 = Cline, 3 = Codex CLI, … Pick 1+3 so the
-# install lands BOTH a `.claude/skills/` tree (CLAUDE_SKILLS_REL) AND a
-# `.agents/skills/` tree (CODEX_SKILLS_REL), proving the multi-select
-# loop preserves order and the two agents' distinct destinations.
-run_capture "1,3
+# name, enforced by TestAgentTargets_AlphabeticalByDisplayName in
+# init_test.go):
+#   1 = Anthropic Claude Code (.claude/skills)
+#   2 = Cursor                (.agents/skills @ workspace)
+#   3 = GitHub Copilot        (.agents/skills)
+#   4 = Google Antigravity    (.agents/skills @ workspace)
+#   5 = Kilo Code             (.kilocode/skills)
+#   6 = OpenAI Codex          (.agents/skills)
+#   7 = OpenCode              (.opencode/commands)
+#   8 = Pi                    (.agents/skills)
+#   9 = Zed                   (.agents/skills)
+# Pick 1+6 so the install lands BOTH a `.claude/skills/` tree
+# (CLAUDE_SKILLS_REL) AND a `.agents/skills/` tree
+# (CODEX_SKILLS_REL), proving the multi-select loop preserves order
+# and the two agents' distinct destinations. If a future row insertion
+# bumps Codex past index 6, the sort-enforcing unit test will fail
+# first; update the index here in lockstep.
+run_capture "1,6
 1
 
 
@@ -1058,58 +1061,6 @@ assert_is_dir "pi user-scope skills landed" \
 assert_absent "no install under project cwd" \
   "$PROJ_PI_USER/${PI_SKILLS_REL}"
 
-case_start "stax init --agents=cline installs Cline at project scope"
-reset_user_home
-PROJ_CL="$(fresh_project)"
-cd "$PROJ_CL"
-run_capture "" init --agents=cline --scope=project
-assert_eq "exit 0" "$RUN_RC" "0"
-# Cline reads project skills from `.cline/skills` (per docs.cline.bot/
-# customization/overview). Sibling agent directories must remain absent.
-assert_is_dir "cline project skills installed" "$PROJ_CL/${CLINE_SKILLS_REL}/${SKILL_SHIP_DIR}"
-assert_absent "claude NOT installed" "$PROJ_CL/${CLAUDE_SKILLS_REL}"
-assert_absent "codex NOT installed" "$PROJ_CL/${CODEX_SKILLS_REL}"
-
-case_start "stax init --agents=cline --scope=user lands at ~/.cline/skills"
-PROJ_CL_USER="$(fresh_project)"
-cd "$PROJ_CL_USER"
-reset_user_home
-run_capture "" init --agents=cline --scope=user
-assert_eq "exit 0" "$RUN_RC" "0"
-# Cline's user-scope path mirrors its project-scope path under $HOME.
-# Skills land under SANDBOX_HOME; project cwd stays clean.
-assert_is_dir "cline user-scope skills landed" \
-  "${SANDBOX_HOME}/${CLINE_SKILLS_REL}/${SKILL_SHIP_DIR}"
-assert_absent "no install under project cwd" \
-  "$PROJ_CL_USER/${CLINE_SKILLS_REL}"
-
-case_start "stax init --agents=continue installs at .continue/skills"
-reset_user_home
-PROJ_CONT="$(fresh_project)"
-cd "$PROJ_CONT"
-run_capture "" init --agents=continue --scope=project
-assert_eq "exit 0" "$RUN_RC" "0"
-# Continue scans `.continue/skills/` at project scope (per
-# continue.dev customization docs). The cross-agent `.agents/skills`
-# is NOT a Continue lookup, so installing there would land files
-# Continue never reads.
-assert_is_dir "continue project skills installed" \
-  "$PROJ_CONT/${CONTINUE_SKILLS_REL}/${SKILL_SHIP_DIR}"
-assert_absent "claude path NOT installed"   "$PROJ_CONT/${CLAUDE_SKILLS_REL}"
-assert_absent "codex path NOT installed"    "$PROJ_CONT/${CODEX_SKILLS_REL}"
-assert_absent "cline path NOT installed"    "$PROJ_CONT/${CLINE_SKILLS_REL}"
-
-case_start "stax init --agents=continue --scope=user lands at ~/.continue/skills"
-PROJ_CONT_USER="$(fresh_project)"
-cd "$PROJ_CONT_USER"
-reset_user_home
-run_capture "" init --agents=continue --scope=user
-assert_eq "exit 0" "$RUN_RC" "0"
-assert_is_dir "continue user-scope skills landed" \
-  "${SANDBOX_HOME}/${CONTINUE_SKILLS_REL}/${SKILL_SHIP_DIR}"
-assert_absent "no install under project cwd" \
-  "$PROJ_CONT_USER/${CONTINUE_SKILLS_REL}"
-
 case_start "stax init --agents=cursor installs at the shared .agents/skills/ path"
 reset_user_home
 PROJ_CUR="$(fresh_project)"
@@ -1122,7 +1073,6 @@ assert_eq "exit 0" "$RUN_RC" "0"
 assert_is_dir "cursor project skills installed" \
   "$PROJ_CUR/${CURSOR_SKILLS_REL}/${SKILL_SHIP_DIR}"
 assert_absent "claude path NOT installed" "$PROJ_CUR/${CLAUDE_SKILLS_REL}"
-assert_absent "cline path NOT installed"  "$PROJ_CUR/${CLINE_SKILLS_REL}"
 
 case_start "stax init --agents=cursor --scope=user lands at ~/.cursor/skills"
 PROJ_CUR_USER="$(fresh_project)"
@@ -1177,7 +1127,6 @@ assert_eq "exit 0" "$RUN_RC" "0"
 assert_is_dir "zed project skills installed" \
   "$PROJ_ZED/${ZED_SKILLS_REL}/${SKILL_SHIP_DIR}"
 assert_absent "claude path NOT installed" "$PROJ_ZED/${CLAUDE_SKILLS_REL}"
-assert_absent "cline path NOT installed"  "$PROJ_ZED/${CLINE_SKILLS_REL}"
 
 case_start "stax init --agents=zed --scope=user lands at ~/.agents/skills"
 PROJ_ZED_USER="$(fresh_project)"

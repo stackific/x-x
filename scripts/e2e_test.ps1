@@ -67,23 +67,18 @@ Set-Variable -Option Constant -Name OWNED_SKILLS -Value @($SKILL_SCOPE_DIR, $SKI
 # constants.go. The Go registry is sorted alphabetically by display name
 # (case-insensitive) and looked up by `key` in the Go drift check, so
 # these constants are matched by NAME, not by index. Codex, Copilot, Pi,
-# omp, and Zed all resolve skills from `.agents\skills` at workspace
-# scope (cross-agent open spec, install is idempotent so the rows
-# co-exist on disk without conflict). Cline does NOT use the cross-
-# agent path — per docs.cline.bot/customization/overview it reads from
-# `.cline\skills` (project) and `~\.cline\skills` (user) only. Claude
-# and OpenCode stay on their own paths because their lookup logic
-# doesn't include `.agents\skills`. OpenCode, Copilot, Pi, and omp
-# ship no per-agent config today (configRel is ""), so there are no
-# *_CONFIG_REL mirrors for them. Cursor diverges across scopes
-# (workspace `.agents\skills`, global `~\.cursor\skills`) — represented
-# in Go via agentTarget.userSkillsRel.
+# and Zed all resolve skills from `.agents\skills` at workspace scope
+# (cross-agent open spec, install is idempotent so the rows co-exist
+# on disk without conflict). Claude and OpenCode stay on their own
+# paths because their lookup logic doesn't include `.agents\skills`.
+# OpenCode, Copilot, and Pi ship no per-agent config today (configRel
+# is ""), so there are no *_CONFIG_REL mirrors for them. Cursor
+# diverges across scopes (workspace `.agents\skills`, global
+# `~\.cursor\skills`) — represented in Go via agentTarget.userSkillsRel.
 Set-Variable -Option Constant -Name CLAUDE_SKILLS_REL           -Value '.claude\skills'
 Set-Variable -Option Constant -Name CLAUDE_CONFIG_REL           -Value '.claude'
-Set-Variable -Option Constant -Name CLINE_SKILLS_REL            -Value '.cline\skills'
 Set-Variable -Option Constant -Name CODEX_SKILLS_REL            -Value '.agents\skills'
 Set-Variable -Option Constant -Name CODEX_CONFIG_REL            -Value '.codex'
-Set-Variable -Option Constant -Name CONTINUE_SKILLS_REL         -Value '.continue\skills'
 Set-Variable -Option Constant -Name CURSOR_SKILLS_REL           -Value '.agents\skills'
 Set-Variable -Option Constant -Name CURSOR_USER_SKILLS_REL      -Value '.cursor\skills'
 Set-Variable -Option Constant -Name COPILOT_SKILLS_REL          -Value '.agents\skills'
@@ -2693,70 +2688,6 @@ try {
     (Join-Path $projPi2 (Join-Path $PI_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
-Start-Case 'init --agents=cline project-scope install'
-Reset-UserHome
-$projCL1 = New-FreshProject
-Push-Location $projCL1
-try {
-  Invoke-XX init --scope project --agents=cline `
-                    --prefix-width 4 --max-work-item-lines 30 --review-per task
-  Assert-Eq    'exit 0' $RunRC 0
-  # Cline reads project skills from `.cline\skills` per docs.cline.bot/
-  # customization/overview. Sibling agent dirs stay absent.
-  Assert-IsDir 'cline project skills present' `
-    (Join-Path $projCL1 (Join-Path $CLINE_SKILLS_REL $SKILL_SHIP_DIR))
-  Assert-NotExists 'claude skills NOT present' `
-    (Join-Path $projCL1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
-  Assert-NotExists 'codex skills NOT present' `
-    (Join-Path $projCL1 (Join-Path $CODEX_SKILLS_REL $SKILL_SHIP_DIR))
-} finally { Pop-Location }
-
-Start-Case 'init --agents=cline --scope=user lands at ~/.cline/skills'
-Reset-UserHome
-$projCL2 = New-FreshProject
-Push-Location $projCL2
-try {
-  Invoke-XX init --scope user --agents=cline `
-                    --prefix-width 4 --max-work-item-lines 30 --review-per task
-  Assert-Eq    'exit 0' $RunRC 0
-  # User scope: cline's `.cline\skills` resolves relative to $HOME.
-  # Skills land under USERPROFILE, project cwd stays untouched.
-  Assert-IsDir 'cline user-scope skills landed' `
-    (Join-Path $env:USERPROFILE (Join-Path $CLINE_SKILLS_REL $SKILL_SHIP_DIR))
-  Assert-NotExists 'no install under project cwd' `
-    (Join-Path $projCL2 (Join-Path $CLINE_SKILLS_REL $SKILL_SHIP_DIR))
-} finally { Pop-Location }
-
-Start-Case 'init --agents=continue project-scope install (.continue\skills)'
-Reset-UserHome
-$projCont1 = New-FreshProject
-Push-Location $projCont1
-try {
-  Invoke-XX init --scope project --agents=continue `
-                    --prefix-width 4 --max-work-item-lines 30 --review-per task
-  Assert-Eq    'exit 0' $RunRC 0
-  Assert-IsDir 'continue project skills present' `
-    (Join-Path $projCont1 (Join-Path $CONTINUE_SKILLS_REL $SKILL_SHIP_DIR))
-  Assert-NotExists 'claude path NOT present' `
-    (Join-Path $projCont1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
-  Assert-NotExists 'codex path NOT present' `
-    (Join-Path $projCont1 (Join-Path $CODEX_SKILLS_REL $SKILL_SHIP_DIR))
-} finally { Pop-Location }
-
-Start-Case 'init --agents=continue --scope=user lands at ~\.continue\skills'
-Reset-UserHome
-$projCont2 = New-FreshProject
-Push-Location $projCont2
-try {
-  Invoke-XX init --scope user --agents=continue `
-                    --prefix-width 4 --max-work-item-lines 30 --review-per task
-  Assert-Eq    'exit 0' $RunRC 0
-  Assert-IsDir 'continue user-scope skills landed' `
-    (Join-Path $env:USERPROFILE (Join-Path $CONTINUE_SKILLS_REL $SKILL_SHIP_DIR))
-  Assert-NotExists 'no install under project cwd' `
-    (Join-Path $projCont2 (Join-Path $CONTINUE_SKILLS_REL $SKILL_SHIP_DIR))
-} finally { Pop-Location }
-
 Start-Case 'init --agents=cursor project-scope install (shared .agents\skills)'
 Reset-UserHome
 $projCur1 = New-FreshProject
@@ -2769,8 +2700,6 @@ try {
     (Join-Path $projCur1 (Join-Path $CURSOR_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'claude path NOT present' `
     (Join-Path $projCur1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
-  Assert-NotExists 'cline path NOT present' `
-    (Join-Path $projCur1 (Join-Path $CLINE_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init --agents=cursor --scope=user lands at ~\.cursor\skills'
@@ -2834,8 +2763,6 @@ try {
     (Join-Path $projZed1 (Join-Path $ZED_SKILLS_REL $SKILL_SHIP_DIR))
   Assert-NotExists 'claude path NOT present' `
     (Join-Path $projZed1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
-  Assert-NotExists 'cline path NOT present' `
-    (Join-Path $projZed1 (Join-Path $CLINE_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
 Start-Case 'init --agents=zed --scope=user lands at ~\.agents\skills'

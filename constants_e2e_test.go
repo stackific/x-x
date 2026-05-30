@@ -45,12 +45,9 @@ func TestE2EShellConstantsMatchGo(t *testing.T) {
 
 		"CLAUDE_SKILLS_REL": agentByKey("claude").skillsRel,
 		"CLAUDE_CONFIG_REL": agentByKey("claude").configRel,
-		"CLINE_SKILLS_REL":  agentByKey("cline").skillsRel,
-		// Cline bundles no per-agent config (configRel is ""); no mirror needed.
-		"CODEX_SKILLS_REL":    agentByKey("codex").skillsRel,
-		"CODEX_CONFIG_REL":    agentByKey("codex").configRel,
-		"CONTINUE_SKILLS_REL": agentByKey("continue").skillsRel,
-		"CURSOR_SKILLS_REL":   agentByKey("cursor").skillsRel,
+		"CODEX_SKILLS_REL":  agentByKey("codex").skillsRel,
+		"CODEX_CONFIG_REL":  agentByKey("codex").configRel,
+		"CURSOR_SKILLS_REL": agentByKey("cursor").skillsRel,
 		// Cursor has a single user-scope override; userSkillsRels[0] resolves
 		// it under the slice-typed field shared with multi-destination agents
 		// (Google Antigravity below).
@@ -78,7 +75,7 @@ func TestE2EShellConstantsMatchGo(t *testing.T) {
 		"PI_CONFIG_REL":                      agentByKey("pi").configRel,
 		"PI_USER_CONFIG_REL":                 agentByKey("pi").userConfigRel,
 		"ZED_SKILLS_REL":                     agentByKey("zed").skillsRel,
-		// Continue / Cursor / Kilo / Zed each bundle no per-agent
+		// Cursor / Kilo / Zed each bundle no per-agent
 		// config (configRel is ""), so no *_CONFIG_REL mirror is needed.
 
 		// Local-server constants — the bare-stax HTTP listener (server.go)

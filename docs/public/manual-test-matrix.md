@@ -33,17 +33,15 @@ cell is visible at a glance.
 
 | Agent | macOS / Linux — project | macOS / Linux — user | Windows — project | Windows — user | Last verified |
 |---|:-:|:-:|:-:|:-:|:-:|
-| Anthropic Claude Code | ⏳ | ⏳ | ⏳ | ⏳ | |
-| OpenAI Codex | ⏳ | ⏳ | ⏳ | ⏳ | |
-| GitHub Copilot | ⏳ | ⏳ | ⏳ | ⏳ | |
-| Google Antigravity | ⏳ | ⏳ | ⏳ | ⏳ | |
-| OpenCode | ⏳ | ⏳ | ⏳ | ⏳ | |
-| Pi | ⏳ | ⏳ | ⏳ | ⏳ | |
-| Cline | ⏳ | ⏳ | ⏳ | ⏳ | |
-| Continue | ⏳ | ⏳ | ⏳ | ⏳ | |
-| Cursor | ⏳ | ⏳ | ⏳ | ⏳ | |
-| Kilo Code | ⏳ | ⏳ | ⏳ | ⏳ | |
-| Zed | ⏳ | ⏳ | ⏳ | ⏳ | |
+| Anthropic Claude Code | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
+| Cursor | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
+| GitHub Copilot | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
+| Google Antigravity | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
+| Kilo Code | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
+| OpenAI Codex | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
+| OpenCode | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
+| Pi | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
+| Zed | ✅ | ✅ | ✅ | ✅ | May 29, 2026 |
 
 **Skills checklist per cell** (what counts as ✅):
 
@@ -79,8 +77,6 @@ cell is visible at a glance.
 | Google Antigravity | ⏳ | ⏳ | ⏳ | ⏳ | |
 | OpenCode | ⏳ | ⏳ | ⏳ | ⏳ | |
 | Pi | ⏳ | ⏳ | ⏳ | ⏳ | |
-| Cline | ➖ | ➖ | ➖ | ➖ | |
-| Continue | ➖ | ➖ | ➖ | ➖ | |
 | Cursor | ➖ | ➖ | ➖ | ➖ | |
 | Kilo Code | ➖ | ➖ | ➖ | ➖ | |
 | Zed | ➖ | ➖ | ➖ | ➖ | |
@@ -123,8 +119,6 @@ cell is visible at a glance.
 | Google Antigravity | `.agents/skills/` | `~/.gemini/antigravity-cli/skills/` AND `~/.gemini/config/skills/` | `.gemini/settings.json` | `~/.gemini/settings.json` |
 | OpenCode | `.opencode/commands/` | `~/.opencode/commands/` | `.opencode/plugins/stax.ts` | `~/.config/opencode/plugins/stax.ts` |
 | Pi | `.agents/skills/` | `~/.agents/skills/` | `.pi/extensions/stax.ts` | `~/.pi/agent/extensions/stax.ts` |
-| Cline | `.cline/skills/` | `~/.cline/skills/` | _n/a_ | _n/a_ |
-| Continue | `.continue/skills/` | `~/.continue/skills/` | _n/a_ | _n/a_ |
 | Cursor | `.agents/skills/` | `~/.cursor/skills/` | _n/a_ | _n/a_ |
 | Kilo Code | `.kilocode/skills/` | `~/.kilocode/skills/` | _n/a_ | _n/a_ |
 | Zed | `.agents/skills/` | `~/.agents/skills/` | _n/a_ | _n/a_ |

@@ -1612,6 +1612,35 @@ func TestSkillsRelsFor_ResolvesPerScopeAndMultiDestination(t *testing.T) {
 	}
 }
 
+// TestAgentTargets_AlphabeticalByDisplayName enforces the registry-
+// order contract the agent-picker UX relies on: the comment above
+// `agentTargets` claims rows are ordered alphabetically by display
+// name (case-insensitive) so the interactive multi-select reads as
+// a stable A→Z list at every scope. Renames have historically
+// drifted the de-facto order out of alphabetical without being
+// caught — this test fails loudly the moment a new row is inserted
+// at the wrong index or an existing row's display name is changed
+// without a matching move.
+//
+// Cross-references:
+//   - `promptAgents` (init.go) emits the picker using `agentTargets`
+//     in its declared order, so a sort regression is directly user-
+//     visible in the TUI.
+//   - The bash e2e at scripts/e2e_test.sh "stax init interactive
+//     (explicit agents + project scope)" feeds picker indices 1+6
+//     (Anthropic Claude Code + OpenAI Codex). Whenever this test
+//     fails, that case will also need its indices updated.
+func TestAgentTargets_AlphabeticalByDisplayName(t *testing.T) {
+	for i := 1; i < len(agentTargets); i++ {
+		prev := strings.ToLower(agentTargets[i-1].name)
+		curr := strings.ToLower(agentTargets[i].name)
+		if prev > curr {
+			t.Errorf("agentTargets[%d] (%q) sorts AFTER agentTargets[%d] (%q) — registry must be alphabetical by display name (case-insensitive); move the offending row OR fix its display name",
+				i-1, agentTargets[i-1].name, i, agentTargets[i].name)
+		}
+	}
+}
+
 // TestAgentTargets_AntigravityRowShape pins the Antigravity registry row
 // against accidental drift. The display name and dual-user-scope skill
 // destinations are part of the docs contract — anything that quietly
