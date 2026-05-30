@@ -100,7 +100,6 @@ readonly ANTIGRAVITY_USER_SKILLS_REL_CLI=".gemini/antigravity-cli/skills"
 readonly ANTIGRAVITY_USER_SKILLS_REL_SHARED=".gemini/config/skills"
 readonly ANTIGRAVITY_CONFIG_REL=".gemini"
 readonly KILO_SKILLS_REL=".kilocode/skills"
-readonly OMP_SKILLS_REL=".agents/skills"
 readonly OPENCODE_SKILLS_REL=".opencode/commands"
 # OpenCode's hook surface is a TypeScript plugin file, NOT a JSON
 # config — it gets installed via the .ts whole-file-ownership branch
@@ -1084,43 +1083,6 @@ assert_is_dir "cline user-scope skills landed" \
 assert_absent "no install under project cwd" \
   "$PROJ_CL_USER/${CLINE_SKILLS_REL}"
 
-case_start "stax init --agents=omp installs at the shared .agents/skills/ path"
-reset_user_home
-PROJ_OMP="$(fresh_project)"
-cd "$PROJ_OMP"
-run_capture "" init --agents=omp --scope=project
-assert_eq "exit 0" "$RUN_RC" "0"
-# omp reuses the cross-agent `.agents/skills/` path (Codex and Copilot
-# do the same — see their cases above). omp's documented `agents`
-# skill provider (priority 70 in docs/skills.md) walks the path at
-# every cwd ancestor up to repoRoot. The paths the other agents claim
-# exclusively (Claude `.claude/skills`, OpenCode `.opencode/commands`)
-# must NOT be touched — that's how we know `--agents=omp` didn't
-# accidentally install the whole registry.
-assert_is_dir "omp project skills installed" \
-  "$PROJ_OMP/${OMP_SKILLS_REL}/${SKILL_SHIP_DIR}"
-assert_absent "claude path NOT installed"   "$PROJ_OMP/${CLAUDE_SKILLS_REL}"
-assert_absent "opencode path NOT installed" "$PROJ_OMP/${OPENCODE_SKILLS_REL}"
-# Per-agent config files of OTHER agents (Codex hooks.json, Claude
-# settings.json) must also stay absent — confirms the install was
-# really scoped to the single requested row, not all of them.
-assert_absent "codex config NOT installed"  "$PROJ_OMP/${CODEX_CONFIG_REL}"
-assert_absent "claude config NOT installed" "$PROJ_OMP/${CLAUDE_CONFIG_REL}"
-
-case_start "stax init --agents=omp --scope=user lands at ~/.agents/skills"
-PROJ_OMP_USER="$(fresh_project)"
-cd "$PROJ_OMP_USER"
-reset_user_home
-run_capture "" init --agents=omp --scope=user
-assert_eq "exit 0" "$RUN_RC" "0"
-# `agents` provider scans `$HOME/.agents/skills/` at user scope — same
-# path Codex and Copilot use at user scope. Skills land under
-# SANDBOX_HOME, project cwd is left alone.
-assert_is_dir "omp user-scope skills landed" \
-  "${SANDBOX_HOME}/${OMP_SKILLS_REL}/${SKILL_SHIP_DIR}"
-assert_absent "no install under project cwd" \
-  "$PROJ_OMP_USER/${OMP_SKILLS_REL}"
-
 case_start "stax init --agents=continue installs at .continue/skills"
 reset_user_home
 PROJ_CONT="$(fresh_project)"
@@ -1227,6 +1189,231 @@ assert_is_dir "zed user-scope skills landed" \
   "${SANDBOX_HOME}/${ZED_SKILLS_REL}/${SKILL_SHIP_DIR}"
 assert_absent "no install under project cwd" \
   "$PROJ_ZED_USER/${ZED_SKILLS_REL}"
+
+# ---------- per-agent --scope=user skills install for hook-shipping agents ----------
+#
+# claude / codex / opencode lacked an explicit `--scope=user` install
+# case at single-agent granularity in bash. The combined cases (e.g.
+# `init --scope=user --agents=claude,codex` further down) covered them
+# transitively but a regression that broke ONE row's user-scope
+# resolver while leaving the other working would have slipped through.
+
+case_start "stax init --agents=claude --scope=user lands at ~/.claude/skills"
+reset_user_home
+PROJ_CL_USER="$(fresh_project)"
+cd "$PROJ_CL_USER"
+run_capture "" init --agents=claude --scope=user
+assert_eq "exit 0" "$RUN_RC" "0"
+assert_is_dir "claude user-scope skills landed" \
+  "${SANDBOX_HOME}/${CLAUDE_SKILLS_REL}/${SKILL_SHIP_DIR}"
+assert_is_file "claude user-scope settings.json present" \
+  "${SANDBOX_HOME}/${CLAUDE_SETTINGS_PATH}"
+assert_absent "no install under project cwd" \
+  "$PROJ_CL_USER/${CLAUDE_SKILLS_REL}"
+
+case_start "stax init --agents=codex --scope=user lands at ~/.agents/skills + ~/.codex/hooks.json"
+reset_user_home
+PROJ_CX_USER="$(fresh_project)"
+cd "$PROJ_CX_USER"
+run_capture "" init --agents=codex --scope=user
+assert_eq "exit 0" "$RUN_RC" "0"
+assert_is_dir "codex user-scope skills landed" \
+  "${SANDBOX_HOME}/${CODEX_SKILLS_REL}/${SKILL_SHIP_DIR}"
+assert_is_file "codex user-scope hooks.json present" \
+  "${SANDBOX_HOME}/${CODEX_HOOKS_PATH}"
+assert_absent "no install under project cwd" \
+  "$PROJ_CX_USER/${CODEX_SKILLS_REL}"
+
+case_start "stax init --agents=opencode --scope=user lands at ~/.opencode/commands + ~/.config/opencode/plugins"
+reset_user_home
+PROJ_OC_USER="$(fresh_project)"
+cd "$PROJ_OC_USER"
+run_capture "" init --agents=opencode --scope=user
+assert_eq "exit 0" "$RUN_RC" "0"
+assert_is_dir "opencode user-scope skills landed" \
+  "${SANDBOX_HOME}/${OPENCODE_SKILLS_REL}/${SKILL_SHIP_DIR}"
+assert_is_file "opencode user-scope plugin stax.ts present" \
+  "${SANDBOX_HOME}/${OPENCODE_USER_CONFIG_REL}/stax.ts"
+assert_absent "no install under project cwd" \
+  "$PROJ_OC_USER/${OPENCODE_SKILLS_REL}"
+
+# ---------- Google Antigravity bash twins (PS1 parity) ----------
+#
+# Behavior-neutral mirrors of the antigravity cases at the bottom of
+# scripts/e2e_test.ps1 (search for "Google Antigravity: dual user-scope
+# skills + JSON hooks"). Same install / un-merge contract: project
+# scope lands skills at .agents/skills/ and hooks at
+# .gemini/settings.json; user scope writes skills to BOTH
+# ~/.gemini/antigravity-cli/skills/ and ~/.gemini/config/skills/ plus
+# hooks at ~/.gemini/settings.json. The fact that one install drops
+# skills into two user-scope discovery roots is the
+# multi-destination `userSkillsRels []string` behavior unique to the
+# antigravity row.
+
+case_start "Antigravity: init --scope=project lands skills + settings.json"
+reset_user_home
+PROJ_AG="$(fresh_project)"
+cd "$PROJ_AG"
+run_capture "" init --scope=project --agents=antigravity
+assert_eq "exit 0" "$RUN_RC" "0"
+assert_is_dir  "project antigravity skill ${SKILL_SHIP_DIR}" \
+  "$PROJ_AG/${ANTIGRAVITY_SKILLS_REL}/${SKILL_SHIP_DIR}"
+assert_is_dir  "project antigravity skill ${SKILL_SCOPE_DIR}" \
+  "$PROJ_AG/${ANTIGRAVITY_SKILLS_REL}/${SKILL_SCOPE_DIR}"
+assert_is_file "project antigravity settings.json present" \
+  "$PROJ_AG/${ANTIGRAVITY_CONFIG_REL}/settings.json"
+AG_BODY="$(cat "$PROJ_AG/${ANTIGRAVITY_CONFIG_REL}/settings.json")"
+assert_contains "hooks key present"   "$AG_BODY" '"hooks"'
+assert_contains "PostToolUse present" "$AG_BODY" '"PostToolUse"'
+assert_contains "lint command present" "$AG_BODY" 'stax work-items lint'
+# User-scope paths must NOT have been touched by a project-scope install.
+assert_absent "user-scope CLI-local skills empty after project install" \
+  "${SANDBOX_HOME}/${ANTIGRAVITY_USER_SKILLS_REL_CLI}/${SKILL_SCOPE_DIR}"
+assert_absent "user-scope shared skills empty after project install" \
+  "${SANDBOX_HOME}/${ANTIGRAVITY_USER_SKILLS_REL_SHARED}/${SKILL_SCOPE_DIR}"
+assert_absent "user-scope settings.json empty after project install" \
+  "${SANDBOX_HOME}/${ANTIGRAVITY_CONFIG_REL}/settings.json"
+
+case_start "Antigravity: init --scope=user lands skills at BOTH user roots + settings.json"
+reset_user_home
+PROJ_AG_USER="$(fresh_project)"
+cd "$PROJ_AG_USER"
+run_capture "" init --scope=user --agents=antigravity
+assert_eq "exit 0" "$RUN_RC" "0"
+# Multi-destination `userSkillsRels` lands skills into BOTH the
+# CLI-local root (.gemini/antigravity-cli/skills) AND the shared
+# root (.gemini/config/skills) in one install.
+assert_is_dir "antigravity user CLI-local skill ship" \
+  "${SANDBOX_HOME}/${ANTIGRAVITY_USER_SKILLS_REL_CLI}/${SKILL_SHIP_DIR}"
+assert_is_dir "antigravity user shared skill ship" \
+  "${SANDBOX_HOME}/${ANTIGRAVITY_USER_SKILLS_REL_SHARED}/${SKILL_SHIP_DIR}"
+assert_is_dir "antigravity user CLI-local skill scope" \
+  "${SANDBOX_HOME}/${ANTIGRAVITY_USER_SKILLS_REL_CLI}/${SKILL_SCOPE_DIR}"
+assert_is_dir "antigravity user shared skill scope" \
+  "${SANDBOX_HOME}/${ANTIGRAVITY_USER_SKILLS_REL_SHARED}/${SKILL_SCOPE_DIR}"
+assert_is_file "antigravity user settings.json present" \
+  "${SANDBOX_HOME}/${ANTIGRAVITY_CONFIG_REL}/settings.json"
+# Project cwd must stay clean — user scope writes nothing under cwd
+# except the .stax/_config.lock + _data_systems.yaml scaffold.
+assert_absent "no antigravity project skill install under cwd" \
+  "$PROJ_AG_USER/${ANTIGRAVITY_SKILLS_REL}"
+assert_absent "no antigravity project settings.json under cwd" \
+  "$PROJ_AG_USER/${ANTIGRAVITY_CONFIG_REL}/settings.json"
+
+case_start "Antigravity: init re-run merges into edited settings.json"
+reset_user_home
+PROJ_AG_M="$(fresh_project)"
+cd "$PROJ_AG_M"
+run_capture "" init --scope=project --agents=antigravity
+assert_eq "first init exit 0" "$RUN_RC" "0"
+cat > "$PROJ_AG_M/${ANTIGRAVITY_CONFIG_REL}/settings.json" <<'EOF'
+{
+  "userOnlyKey": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {"type": "command", "command": "USER-ANTIGRAVITY-HOOK"}
+        ]
+      }
+    ]
+  }
+}
+EOF
+rm "$PROJ_AG_M/${STAX_LOCK_PATH}"
+run_capture "" init --scope=project --agents=antigravity
+AG_M_BODY="$(cat "$PROJ_AG_M/${ANTIGRAVITY_CONFIG_REL}/settings.json")"
+assert_contains "user scalar survives merge" "$AG_M_BODY" 'userOnlyKey'
+assert_contains "user hook survives merge"   "$AG_M_BODY" 'USER-ANTIGRAVITY-HOOK'
+assert_contains "bundled hook landed"        "$AG_M_BODY" 'stax work-items lint'
+
+case_start "Antigravity: skill remove --project un-merges bundled records"
+reset_user_home
+PROJ_AG_R="$(fresh_project)"
+cd "$PROJ_AG_R"
+run_capture "" init --scope=project --agents=antigravity
+# Bundled records here MUST stay byte-equal to agents/antigravity/settings.json
+# — TestE2EHookFixtureMirrorsBundle pins this from the Go side against the
+# heredoc below. Drift in one mirror is caught at unit-test speed.
+cat > "$PROJ_AG_R/${ANTIGRAVITY_CONFIG_REL}/settings.json" <<'EOF'
+{
+  "userOnlyKey": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {"type": "command", "command": "stax work-items lint"}
+        ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {"type": "command", "command": "USER-ANTIGRAVITY-HOOK"}
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {"type": "command", "command": "stax work-items lint"}
+        ]
+      }
+    ]
+  }
+}
+EOF
+run_capture "" skills remove --project
+assert_eq "exit 0" "$RUN_RC" "0"
+AG_R_BODY="$(cat "$PROJ_AG_R/${ANTIGRAVITY_CONFIG_REL}/settings.json")"
+assert_not_contains "bundled command gone"           "$AG_R_BODY" 'stax work-items lint'
+assert_contains     "user antigravity hook survives" "$AG_R_BODY" 'USER-ANTIGRAVITY-HOOK'
+assert_contains     "user scalar survives un-merge"  "$AG_R_BODY" 'userOnlyKey'
+
+case_start "Antigravity: skills remove --user un-merges bundled hooks from user settings.json"
+reset_user_home
+PROJ_AG_RU="$(fresh_project)"
+cd "$PROJ_AG_RU"
+run_capture "" init --scope=user --agents=antigravity
+# Augment the user-scope settings.json so the un-merge has to drop
+# ours while leaving the user record + top-level scalar.
+cat > "$HOME/${ANTIGRAVITY_CONFIG_REL}/settings.json" <<'EOF'
+{
+  "userOnlyKey": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {"type": "command", "command": "stax work-items lint"}
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {"type": "command", "command": "USER-ANTIGRAVITY-USER-HOOK"}
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {"type": "command", "command": "stax work-items lint"}
+        ]
+      }
+    ]
+  }
+}
+EOF
+run_capture "" skills remove --user
+assert_eq "exit 0" "$RUN_RC" "0"
+AG_RU_BODY="$(cat "$HOME/${ANTIGRAVITY_CONFIG_REL}/settings.json")"
+assert_not_contains "user-scope bundled cmd gone"       "$AG_RU_BODY" 'stax work-items lint'
+assert_contains     "user-scope user antigravity hook"  "$AG_RU_BODY" 'USER-ANTIGRAVITY-USER-HOOK'
+assert_contains     "user-scope scalar survives"        "$AG_RU_BODY" 'userOnlyKey'
 
 case_start "stax init --agents=invalid rejects unknown agent"
 reset_user_home

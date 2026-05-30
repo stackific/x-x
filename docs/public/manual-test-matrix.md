@@ -39,7 +39,6 @@ cell is visible at a glance.
 | Google Antigravity | ⏳ | ⏳ | ⏳ | ⏳ | |
 | OpenCode | ⏳ | ⏳ | ⏳ | ⏳ | |
 | Pi | ⏳ | ⏳ | ⏳ | ⏳ | |
-| Oh My Pi | ⏳ | ⏳ | ⏳ | ⏳ | |
 | Cline | ⏳ | ⏳ | ⏳ | ⏳ | |
 | Continue | ⏳ | ⏳ | ⏳ | ⏳ | |
 | Cursor | ⏳ | ⏳ | ⏳ | ⏳ | |
@@ -80,7 +79,6 @@ cell is visible at a glance.
 | Google Antigravity | ⏳ | ⏳ | ⏳ | ⏳ | |
 | OpenCode | ⏳ | ⏳ | ⏳ | ⏳ | |
 | Pi | ⏳ | ⏳ | ⏳ | ⏳ | |
-| Oh My Pi | ➖ | ➖ | ➖ | ➖ | |
 | Cline | ➖ | ➖ | ➖ | ➖ | |
 | Continue | ➖ | ➖ | ➖ | ➖ | |
 | Cursor | ➖ | ➖ | ➖ | ➖ | |
@@ -125,7 +123,6 @@ cell is visible at a glance.
 | Google Antigravity | `.agents/skills/` | `~/.gemini/antigravity-cli/skills/` AND `~/.gemini/config/skills/` | `.gemini/settings.json` | `~/.gemini/settings.json` |
 | OpenCode | `.opencode/commands/` | `~/.opencode/commands/` | `.opencode/plugins/stax.ts` | `~/.config/opencode/plugins/stax.ts` |
 | Pi | `.agents/skills/` | `~/.agents/skills/` | `.pi/extensions/stax.ts` | `~/.pi/agent/extensions/stax.ts` |
-| Oh My Pi | `.agents/skills/` | `~/.agents/skills/` | _n/a_ | _n/a_ |
 | Cline | `.cline/skills/` | `~/.cline/skills/` | _n/a_ | _n/a_ |
 | Continue | `.continue/skills/` | `~/.continue/skills/` | _n/a_ | _n/a_ |
 | Cursor | `.agents/skills/` | `~/.cursor/skills/` | _n/a_ | _n/a_ |

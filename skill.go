@@ -160,7 +160,7 @@ func runSkillsRemove(args []string) {
 	if err != nil {
 		exitErr(err)
 	}
-	fmt.Printf("Removing bundled stax skills from %s scope (%s)\n", label, scopeRoot)
+	fmt.Printf("Removing only stax's skills/hooks from %s scope (%s)...\n", label, scopeRoot)
 
 	// Build the allowlist set once. ownedSkills is small (one entry per
 	// bundled skill) so the cost is negligible; the map gives the per-entry

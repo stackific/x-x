@@ -48,14 +48,6 @@ CLAUDE_ENV_DEFAULTS = {
 # stays uniform across backends.
 OPENCODE_ENV_DEFAULTS: dict[str, str] = {}
 
-# omp (oh-my-pi) ships a built-in `deepseek` provider catalog (see
-# provider-models/descriptors.ts `catalogDescriptor("deepseek", ...)`),
-# so DEEPSEEK_API_KEY routes directly to api.deepseek.com — same pattern
-# as OpenCode. Model selection is passed via `--model deepseek/<id>` from
-# omp_driver.py at spawn time. Recorded as an empty dict so the per-agent
-# env-setup loop stays uniform across backends.
-OMP_ENV_DEFAULTS: dict[str, str] = {}
-
 # GitHub Copilot CLI BYOK routing. Provider type MUST be `anthropic` (not
 # `openai`) — DeepSeek requires reasoning_content echo-back on subsequent
 # requests, which Copilot CLI's OpenAI integration does not support and
@@ -95,18 +87,17 @@ CLINE_ENV_DEFAULTS: dict[str, str] = {}
 # Which agent backend the workspace fixture installs and probes for.
 # Default `claude` keeps the existing Claude tests running unchanged.
 # Workflows targeting other backends (e.g. skills-eval-opencode.yml,
-# skills-eval-copilot.yml, skills-eval-pi.yml, skills-eval-cline.yml,
-# manual-omp-judge.yml) set STAX_AGENT_KEY=<key> to flip both the binary
-# the fixture skips on if missing and the per-agent env defaults that
-# get pointed at DeepSeek.
-VALID_AGENT_KEYS = ("claude", "opencode", "copilot", "pi", "cline", "omp")
+# skills-eval-copilot.yml, skills-eval-pi.yml, skills-eval-cline.yml)
+# set STAX_AGENT_KEY=<key> to flip both the binary the fixture skips
+# on if missing and the per-agent env defaults that get pointed at
+# DeepSeek.
+VALID_AGENT_KEYS = ("claude", "opencode", "copilot", "pi", "cline")
 AGENT_BINARY_FOR_KEY = {
   "claude": "claude",
   "opencode": "opencode",
   "copilot": "copilot",
   "pi": "pi",
   "cline": "cline",
-  "omp": "omp",
 }
 AGENT_ENV_DEFAULTS_FOR_KEY = {
   "claude": CLAUDE_ENV_DEFAULTS,
@@ -114,14 +105,13 @@ AGENT_ENV_DEFAULTS_FOR_KEY = {
   "copilot": COPILOT_ENV_DEFAULTS,
   "pi": PI_ENV_DEFAULTS,
   "cline": CLINE_ENV_DEFAULTS,
-  "omp": OMP_ENV_DEFAULTS,
 }
 # Value passed to `stax init --agents <value>` for each backend. The
 # binary's agentTargets registry (constants.go) recognizes "claude",
-# "codex", "opencode", "pi", "cline", "omp", and "copilot" — each as a
+# "codex", "opencode", "pi", "cline", and "copilot" — each as a
 # first-class entry with its own skillsRel. Copilot's row uses
 # `.agents/skills` at both scopes (the cross-agent open spec path
-# Codex / Pi / omp also share); copilot CLI's discovery list reads
+# Codex / Pi also share); copilot CLI's discovery list reads
 # `.claude/skills/` at project scope and `~/.agents/skills/` at user
 # scope, so installing at `.agents/skills` works at both — project
 # scope via copilot's secondary discovery path, user scope as the
@@ -132,21 +122,18 @@ AGENT_INIT_VALUE_FOR_KEY = {
   "copilot": "copilot",
   "pi": "pi",
   "cline": "cline",
-  "omp": "omp",
 }
 # Per-agent skills install root used by the user-scope post-install
 # log. Mirrors `agentTargets[N].skillsRelFor(scopeUser)` from
 # constants.go for each backend — Claude reads `.claude/skills/`,
-# OpenCode reads `.opencode/commands/`, Copilot CLI / Codex / Pi /
-# omp all read `.agents/skills/` at user scope, Cline reads
-# `.cline/skills/`.
+# OpenCode reads `.opencode/commands/`, Copilot CLI / Codex / Pi all
+# read `.agents/skills/` at user scope, Cline reads `.cline/skills/`.
 AGENT_USER_SKILLS_REL_FOR_KEY = {
   "claude": Path(".claude") / "skills",
   "opencode": Path(".opencode") / "commands",
   "copilot": Path(".agents") / "skills",
   "pi": Path(".agents") / "skills",
   "cline": Path(".cline") / "skills",
-  "omp": Path(".agents") / "skills",
 }
 
 # Which `stax init --scope` value to use when bootstrapping each test's

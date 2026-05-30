@@ -101,7 +101,6 @@ Set-Variable -Option Constant -Name ANTIGRAVITY_USER_SKILLS_REL_CLI    -Value '.
 Set-Variable -Option Constant -Name ANTIGRAVITY_USER_SKILLS_REL_SHARED -Value '.gemini\config\skills'
 Set-Variable -Option Constant -Name ANTIGRAVITY_CONFIG_REL             -Value '.gemini'
 Set-Variable -Option Constant -Name KILO_SKILLS_REL             -Value '.kilocode\skills'
-Set-Variable -Option Constant -Name OMP_SKILLS_REL              -Value '.agents\skills'
 Set-Variable -Option Constant -Name OPENCODE_SKILLS_REL         -Value '.opencode\commands'
 # OpenCode plugin: TypeScript whole-file ownership. Both scopes diverge
 # on directory (`.opencode\plugins\` vs `.config\opencode\plugins\`).
@@ -2728,48 +2727,6 @@ try {
     (Join-Path $projCL2 (Join-Path $CLINE_SKILLS_REL $SKILL_SHIP_DIR))
 } finally { Pop-Location }
 
-Start-Case 'init --agents=omp project-scope install'
-Reset-UserHome
-$projOmp1 = New-FreshProject
-Push-Location $projOmp1
-try {
-  Invoke-XX init --scope project --agents=omp `
-                    --prefix-width 4 --max-work-item-lines 30 --review-per task
-  Assert-Eq    'exit 0' $RunRC 0
-  # Project scope: omp reuses the cross-agent `.agents\skills` path
-  # (Codex and Copilot do the same). omp's documented `agents` skill
-  # provider (priority 70 in docs/skills.md) walks the path at every
-  # cwd ancestor up to repoRoot.
-  Assert-IsDir 'omp project skills present' `
-    (Join-Path $projOmp1 (Join-Path $OMP_SKILLS_REL $SKILL_SHIP_DIR))
-  # The paths the OTHER agents claim exclusively must stay absent.
-  Assert-NotExists 'claude path NOT present' `
-    (Join-Path $projOmp1 (Join-Path $CLAUDE_SKILLS_REL $SKILL_SHIP_DIR))
-  Assert-NotExists 'opencode path NOT present' `
-    (Join-Path $projOmp1 (Join-Path $OPENCODE_SKILLS_REL $SKILL_SHIP_DIR))
-  # Per-agent config files of other agents must also stay absent.
-  Assert-NotExists 'codex config NOT present' `
-    (Join-Path $projOmp1 $CODEX_CONFIG_REL)
-  Assert-NotExists 'claude config NOT present' `
-    (Join-Path $projOmp1 $CLAUDE_CONFIG_REL)
-} finally { Pop-Location }
-
-Start-Case 'init --agents=omp --scope=user lands at ~/.agents/skills'
-Reset-UserHome
-$projOmp2 = New-FreshProject
-Push-Location $projOmp2
-try {
-  Invoke-XX init --scope user --agents=omp `
-                    --prefix-width 4 --max-work-item-lines 30 --review-per task
-  Assert-Eq    'exit 0' $RunRC 0
-  # User scope: omp's `agents` provider scans `$HOME\.agents\skills` —
-  # same path Codex and Copilot use at user scope.
-  Assert-IsDir 'omp user-scope skills landed' `
-    (Join-Path $env:USERPROFILE (Join-Path $OMP_SKILLS_REL $SKILL_SHIP_DIR))
-  Assert-NotExists 'no install under project cwd' `
-    (Join-Path $projOmp2 (Join-Path $OMP_SKILLS_REL $SKILL_SHIP_DIR))
-} finally { Pop-Location }
-
 Start-Case 'init --agents=continue project-scope install (.continue\skills)'
 Reset-UserHome
 $projCont1 = New-FreshProject
@@ -3808,6 +3765,60 @@ try {
   }
   Assert-IsDir 'user-authored sibling preserved (CLI root)'    $cliSibling
   Assert-IsDir 'user-authored sibling preserved (shared root)' $sharedSibling
+} finally { Pop-Location }
+
+Start-Case 'Antigravity: skills remove --user un-merges bundled hooks from user settings.json'
+Reset-UserHome
+$projAGruh = New-FreshProject
+Push-Location $projAGruh
+try {
+  Invoke-XX init --scope user --agents antigravity `
+                    --prefix-width 4 --max-work-item-lines 30 --review-per task
+  Assert-Eq 'init exit 0' $RunRC 0
+  # Sibling-case at line ~3743 above asserts the SKILL directories under
+  # both user-scope roots get cleared. This case adds the missing
+  # half: the user-scope settings.json gets un-merged the same way the
+  # project-scope case (line ~3692) does. Without it, a regression
+  # that broke `configRelFor(scopeUser)` for the antigravity row would
+  # only surface when a Windows user noticed `~\.gemini\settings.json`
+  # still carrying our hook records after `stax skills remove --user`.
+  $userSettings = Join-Path $env:USERPROFILE (Join-Path $ANTIGRAVITY_CONFIG_REL 'settings.json')
+  $augmented = @"
+{
+  "userOnlyKey": true,
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {"type": "command", "command": "stax work-items lint"}
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {"type": "command", "command": "USER-ANTIGRAVITY-USER-HOOK"}
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {"type": "command", "command": "stax work-items lint"}
+        ]
+      }
+    ]
+  }
+}
+"@
+  Set-Content -LiteralPath $userSettings -Value $augmented -Encoding ascii
+  Invoke-XX skills remove --user
+  Assert-Eq 'remove exit 0' $RunRC 0
+  $after = Get-Content -Raw -LiteralPath $userSettings
+  Assert-NotContains 'user-scope bundled cmd gone'      $after 'stax work-items lint'
+  Assert-Contains    'user-scope user antigravity hook' $after 'USER-ANTIGRAVITY-USER-HOOK'
+  Assert-Contains    'user-scope scalar survives'       $after 'userOnlyKey'
 } finally { Pop-Location }
 
 # ---------- Antigravity: surgical merge / un-merge contract (PS1 twins) ----------

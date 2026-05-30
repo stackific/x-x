@@ -71,7 +71,6 @@ func TestE2EShellConstantsMatchGo(t *testing.T) {
 		"ANTIGRAVITY_USER_SKILLS_REL_SHARED": agentByKey("antigravity").userSkillsRels[1],
 		"ANTIGRAVITY_CONFIG_REL":             agentByKey("antigravity").configRel,
 		"KILO_SKILLS_REL":                    agentByKey("kilo").skillsRel,
-		"OMP_SKILLS_REL":                     agentByKey("omp").skillsRel,
 		"OPENCODE_SKILLS_REL":                agentByKey("opencode").skillsRel,
 		"OPENCODE_CONFIG_REL":                agentByKey("opencode").configRel,
 		"OPENCODE_USER_CONFIG_REL":           agentByKey("opencode").userConfigRel,
@@ -79,7 +78,7 @@ func TestE2EShellConstantsMatchGo(t *testing.T) {
 		"PI_CONFIG_REL":                      agentByKey("pi").configRel,
 		"PI_USER_CONFIG_REL":                 agentByKey("pi").userConfigRel,
 		"ZED_SKILLS_REL":                     agentByKey("zed").skillsRel,
-		// Continue / Cursor / Kilo / omp / Zed each bundle no per-agent
+		// Continue / Cursor / Kilo / Zed each bundle no per-agent
 		// config (configRel is ""), so no *_CONFIG_REL mirror is needed.
 
 		// Local-server constants — the bare-stax HTTP listener (server.go)
